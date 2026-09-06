@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug (LLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/text_game",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "CMake Build"
+        }
+    ]
+}
