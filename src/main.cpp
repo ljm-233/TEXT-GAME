@@ -1,8 +1,8 @@
 #include <iostream>
-#include <string>
 #include <limits>
 #include <cstdlib>
 #include <cmath>
+#include "time_utils.h"
 using namespace std;
 
 void fail(){
@@ -22,6 +22,7 @@ int main(){
 	double a,b;
 	char c;
 	double result = 0.0;
+	getime();
 	cout << "请输入第一个数字·Enter 1st number:";
 	cin >> a;
 	check();

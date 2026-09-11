@@ -6,5 +6,5 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # 给 clangd 用
 
 add_executable(text_game
-    src/main.cpp
+    src/main.cpp src/time.cpp
 )

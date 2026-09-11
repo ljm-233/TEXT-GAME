@@ -3,7 +3,7 @@
     "configurations": [
         {
             "name": "Debug (LLDB)",
-            "type": "lldb",
+            "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/text_game",
             "cwd": "${workspaceFolder}",

@@ -1,11 +1,10 @@
 #include <ctime>
 #include <iostream>
-#include <fstream>
+#include "time_utils.h"
 
 using namespace std;
 
-int main(){
-  time_t time = time(nullptr);
-  cout << ctime(&time);
-  return 0
+void getime(){
+    time_t now = time(nullptr);
+    cout << ctime(&now);
 }
