@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -7,7 +8,7 @@
 #include <mutex>
 #include <stdexcept>
 
-enum class LogLevel { Debug, Info, Warn, Error, Trace};
+enum class LogLevel { Debug, Info, Warn, Error, Trace, Normal};
 
 class Logger{
 public:
@@ -42,7 +43,8 @@ public:
             case LogLevel::Warn:  color = "\033[33m"; break; // 黄色
             case LogLevel::Error: color = "\033[31m"; break; // 红色
             case LogLevel::Trace: color = "\033[90m"; break; // 灰色
-        }
+            case LogLevel::Normal: color = "\033[0m"; break; // 白色
+            }
         std::cout << color << timebuf << " [" << levelToString(level) << "] " << msg << "\033[0m" << '\n';
     }
 
@@ -51,6 +53,7 @@ public:
     void warn(const std::string& msg)  { log(LogLevel::Warn, msg); }
     void error(const std::string& msg) { log(LogLevel::Error, msg); }
     void trace(const std::string& msg) { log(LogLevel::Trace, msg); }
+    void normal(const std::string& msg) { log(LogLevel::Normal, msg); }
 
 private:
     std::ofstream out_;
@@ -63,6 +66,7 @@ private:
             case LogLevel::Warn:  return "WARN";
             case LogLevel::Error: return "ERROR";
             case LogLevel::Trace: return "TRACE";
+            case LogLevel::Normal: return "NORMAL";
         }
         return "UNKNOWN";
     }
