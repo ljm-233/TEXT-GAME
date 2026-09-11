@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 #include "time_utils.h"
+#include "logging.h"
 using namespace std;
 
 void fail(){
@@ -19,6 +20,11 @@ void check(){
 }	
 
 int main(){
+	Logger logger("app.log");
+	logger.info("程序启动");
+    logger.debug("x = " + std::to_string(42));
+    logger.warn("磁盘空间不足");
+    logger.error("打开文件失败");
 	double a,b;
 	char c;
 	double result = 0.0;
