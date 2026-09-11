@@ -35,7 +35,15 @@ public:
         out_ << timebuf << " [" << levelToString(level) << "] " << msg << '\n';
         out_.flush();
 
-        std::cout << timebuf << " [" << levelToString(level) << "] " << msg << '\n';
+        const char* color = "\033[0m";
+        switch (level) {
+            case LogLevel::Debug: color = "\033[36m"; break; // 青色
+            case LogLevel::Info:  color = "\033[32m"; break; // 绿色
+            case LogLevel::Warn:  color = "\033[33m"; break; // 黄色
+            case LogLevel::Error: color = "\033[31m"; break; // 红色
+            case LogLevel::Trace: color = "\033[90m"; break; // 灰色
+        }
+        std::cout << color << timebuf << " [" << levelToString(level) << "] " << msg << "\033[0m" << '\n';
     }
 
     void debug(const std::string& msg) { log(LogLevel::Debug, msg); }
