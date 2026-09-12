@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <typeindex>
 
+// 简易 DI 容器
 class Container {
 public:
     template <typename T>
@@ -35,10 +36,21 @@ private:
     std::unordered_map<std::type_index, std::shared_ptr<void>> instances_;
 };
 
+// 主类：单例 + DI 容器
 class Application {
 public:
-    Application();
+    // 对应 Python 的 Application.instance()
+    static Application& instance();
+
     void run();
+
+    // 禁止拷贝和赋值，保证全局只有一个实例
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
 private:
+    Application();   // 构造函数私有化，外部无法 new
+    ~Application() = default;
+
     Container container_;
 };

@@ -1,6 +1,6 @@
 #include "application.h"
 #include "logging.h"
-#include "time_utils.h"
+/*#include "time_utils.h"*/
 
 #include <iostream>
 #include <limits>
@@ -82,7 +82,12 @@ static void runCalculator(shared_ptr<Logger> logger) {
     }
 }
 
-// ---------- Application ----------
+// ---------- Application 单例实现 ----------
+
+Application& Application::instance() {
+    static Application inst;   // C++11 保证线程安全的懒加载
+    return inst;
+}
 
 Application::Application() {
     // 注册 Logger：全局单例
