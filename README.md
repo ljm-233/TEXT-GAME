@@ -1,6 +1,6 @@
 # TEXT-GAME
 
-一个基于 C++ 的文本游戏/工具项目，包含简易的计算器示例、日志模块、时间工具，以及一个用于解决依赖注入（DI）的简易容器。
+一个基于 C++ 和 SFML 的跨平台游戏项目。包含日志模块、配置系统、路径管理、简易依赖注入（DI）容器，以及一个可扩展的窗口与场景架构。
 
 ## 📁 项目结构
 
@@ -8,17 +8,24 @@
 TEXT-GAME/
 ├── .vscode/               # VS Code 调试与任务配置
 ├── build/                 # CMake 构建产物（不提交至 Git）
+├── cache/                 # 可重建缓存（不提交）
+├── config/                # 用户配置（settings.conf、app.log）
+├── saves/                 # 存档（不提交）
+├── temp/                  # 临时文件（不提交）
 ├── include/               # 头文件目录
 │   ├── application.h      # DI 容器 + Application 主类声明
-│   ├── logging.h          # 日志模块（支持颜色、多级别、线程安全）
-│   └── time_utils.h       # 时间工具接口
-├── scripts/               # 辅助脚本（如构建、打包脚本）
+│   ├── config.h           # 配置对象，统一读写接口
+│   ├── logging.h          # 日志模块（颜色、多级别、线程安全）
+│   ├── paths.h            # 四个资源目录的管理
+│   ├── time_utils.h       # 时间工具接口
+│   └── window.h           # SFML 窗口封装
+├── scripts/               # 辅助脚本（如构建、打包）
 │   └── tree.sh
 ├── src/                   # 源文件目录
 │   ├── application.cpp    # Application 实现，负责注册依赖
-│   └── main.cpp           # 程序入口（仅启动 Application）
+│   ├── main.cpp           # 程序入口（仅启动 Application）
+│   └── window.cpp         # 窗口实现
 ├── .gitignore
-├── app.log                # 运行时的日志文件 （实际上不在这里）
 ├── CMakeLists.txt
 └── README.md
 ```
@@ -27,28 +34,64 @@ TEXT-GAME/
 
 | 文件/模块 | 职责 |
 | :--- | :--- |
-| `time_utils.h` | 提供时间同步与格式化接口 |
-| `logging.h` | 日志模块，调用时间接口，支持彩色终端输出与文件记录 |
-| `application.h` / `application.cpp` | 包含主类 `Application` 与简易 DI 容器 `Container` |
+| `time_utils.h` | 提供时间格式化接口 |
+| `logging.h` | 日志模块，支持彩色终端输出与文件记录，线程安全 |
+| `paths.h` | 管理项目根目录下的 `config/ cache/ temp/ saves/` 四个目录 |
+| `config.h` | 统一的配置读写接口，同时作为资源路径的唯一出口 |
+| `window.h` / `window.cpp` | 封装 SFML 窗口，隔离渲染库与游戏逻辑 |
+| `application.h` / `application.cpp` | 主类 `Application` 与简易 DI 容器 `Container` |
 | `main.cpp` | 程序入口，创建 `Application` 并运行 |
 
 ## 🔧 依赖注入（DI）设计
 
 项目使用一个简易的 `Container` 类来管理对象的创建与依赖关系。
-- 在 `Application` 的构造函数中**注册类型**（如 `Logger`）。
+
+- 在 `Application` 的构造函数中**注册类型**（如 `Paths`、`Config`、`Logger`）。
 - 在 `Application::run()` 中**解析并获取实例**。
 - 新增类时，只需在 `Application::Application()` 中注册，无需修改 `main.cpp`。
 
+## 🎮 技术栈
+
+- **语言**：C++20
+- **构建**：CMake + Ninja
+- **窗口/渲染**：SFML 3（跨平台：Linux / Windows / macOS）
+- **依赖注入**：自研简易 DI 容器
+
 ## 🚀 构建与运行
 
-**环境要求**：Linux / macOS / WSL，已安装 `g++`、`CMake` 和 `Ninja`。
+### 环境要求
+
+- **Linux / macOS / WSL**：`g++`（或 `clang++`）、`CMake 3.20+`、`Ninja`
+- **Windows**：Visual Studio 2022 + vcpkg（推荐）
+
+### 安装依赖
+
+**Arch Linux：**
+```bash
+sudo pacman -S cmake ninja sfml
+```
+
+**Ubuntu / Debian：**
+```bash
+sudo apt install cmake ninja-build libsfml-dev
+```
+
+**Windows（vcpkg）：**
+```powershell
+vcpkg install sfml:x64-windows
+```
+
+### 编译运行
 
 ```bash
 # 进入项目根目录
 cd TEXT-GAME
 
+# 创建构建目录
+mkdir -p build && cd build
+
 # 配置（使用 Ninja 作为生成器）
-cmake .. 
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
 # 编译
 cmake --build . -j
@@ -57,7 +100,7 @@ cmake --build . -j
 ./text_game
 ```
 
-> **提示**：如果在 VS Code（仍然建议VSCodium）中开发，可直接使用 `.vscode` 中预配置的 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
+> **提示**：在 VS Code（建议使用 VSCodium）中开发时，可直接使用 `.vscode/` 中预配置的 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
 
 ## 📥 克隆（下载）
 
