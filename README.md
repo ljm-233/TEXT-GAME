@@ -13,12 +13,12 @@ TEXT-GAME/
 │   ├── logging.h          # 日志模块（支持颜色、多级别、线程安全）
 │   └── time_utils.h       # 时间工具接口
 ├── scripts/               # 辅助脚本（如构建、打包脚本）
+│   └── tree.sh
 ├── src/                   # 源文件目录
 │   ├── application.cpp    # Application 实现，负责注册依赖
-│   ├── main.cpp           # 程序入口（仅启动 Application）
-│   └── time.cpp           # 时间工具实现
+│   └── main.cpp           # 程序入口（仅启动 Application）
 ├── .gitignore
-├── app.log                # 运行时的日志文件
+├── app.log                # 运行时的日志文件 （实际上不在这里）
 ├── CMakeLists.txt
 └── README.md
 ```
@@ -27,7 +27,7 @@ TEXT-GAME/
 
 | 文件/模块 | 职责 |
 | :--- | :--- |
-| `time_utils.h` / `time.cpp` | 提供时间同步与格式化接口 |
+| `time_utils.h` | 提供时间同步与格式化接口 |
 | `logging.h` | 日志模块，调用时间接口，支持彩色终端输出与文件记录 |
 | `application.h` / `application.cpp` | 包含主类 `Application` 与简易 DI 容器 `Container` |
 | `main.cpp` | 程序入口，创建 `Application` 并运行 |
@@ -47,9 +47,8 @@ TEXT-GAME/
 # 进入项目根目录
 cd TEXT-GAME
 
-# 创建构建目录并配置（使用 Ninja 作为生成器）
-mkdir -p build && cd build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug
+# 配置（使用 Ninja 作为生成器）
+cmake .. 
 
 # 编译
 cmake --build . -j
@@ -58,7 +57,7 @@ cmake --build . -j
 ./text_game
 ```
 
-> **提示**：如果在 VS Code 中开发，可直接使用 `.vscode` 中预配置的 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
+> **提示**：如果在 VS Code（仍然建议VSCodium）中开发，可直接使用 `.vscode` 中预配置的 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
 
 ## 📥 克隆（下载）
 
