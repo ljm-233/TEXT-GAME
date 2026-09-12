@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <typeindex>
 
+#include "window.h"
+
 // 简易 DI 容器
 class Container {
 public:
@@ -52,5 +54,8 @@ private:
     Application();   // 构造函数私有化，外部无法 new
     ~Application() = default;
 
+    void initWindow();   // 从 Config 读参数并创建窗口
+
     Container container_;
+    std::shared_ptr<Window> window_;
 };

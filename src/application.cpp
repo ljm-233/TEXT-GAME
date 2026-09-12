@@ -110,11 +110,22 @@ Application::Application() {
         return std::make_shared<Logger>(logPath.string());
     });
 
+    // 创建窗口
+    initWindow();
+
     // 以后有新类，继续在这里注册
     // container_.registerType<Game>([this]() {
     //     auto logger = container_.resolve<Logger>();
     //     return make_shared<Game>(logger);
     // });
+}
+
+void Application::initWindow() {
+    auto config = container_.resolve<Config>();
+    int w = config->getInt("window_width", 1280);
+    int h = config->getInt("window_height", 720);
+    string title = config->get("window_title", "TEXT-GAME");
+    window_ = make_shared<Window>(w, h, title);
 }
 
 void Application::run() {
@@ -124,17 +135,24 @@ void Application::run() {
     logger->info("程序启动");
     logger->info("配置目录: " + config->configDir().string());
     logger->info("存档目录: " + config->savesDir().string());
+    logger->info("窗口尺寸: " + to_string(window_->native().getSize().x)+ "x" + to_string(window_->native().getSize().y));
     logger->debug("x = " + to_string(42));
     logger->warn("磁盘空间不足");
     logger->error("打开文件失败");
     logger->trace("TEXT");
 
-    int width  = config->getInt("window_width", 1280);
-    int height = config->getInt("window_height", 720);
-    logger->info("窗口: " + std::to_string(width) + "x" + std::to_string(height));
+    while (window_->isOpen()) {
+        window_->pollEvents();
 
-    // 比如用户改了下尺寸，写回去
-    config->setInt("window_width", 1920);
+        window_->clear();
+        // 这里以后会画游戏内容（精灵、文字、地图……）
+        window_->display();
+    }
+
+        // ---------- 退出后保存配置 ----------
+    auto size = window_->native().getSize();
+    config->setInt("window_width", size.x);
+    config->setInt("window_height", size.y);
 
     runCalculator(logger);
     logger->info("程序结束");
