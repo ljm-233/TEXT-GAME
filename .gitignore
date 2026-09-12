@@ -1,5 +1,10 @@
 build/
-.cache/
-compile_commands.json
-build/
-.cache/
+# 运行时生成的资源
+config/*
+cache/*
+temp/*
+saves/*
+!config/.gitkeep
+!cache/.gitkeep
+!temp/.gitkeep
+!saves/.gitkeep

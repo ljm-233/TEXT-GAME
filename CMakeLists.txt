@@ -11,3 +11,8 @@ add_executable(text_game
 )
 
 target_include_directories(text_game PRIVATE include)
+
+# 把项目根目录作为宏传进去
+target_compile_definitions(text_game PRIVATE
+    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)

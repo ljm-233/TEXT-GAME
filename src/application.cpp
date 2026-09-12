@@ -1,5 +1,7 @@
 #include "application.h"
 #include "logging.h"
+#include "paths.h"
+#include "config.h"
 /*#include "time_utils.h"*/
 
 #include <iostream>
@@ -90,9 +92,22 @@ Application& Application::instance() {
 }
 
 Application::Application() {
-    // 注册 Logger：全局单例
-    container_.registerType<Logger>([]() {
-        return make_shared<Logger>("app.log");
+    // 1. Paths 无依赖，先注册
+    container_.registerType<Paths>([]() {
+        return std::make_shared<Paths>();
+    });
+
+    // 2. Config 依赖 Paths
+    container_.registerType<Config>([this]() {
+        auto paths = container_.resolve<Paths>();
+        return std::make_shared<Config>(*paths);
+    });
+
+    // 3. Logger 也从 Config 拿路径（不再硬编码 "app.log"）
+    container_.registerType<Logger>([this]() {
+        auto config = container_.resolve<Config>();
+        auto logPath = config->configFile("app.log");
+        return std::make_shared<Logger>(logPath.string());
     });
 
     // 以后有新类，继续在这里注册
@@ -104,14 +119,23 @@ Application::Application() {
 
 void Application::run() {
     auto logger = container_.resolve<Logger>();
+    auto config = container_.resolve<Config>();
 
     logger->info("程序启动");
+    logger->info("配置目录: " + config->configDir().string());
+    logger->info("存档目录: " + config->savesDir().string());
     logger->debug("x = " + to_string(42));
     logger->warn("磁盘空间不足");
     logger->error("打开文件失败");
     logger->trace("TEXT");
 
-    runCalculator(logger);
+    int width  = config->getInt("window_width", 1280);
+    int height = config->getInt("window_height", 720);
+    logger->info("窗口: " + std::to_string(width) + "x" + std::to_string(height));
 
+    // 比如用户改了下尺寸，写回去
+    config->setInt("window_width", 1920);
+
+    runCalculator(logger);
     logger->info("程序结束");
 }
