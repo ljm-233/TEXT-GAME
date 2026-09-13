@@ -11,7 +11,9 @@ find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 add_executable(text_game
     src/main.cpp
     src/application.cpp
-    src/window.cpp 
+    src/calculator.cpp
+    src/window.cpp
+    src/game.cpp 
 )
 
 target_include_directories(text_game PRIVATE include src)

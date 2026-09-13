@@ -5,8 +5,6 @@
 #include <stdexcept>
 #include <typeindex>
 
-#include "window.h"
-
 // 简易 DI 容器
 class Container {
 public:
@@ -41,21 +39,19 @@ private:
 // 主类：单例 + DI 容器
 class Application {
 public:
-    // 对应 Python 的 Application.instance()
     static Application& instance();
 
     void run();
 
-    // 禁止拷贝和赋值，保证全局只有一个实例
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 
 private:
-    Application();   // 构造函数私有化，外部无法 new
+    Application();
     ~Application() = default;
 
-    void initWindow();   // 从 Config 读参数并创建窗口
+    void registerDependencies();   // 注册所有依赖
+    int  showMenu();               // 显示主菜单并返回用户选择
 
     Container container_;
-    std::shared_ptr<Window> window_;
 };

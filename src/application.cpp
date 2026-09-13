@@ -2,87 +2,13 @@
 #include "logging.h"
 #include "paths.h"
 #include "config.h"
-/*#include "time_utils.h"*/
+#include "calculator.h"
+#include "window.h"
+#include "game.h"
 
 #include <iostream>
-#include <limits>
-#include <cstdlib>
-#include <cmath>
 
 using namespace std;
-
-// 出错提示
-static void fail(shared_ptr<Logger> logger) {
-    logger->error(" Fail! :( ");
-}
-
-// 输入检查
-static void check(shared_ptr<Logger> logger) {
-    if (cin.fail()) {
-        fail(logger);
-        cin.clear();
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        exit(0);
-    }
-}
-
-// 计算器主逻辑
-static void runCalculator(shared_ptr<Logger> logger) {
-    double a, b;
-    char c;
-    double result = 0.0;
-
-    /*getime();*/   // 打印当前时间（可选）
-
-    logger->normal("请输入第一个数字·Enter 1st number:");
-    cin >> a;
-    check(logger);
-    logger->info("输入成功");
-
-    logger->normal("请输入第二个数字·Enter 2nd number:");
-    cin >> b;
-    check(logger);
-    logger->info("输入成功");
-
-    while (true) {
-        logger->normal("你想要什么·What do you want?\n1+ 2- 3x 4/ 5幂函数\n");
-        cin >> c;
-        logger->info("输入成功");
-
-        switch (c) {
-            case '1':
-                result = a + b;
-                break;
-            case '2':
-                result = a - b;
-                break;
-            case '3':
-                result = a * b;
-                break;
-            case '4':
-                if (fabs(b) < 1e-12) {
-                    logger->warn("不能除以零·Cannot divide by zero!");
-                    return;
-                }
-                result = a / b;
-                break;
-            case '5':
-                result = pow(a, b);
-                if (isinf(result)) {
-                    logger->warn("结果过大，无法显示!");
-                    return;
-                }
-                break;
-            default:
-                fail(logger);
-                logger->normal("[再试·Retry]");
-                continue;
-        }
-
-        logger->normal("结果·End Number: " + to_string(result));
-        return;
-    }
-}
 
 // ---------- Application 单例实现 ----------
 
@@ -92,40 +18,67 @@ Application& Application::instance() {
 }
 
 Application::Application() {
+    registerDependencies();
+}
+
+void Application::registerDependencies() {
     // 1. Paths 无依赖，先注册
     container_.registerType<Paths>([]() {
-        return std::make_shared<Paths>();
+        return make_shared<Paths>();
     });
 
     // 2. Config 依赖 Paths
     container_.registerType<Config>([this]() {
         auto paths = container_.resolve<Paths>();
-        return std::make_shared<Config>(*paths);
+        return make_shared<Config>(*paths);
     });
 
-    // 3. Logger 也从 Config 拿路径（不再硬编码 "app.log"）
+    // 3. Logger 从 Config 拿路径
     container_.registerType<Logger>([this]() {
         auto config = container_.resolve<Config>();
         auto logPath = config->configFile("app.log");
-        return std::make_shared<Logger>(logPath.string());
+        return make_shared<Logger>(logPath.string());
     });
 
-    // 创建窗口
-    initWindow();
+    // 4. Calculator 依赖 Logger
+    container_.registerType<Calculator>([this]() {
+        auto logger = container_.resolve<Logger>();
+        return make_shared<Calculator>(logger);
+    });
 
-    // 以后有新类，继续在这里注册
-    // container_.registerType<Game>([this]() {
-    //     auto logger = container_.resolve<Logger>();
-    //     return make_shared<Game>(logger);
-    // });
+    // 5. Window 依赖 Config（懒加载：只有被 resolve 时才真正创建）
+    container_.registerType<Window>([this]() {
+        auto config = container_.resolve<Config>();
+        int w = config->getInt("window_width", 1280);
+        int h = config->getInt("window_height", 720);
+        string title = config->get("window_title", "TEXT-GAME");
+        return make_shared<Window>(w, h, title);
+    });
+
+    // 6. Game 依赖 Window 和 Logger
+    container_.registerType<Game>([this]() {
+        auto window = container_.resolve<Window>();
+        auto logger = container_.resolve<Logger>();
+        return make_shared<Game>(window, logger);
+    });
 }
 
-void Application::initWindow() {
-    auto config = container_.resolve<Config>();
-    int w = config->getInt("window_width", 1280);
-    int h = config->getInt("window_height", 720);
-    string title = config->get("window_title", "TEXT-GAME");
-    window_ = make_shared<Window>(w, h, title);
+int Application::showMenu() {
+    cout << "\n===== TEXT-GAME =====\n";
+    cout << "  1. 计算器\n";
+    cout << "  2. 游戏窗口\n";
+    cout << "  0. 退出\n";
+    cout << "请选择: ";
+
+    int choice = 0;
+    cin >> choice;
+
+    if (cin.fail()) {
+        cin.clear();
+        cin.ignore(1000, '\n');
+        return -1;   // 无效输入
+    }
+    return choice;
 }
 
 void Application::run() {
@@ -135,25 +88,36 @@ void Application::run() {
     logger->info("程序启动");
     logger->info("配置目录: " + config->configDir().string());
     logger->info("存档目录: " + config->savesDir().string());
-    logger->info("窗口尺寸: " + to_string(window_->native().getSize().x)+ "x" + to_string(window_->native().getSize().y));
-    logger->debug("x = " + to_string(42));
-    logger->warn("磁盘空间不足");
-    logger->error("打开文件失败");
-    logger->trace("TEXT");
 
-    while (window_->isOpen()) {
-        window_->pollEvents();
+    int choice = showMenu();
 
-        window_->clear();
-        // 这里以后会画游戏内容（精灵、文字、地图……）
-        window_->display();
+    switch (choice) {
+        case 1: {
+            // 只创建计算器，不创建窗口
+            auto calc = container_.resolve<Calculator>();
+            calc->run();
+            break;
+        }
+        case 2: {
+            // 创建窗口 + 游戏
+            auto game = container_.resolve<Game>();
+            game->run();
+
+            // 游戏结束后保存窗口尺寸到配置
+            auto window = container_.resolve<Window>();
+            auto size = window->native().getSize();
+            config->setInt("window_width",  size.x);
+            config->setInt("window_height", size.y);
+            logger->info("窗口尺寸已保存: " + to_string(size.x) + "x" + to_string(size.y));
+            break;
+        }
+        case 0:
+            logger->info("用户选择退出");
+            break;
+        default:
+            logger->warn("无效选择");
+            break;
     }
 
-        // ---------- 退出后保存配置 ----------
-    auto size = window_->native().getSize();
-    config->setInt("window_width", size.x);
-    config->setInt("window_height", size.y);
-
-    runCalculator(logger);
     logger->info("程序结束");
 }
