@@ -4,6 +4,7 @@
 #include "game_scene.h"
 #include "settings_scene.h"
 #include "console_scene.h"
+#include "notification.h"
 #include <SFML/System/Clock.hpp>
 #include <ctime>
 #include <cstdio>
@@ -24,6 +25,7 @@ Game::Game(std::shared_ptr<Window>        window,
       runtimeConfig_(std::move(runtimeConfig)),
       fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
       clockText_(fontHolder_->get(), sf::String(""), 20) {
+    NotificationSystem::instance().setFont(fontHolder_->get());
     fpsText_.setFillColor(sf::Color(255, 255, 100));
     clockText_.setFillColor(sf::Color(220, 220, 240));
     sceneManager_ = std::make_unique<SceneManager>(
@@ -124,6 +126,7 @@ void Game::renderOverlays() {
         clockText_.setPosition(p);
         window_->native().draw(clockText_);
     }
+    NotificationSystem::instance().render(window_->native());
 }
 
 void Game::flushConfigs() {
@@ -133,6 +136,7 @@ void Game::flushConfigs() {
 
 void Game::run() {
     logger_->info("游戏启动");
+    NotificationSystem::instance().push("游戏已启动",NotificationType::Info);
     if (!sceneManager_->start(SceneId::MainMenu)) {
         logger_->error("无法创建主菜单场景");
         return;
@@ -151,6 +155,7 @@ void Game::run() {
         }
 
         flushTimer_ += dt;
+        NotificationSystem::instance().update(dt);
         if (flushTimer_ >= 5.f) { flushConfigs(); flushTimer_ = 0.f; }
 
         // 时钟每 0.2 秒刷新一次

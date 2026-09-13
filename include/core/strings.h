@@ -108,4 +108,8 @@ constexpr const char* AnimSpeedSlow       = "慢";
 constexpr const char* AnimSpeedNormal     = "正常";
 constexpr const char* AnimSpeedFast       = "快";
 
+// ===== 通知 =====
+constexpr const char* LabelNotification    = "屏幕通知";
+constexpr const char* LabelNotificationPos = "通知位置";
+
 } // namespace Str

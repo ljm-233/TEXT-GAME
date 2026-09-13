@@ -4,6 +4,7 @@
 #include "ui_scale.h"
 #include "button_style.h"
 #include "animation.h"
+#include "notification.h"
 #include <algorithm>
 #include <cmath>
 
@@ -26,10 +27,10 @@ const char* kFpsLimitLabels[] = {"无", "30", "60", "120", "144"};
 
 const float kAnimSpeeds[] = {0.5f, 1.0f, 2.0f};
 constexpr int kAnimSpeedCount = 3;
-const char* kAnimSpeedLabels[] = {Str::AnimSpeedSlow, Str::AnimSpeedNormal, Str::AnimSpeedFast};
+const char* kAnimSpeedLabels[] = {"慢", "正常", "快"};
 
-const char* kFpsPosLabels[] = {"左上", "右上", "左下", "右下"};
-constexpr int kFpsPosCount  = 4;
+const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
+constexpr int kPosCount  = 4;
 
 const float kUiScales[]     = {0.8f, 1.0f, 1.2f, 1.5f};
 constexpr int kUiScaleCount = 4;
@@ -129,6 +130,10 @@ int indexOfAnimSpeed(int idx) {
     if (idx < 0 || idx >= kAnimSpeedCount) return 1;
     return idx;
 }
+int indexOfPos(int idx) {
+    if (idx < 0 || idx >= kPosCount) return 1;
+    return idx;
+}
 }
 
 // ============================================================
@@ -158,6 +163,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelFpsLimit_        (font, toSf(Str::LabelFpsLimit),        scaledFontSize(20)),
       labelAnimation_       (font, toSf(Str::LabelAnimation),       scaledFontSize(20)),
       labelAnimationSpeed_  (font, toSf(Str::LabelAnimationSpeed),  scaledFontSize(20)),
+      labelNotification_    (font, toSf(Str::LabelNotification),    scaledFontSize(20)),
+      labelNotificationPos_ (font, toSf(Str::LabelNotificationPos), scaledFontSize(20)),
       labelFps_             (font, toSf(Str::LabelFps),             scaledFontSize(20)),
       labelFpsPos_          (font, toSf(Str::LabelFpsPos),          scaledFontSize(20)),
       labelUiScale_         (font, toSf(Str::LabelUiScale),         scaledFontSize(20)),
@@ -180,7 +187,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelPlayerName_      (font, toSf(Str::LabelPlayerName),      scaledFontSize(20)),
       hintUiScale_          (font, toSf(Str::HintUiScale),          scaledFontSize(14)) {
 
-    // ===== 读偏好 =====
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
     fullscreen_          = preferences_->getBool("fullscreen", false);
     vsync_               = preferences_->getBool("vsync", true);
@@ -189,6 +195,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     fpsLimit_            = preferences_->getInt("fps_limit", 60);
     animationEnabled_    = preferences_->getBool("animation_enabled", true);
     animationSpeedIndex_ = indexOfAnimSpeed(preferences_->getInt("animation_speed_index", 1));
+    notificationEnabled_ = preferences_->getBool("notification_enabled", true);
+    notificationPosition_= indexOfPos(preferences_->getInt("notification_position", 1));
     showFps_             = preferences_->getBool("show_fps", false);
     fpsPosition_         = preferences_->getInt("fps_position", 1);
     uiScale_             = static_cast<float>(preferences_->getDouble("ui_scale", 1.0));
@@ -208,7 +216,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     logRotateIndex_      = indexOfLogRotate(preferences_->getInt("log_rotate", 0));
     logKeepIndex_        = indexOfLogKeep(preferences_->getInt("log_keep", 1));
 
-    // 玩家名输入框
+    // 玩家名
     playerNameInput_ = std::make_unique<TextInput>(
         font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
         Str::PlayerNamePlaceholder, 18, 16);
@@ -227,6 +235,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (auto* t : {&labelResolution_, &labelFullscreen_, &labelVsync_,
                     &labelAntiAliasing_, &labelLogLevel_, &labelFpsLimit_,
                     &labelAnimation_, &labelAnimationSpeed_,
+                    &labelNotification_, &labelNotificationPos_,
                     &labelFps_, &labelFpsPos_, &labelUiScale_,
                     &labelConsoleMask_, &labelConsolePanelAlpha_,
                     &labelConsoleFont_, &labelConsoleHistory_,
@@ -257,14 +266,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     };
 
     // Display
-    for (int i = 0; i < kResolutionCount; ++i) {
+    for (int i = 0; i < kResolutionCount; ++i)
         resolutionButtons_.push_back(std::make_unique<Button>(
             kResolutions[i].label, font_,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
-    }
     { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
     { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
     { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_  = std::move(on); animationOff_  = std::move(off); }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); notificationOn_ = std::move(on); notificationOff_ = std::move(off); }
     for (int i = 0; i < kAACount; ++i)
         antiAliasingButtons_.push_back(std::make_unique<Button>(
             kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -277,12 +286,15 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (int i = 0; i < kAnimSpeedCount; ++i)
         animationSpeedButtons_.push_back(std::make_unique<Button>(
             kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kPosCount; ++i)
+        notificationPosButtons_.push_back(std::make_unique<Button>(
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // Interface
     { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
-    for (int i = 0; i < kFpsPosCount; ++i)
+    for (int i = 0; i < kPosCount; ++i)
         fpsPosButtons_.push_back(std::make_unique<Button>(
-            kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
     for (int i = 0; i < kUiScaleCount; ++i)
         uiScaleButtons_.push_back(std::make_unique<Button>(
             kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -315,9 +327,9 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
 
     { auto [on, off] = makeToggle(Str::On, Str::Off); clockOn_ = std::move(on); clockOff_ = std::move(off); }
-    for (int i = 0; i < kFpsPosCount; ++i)
+    for (int i = 0; i < kPosCount; ++i)
         clockPosButtons_.push_back(std::make_unique<Button>(
-            kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // Other
     { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
@@ -353,7 +365,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
 }
 
 // ============================================================
-// 选中状态刷新
+// 选中状态
 // ============================================================
 
 void SettingsScene::refreshSelection() {
@@ -370,6 +382,10 @@ void SettingsScene::refreshSelection() {
     animationOff_->setSelected(!animationEnabled_);
     for (int i = 0; i < kAnimSpeedCount; ++i)
         animationSpeedButtons_[i]->setSelected(i == animationSpeedIndex_);
+    notificationOn_->setSelected(notificationEnabled_);
+    notificationOff_->setSelected(!notificationEnabled_);
+    for (int i = 0; i < kPosCount; ++i)
+        notificationPosButtons_[i]->setSelected(i == notificationPosition_);
 
     int aaIdx = indexOfAA(antiAliasingLevel_);
     for (int i = 0; i < kAACount; ++i)
@@ -385,7 +401,7 @@ void SettingsScene::refreshSelection() {
 
     fpsOn_->setSelected(showFps_);
     fpsOff_->setSelected(!showFps_);
-    for (int i = 0; i < kFpsPosCount; ++i)
+    for (int i = 0; i < kPosCount; ++i)
         fpsPosButtons_[i]->setSelected(i == fpsPosition_);
 
     int uiIdx = indexOfUiScale(uiScale_);
@@ -414,7 +430,7 @@ void SettingsScene::refreshSelection() {
 
     clockOn_->setSelected(showClock_);
     clockOff_->setSelected(!showClock_);
-    for (int i = 0; i < kFpsPosCount; ++i)
+    for (int i = 0; i < kPosCount; ++i)
         clockPosButtons_[i]->setSelected(i == clockPosition_);
 
     rememberOn_->setSelected(rememberSize_);
@@ -435,7 +451,7 @@ void SettingsScene::refreshSelection() {
 }
 
 // ============================================================
-// 应用状态变更
+// 应用状态
 // ============================================================
 
 void SettingsScene::applyResolution() {
@@ -467,11 +483,15 @@ void SettingsScene::applyLogLevel() {
 void SettingsScene::applyTheme() {
     setTheme(themeId_);
     preferences_->setInt("theme", static_cast<int>(themeId_));
+    NotificationSystem::instance().push("主题已切换",
+                                        NotificationType::Success);
 }
 void SettingsScene::applyWallpaper() {
     if (!background_) return;
     if (background_->next()) {
         preferences_->set("current_wallpaper", background_->currentFile());
+        NotificationSystem::instance().push("壁纸已切换",
+                                            NotificationType::Info);
     }
 }
 void SettingsScene::applyFpsPosition() {
@@ -500,6 +520,18 @@ void SettingsScene::applyAnimation() {
     preferences_->setBool("animation_enabled", animationEnabled_);
     preferences_->setInt("animation_speed_index", animationSpeedIndex_);
 }
+void SettingsScene::applyNotification() {
+    NotificationSystem::instance().setEnabled(notificationEnabled_);
+    NotificationSystem::instance().setPosition(
+        static_cast<NotificationPos>(notificationPosition_));
+    preferences_->setBool("notification_enabled", notificationEnabled_);
+    preferences_->setInt("notification_position", notificationPosition_);
+    // 演示：立即弹一条通知
+    if (notificationEnabled_) {
+        NotificationSystem::instance().push("通知已开启",
+                                            NotificationType::Info);
+    }
+}
 void SettingsScene::resetAllPreferences() {
     preferences_->resetAll();
 }
@@ -513,7 +545,6 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }
 
     bool inputFocused = playerNameInput_ && playerNameInput_->isFocused();
-
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape && !inputFocused) {
             nextScene_ = SceneId::Back;
@@ -522,9 +553,8 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     }
     for (auto& b : tabButtons_) b->handleEvent(event);
 
-    if (currentTab_ == Tab::Other && playerNameInput_) {
+    if (currentTab_ == Tab::Other && playerNameInput_)
         playerNameInput_->handleEvent(event);
-    }
 
     switch (currentTab_) {
         case Tab::Display:
@@ -532,7 +562,9 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             fullscreenOn_->handleEvent(event);  fullscreenOff_->handleEvent(event);
             vsyncOn_->handleEvent(event);       vsyncOff_->handleEvent(event);
             animationOn_->handleEvent(event);   animationOff_->handleEvent(event);
+            notificationOn_->handleEvent(event);notificationOff_->handleEvent(event);
             for (auto& b : animationSpeedButtons_) b->handleEvent(event);
+            for (auto& b : notificationPosButtons_) b->handleEvent(event);
             for (auto& b : antiAliasingButtons_) b->handleEvent(event);
             for (auto& b : logLevelButtons_) b->handleEvent(event);
             for (auto& b : fpsLimitButtons_) b->handleEvent(event);
@@ -586,10 +618,8 @@ void SettingsScene::update(float /*dt*/) {
 
     if (aboutDialog_) {
         auto r = aboutDialog_->consumeResult();
-        if (r == ConfirmDialog::Result::Ok ||
-            r == ConfirmDialog::Result::No) {
+        if (r == ConfirmDialog::Result::Ok || r == ConfirmDialog::Result::No)
             aboutDialog_.reset();
-        }
         return;
     }
 
@@ -605,16 +635,14 @@ void SettingsScene::update(float /*dt*/) {
 
     switch (currentTab_) {
         case Tab::Display: {
-            for (int i = 0; i < kResolutionCount; ++i) {
+            for (int i = 0; i < kResolutionCount; ++i)
                 if (resolutionButtons_[i]->consumeClick()) {
                     if (selectedResolution_ != i) {
                         selectedResolution_ = i;
-                        refreshSelection();
-                        applyResolution();
+                        refreshSelection(); applyResolution();
                     }
                     return;
                 }
-            }
             if (fullscreenOn_->consumeClick() && !fullscreen_) {
                 fullscreen_ = true; refreshSelection(); applyFullscreen(); return;
             }
@@ -628,52 +656,66 @@ void SettingsScene::update(float /*dt*/) {
                 vsync_ = false; refreshSelection(); applyVsync(); return;
             }
             if (animationOn_->consumeClick() && !animationEnabled_) {
-                animationEnabled_ = true; refreshSelection(); applyAnimation(); return;
+                animationEnabled_ = true; refreshSelection(); applyAnimation();
+                NotificationSystem::instance().push("动画已开启",
+                                                    NotificationType::Success);
+                return;
             }
             if (animationOff_->consumeClick() && animationEnabled_) {
-                animationEnabled_ = false; refreshSelection(); applyAnimation(); return;
+                animationEnabled_ = false; refreshSelection(); applyAnimation();
+                NotificationSystem::instance().push("动画已关闭",
+                                                    NotificationType::Warning);
+                return;
             }
-            for (int i = 0; i < kAnimSpeedCount; ++i) {
+            for (int i = 0; i < kAnimSpeedCount; ++i)
                 if (animationSpeedButtons_[i]->consumeClick()) {
                     if (animationSpeedIndex_ != i) {
                         animationSpeedIndex_ = i;
-                        refreshSelection();
-                        applyAnimation();
+                        refreshSelection(); applyAnimation();
                     }
                     return;
                 }
+            if (notificationOn_->consumeClick() && !notificationEnabled_) {
+                notificationEnabled_ = true; refreshSelection(); applyNotification();
+                return;
             }
-            for (int i = 0; i < kAACount; ++i) {
+            if (notificationOff_->consumeClick() && notificationEnabled_) {
+                notificationEnabled_ = false; refreshSelection(); applyNotification();
+                return;
+            }
+            for (int i = 0; i < kPosCount; ++i)
+                if (notificationPosButtons_[i]->consumeClick()) {
+                    if (notificationPosition_ != i) {
+                        notificationPosition_ = i;
+                        refreshSelection(); applyNotification();
+                    }
+                    return;
+                }
+            for (int i = 0; i < kAACount; ++i)
                 if (antiAliasingButtons_[i]->consumeClick()) {
                     if (antiAliasingLevel_ != kAALevels[i]) {
                         antiAliasingLevel_ = kAALevels[i];
-                        refreshSelection();
-                        applyAntiAliasing();
+                        refreshSelection(); applyAntiAliasing();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kLogCount; ++i) {
+            for (int i = 0; i < kLogCount; ++i)
                 if (logLevelButtons_[i]->consumeClick()) {
-                    int newLevel = static_cast<int>(kLogLevels[i]);
-                    if (logLevel_ != newLevel) {
-                        logLevel_ = newLevel;
-                        refreshSelection();
-                        applyLogLevel();
+                    int nl = static_cast<int>(kLogLevels[i]);
+                    if (logLevel_ != nl) {
+                        logLevel_ = nl;
+                        refreshSelection(); applyLogLevel();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kFpsLimitCount; ++i) {
+            for (int i = 0; i < kFpsLimitCount; ++i)
                 if (fpsLimitButtons_[i]->consumeClick()) {
                     if (fpsLimit_ != kFpsLimits[i]) {
                         fpsLimit_ = kFpsLimits[i];
-                        refreshSelection();
-                        applyFpsLimit();
+                        refreshSelection(); applyFpsLimit();
                     }
                     return;
                 }
-            }
             break;
         }
         case Tab::Interface: {
@@ -687,17 +729,15 @@ void SettingsScene::update(float /*dt*/) {
                 preferences_->setBool("show_fps", false);
                 return;
             }
-            for (int i = 0; i < kFpsPosCount; ++i) {
+            for (int i = 0; i < kPosCount; ++i)
                 if (fpsPosButtons_[i]->consumeClick()) {
                     if (fpsPosition_ != i) {
                         fpsPosition_ = i;
-                        refreshSelection();
-                        applyFpsPosition();
+                        refreshSelection(); applyFpsPosition();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kUiScaleCount; ++i) {
+            for (int i = 0; i < kUiScaleCount; ++i)
                 if (uiScaleButtons_[i]->consumeClick()) {
                     if (std::abs(uiScale_ - kUiScales[i]) > 0.01f) {
                         uiScale_ = kUiScales[i];
@@ -707,7 +747,6 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            }
             if (consoleMaskSlider_->consumeChanged()) {
                 consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
                 preferences_->setInt("console_mask", consoleMask_);
@@ -716,7 +755,7 @@ void SettingsScene::update(float /*dt*/) {
                 consolePanelAlpha_ = static_cast<int>(consolePanelAlphaSlider_->value());
                 preferences_->setInt("console_panel_alpha", consolePanelAlpha_);
             }
-            for (int i = 0; i < kConsoleFontCount; ++i) {
+            for (int i = 0; i < kConsoleFontCount; ++i)
                 if (consoleFontButtons_[i]->consumeClick()) {
                     if (consoleFontSize_ != kConsoleFonts[i]) {
                         consoleFontSize_ = kConsoleFonts[i];
@@ -725,29 +764,24 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kConsoleHistoryCount; ++i) {
+            for (int i = 0; i < kConsoleHistoryCount; ++i)
                 if (consoleHistoryButtons_[i]->consumeClick()) {
                     if (consoleHistoryLines_ != kConsoleHistory[i]) {
                         consoleHistoryLines_ = kConsoleHistory[i];
                         refreshSelection();
-                        preferences_->setInt("console_history_lines",
-                                             consoleHistoryLines_);
+                        preferences_->setInt("console_history_lines", consoleHistoryLines_);
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kConsoleLineHeightCount; ++i) {
+            for (int i = 0; i < kConsoleLineHeightCount; ++i)
                 if (consoleLineHeightButtons_[i]->consumeClick()) {
                     if (consoleLineHeight_ != kConsoleLineHeights[i]) {
                         consoleLineHeight_ = kConsoleLineHeights[i];
                         refreshSelection();
-                        preferences_->setInt("console_line_height",
-                                             consoleLineHeight_);
+                        preferences_->setInt("console_line_height", consoleLineHeight_);
                     }
                     return;
                 }
-            }
             if (consoleAutoScrollOn_->consumeClick() && !consoleAutoScroll_) {
                 consoleAutoScroll_ = true; refreshSelection();
                 preferences_->setBool("console_auto_scroll", true);
@@ -768,20 +802,15 @@ void SettingsScene::update(float /*dt*/) {
                 preferences_->setBool("console_blink_cursor", false);
                 return;
             }
-            for (int i = 0; i < kThemeCount; ++i) {
+            for (int i = 0; i < kThemeCount; ++i)
                 if (themeButtons_[i]->consumeClick()) {
                     if (static_cast<int>(themeId_) != i) {
                         themeId_ = static_cast<ThemeId>(i);
-                        refreshSelection();
-                        applyTheme();
+                        refreshSelection(); applyTheme();
                     }
                     return;
                 }
-            }
-            if (wallpaperButton_->consumeClick()) {
-                applyWallpaper();
-                return;
-            }
+            if (wallpaperButton_->consumeClick()) { applyWallpaper(); return; }
             if (clockOn_->consumeClick() && !showClock_) {
                 showClock_ = true; refreshSelection();
                 preferences_->setBool("show_clock", true);
@@ -792,7 +821,7 @@ void SettingsScene::update(float /*dt*/) {
                 preferences_->setBool("show_clock", false);
                 return;
             }
-            for (int i = 0; i < kFpsPosCount; ++i) {
+            for (int i = 0; i < kPosCount; ++i)
                 if (clockPosButtons_[i]->consumeClick()) {
                     if (clockPosition_ != i) {
                         clockPosition_ = i;
@@ -801,7 +830,6 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            }
             break;
         }
         case Tab::Other: {
@@ -815,46 +843,38 @@ void SettingsScene::update(float /*dt*/) {
                 preferences_->setBool("remember_window_size", false);
                 return;
             }
-            for (int i = 0; i < kLogRotateCount; ++i) {
+            for (int i = 0; i < kLogRotateCount; ++i)
                 if (logRotateButtons_[i]->consumeClick()) {
                     if (logRotateIndex_ != i) {
                         logRotateIndex_ = i;
-                        refreshSelection();
-                        applyLogRotation();
+                        refreshSelection(); applyLogRotation();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kLogKeepCount; ++i) {
+            for (int i = 0; i < kLogKeepCount; ++i)
                 if (logKeepButtons_[i]->consumeClick()) {
                     if (logKeepIndex_ != i) {
                         logKeepIndex_ = i;
-                        refreshSelection();
-                        applyLogRotation();
+                        refreshSelection(); applyLogRotation();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kButtonCornerCount; ++i) {
+            for (int i = 0; i < kButtonCornerCount; ++i)
                 if (buttonCornerButtons_[i]->consumeClick()) {
                     if (std::abs(buttonCorner_ - kButtonCorners[i]) > 0.5f) {
                         buttonCorner_ = kButtonCorners[i];
-                        refreshSelection();
-                        applyButtonStyle();
+                        refreshSelection(); applyButtonStyle();
                     }
                     return;
                 }
-            }
-            for (int i = 0; i < kButtonOutlineCount; ++i) {
+            for (int i = 0; i < kButtonOutlineCount; ++i)
                 if (buttonOutlineButtons_[i]->consumeClick()) {
                     if (std::abs(buttonOutline_ - kButtonOutlines[i]) > 0.5f) {
                         buttonOutline_ = kButtonOutlines[i];
-                        refreshSelection();
-                        applyButtonStyle();
+                        refreshSelection(); applyButtonStyle();
                     }
                     return;
                 }
-            }
             if (aboutButton_->consumeClick()) {
                 std::string msg =
                     std::string(Str::AboutTitle) + "\n\n"
@@ -876,9 +896,7 @@ void SettingsScene::update(float /*dt*/) {
         }
     }
 
-    if (backButton_->consumeClick()) {
-        nextScene_ = SceneId::Back;
-    }
+    if (backButton_->consumeClick()) nextScene_ = SceneId::Back;
 }
 
 // ============================================================
@@ -937,6 +955,8 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
     drawToggleRow(labelVsync_,         vsyncOn_,        vsyncOff_);
     drawToggleRow(labelAnimation_,     animationOn_,    animationOff_);
     drawMultiRow (labelAnimationSpeed_,animationSpeedButtons_, 96.f);
+    drawToggleRow(labelNotification_,  notificationOn_, notificationOff_);
+    drawMultiRow (labelNotificationPos_,notificationPosButtons_, 86.f);
     drawMultiRow (labelAntiAliasing_,  antiAliasingButtons_,   96.f);
     drawMultiRow (labelLogLevel_,      logLevelButtons_,       106.f);
     drawMultiRow (labelFpsLimit_,      fpsLimitButtons_,       86.f);
@@ -1056,7 +1076,6 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
     drawMultiRow (labelButtonCorner_, buttonCornerButtons_, 96.f);
     drawMultiRow (labelButtonOutline_,buttonOutlineButtons_,96.f);
 
-    // 玩家名
     labelPlayerName_.setPosition({contentX, y + 8.f});
     window.native().draw(labelPlayerName_);
     playerNameInput_->setPosition({ctrlX, y});

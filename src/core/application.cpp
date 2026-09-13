@@ -14,6 +14,7 @@
 #include "theme.h"
 #include "button_style.h"
 #include "animation.h"
+#include "notification.h"
 #include <algorithm>
 
 using namespace std;
@@ -67,6 +68,13 @@ void Application::registerDependencies() {
         static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
         int idx = std::clamp(prefs->getInt("animation_speed_index", 1), 0, 2);
         Anim::setSpeed(kSpeeds[idx]);
+
+        // 通知
+        NotificationSystem::instance().setEnabled(
+            prefs->getBool("notification_enabled", true));
+        NotificationSystem::instance().setPosition(
+            static_cast<NotificationPos>(
+                std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
     }
 
     // ===== Logger =====

@@ -44,6 +44,7 @@ private:
     void applyButtonStyle();
     void applyLogRotation();
     void applyAnimation();
+    void applyNotification();
     void resetAllPreferences();
 
     void renderTabs        (Window& window);
@@ -72,6 +73,8 @@ private:
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
     std::unique_ptr<Button> animationOn_, animationOff_;
     std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
+    std::unique_ptr<Button> notificationOn_, notificationOff_;
+    std::vector<std::unique_ptr<Button>> notificationPosButtons_;
 
     // Interface
     std::unique_ptr<Button> fpsOn_, fpsOff_;
@@ -109,6 +112,7 @@ private:
     sf::Text labelResolution_, labelFullscreen_, labelVsync_;
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
     sf::Text labelAnimation_, labelAnimationSpeed_;
+    sf::Text labelNotification_, labelNotificationPos_;
     sf::Text labelFps_, labelFpsPos_, labelUiScale_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelConsoleFont_, labelConsoleHistory_;
@@ -129,6 +133,8 @@ private:
     int     fpsLimit_;
     bool    animationEnabled_;
     int     animationSpeedIndex_;
+    bool    notificationEnabled_;
+    int     notificationPosition_;
     bool    showFps_;
     int     fpsPosition_;
     float   uiScale_;
