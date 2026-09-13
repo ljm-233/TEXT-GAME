@@ -45,7 +45,7 @@ void ConfirmDialog::relayout(sf::Vector2f windowSize) {
     message_.setPosition({windowSize.x / 2.f, py + 70.f});
 
     const float gap = 40.f;
-    float btnW = 120.f, btnH = 50.f;
+    float btnW = 120.f;
     float totalW = btnW * 2 + gap;
     float bx = px + (panelW - totalW) / 2.f;
     float by = py + panelH - 80.f;

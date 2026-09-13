@@ -7,6 +7,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 
+add_compile_options(
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall>
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wextra>
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wpedantic>
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wshadow>
+)
+
 add_executable(text_game
     src/core/main.cpp
     src/core/application.cpp

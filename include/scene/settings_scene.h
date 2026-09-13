@@ -6,7 +6,6 @@
 #include "preferences.h"
 #include "runtime_config.h"
 #include "window.h"
-#include "resolution.h"
 #include "confirm_dialog.h"
 #include "theme.h"
 #include <memory>

@@ -1,4 +1,5 @@
 #include "settings_scene.h"
+#include "resolution.h"
 #include "strings.h"
 #include "utf8.h"
 #include "ui_scale.h"
