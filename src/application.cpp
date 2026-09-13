@@ -45,7 +45,7 @@ void Application::registerDependencies() {
         return make_shared<Preferences>(*paths);
     });
 
-    // 3. Logger 从 BootstrapConfig 拿路径
+    // 3. Logger
     container_.registerType<Logger>([this]() {
         auto cfg = container_.resolve<BootstrapConfig>();
         auto logPath = cfg->configFile("app.log");
@@ -58,13 +58,26 @@ void Application::registerDependencies() {
         return make_shared<Calculator>(logger);
     });
 
-    // 5. Window 从 Preferences 读分辨率
+    // 5. Window —— 优先读 RuntimeConfig 的"上次窗口大小"，否则用 Preferences 的档位
     container_.registerType<Window>([this]() {
-        auto prefs = container_.resolve<Preferences>();
-        int idx = clampResolutionIndex(prefs->getInt("resolution_index", 0));
+        auto prefs   = container_.resolve<Preferences>();
+        auto runtime = container_.resolve<RuntimeConfig>();
+
+        unsigned w = 0, h = 0;
+
+        int lastW = runtime->getInt("last_window_width",  -1);
+        int lastH = runtime->getInt("last_window_height", -1);
+        if (lastW > 0 && lastH > 0) {
+            w = static_cast<unsigned>(lastW);
+            h = static_cast<unsigned>(lastH);
+        } else {
+            int idx = clampResolutionIndex(prefs->getInt("resolution_index", 0));
+            w = kResolutions[idx].width;
+            h = kResolutions[idx].height;
+        }
+
         bool fs = prefs->getBool("fullscreen", false);
-        auto& res = kResolutions[idx];
-        return std::make_shared<Window>(res.width, res.height, "TEXT-GAME", fs);
+        return std::make_shared<Window>(w, h, "TEXT-GAME", fs);
     });
 
     // 6. Background
@@ -77,15 +90,15 @@ void Application::registerDependencies() {
             paths->wallpaperDir(), size.x, size.y, logger);
     });
 
-    // 7. FontHolder 从 BootstrapConfig 拿路径
+    // 7. FontHolder
     container_.registerType<FontHolder>([this]() {
         auto cfg    = container_.resolve<BootstrapConfig>();
         auto logger = container_.resolve<Logger>();
-        auto fontPath = cfg->assetFile("font.otf");
+        auto fontPath = cfg->assetFile("font.ttf");
         return std::make_shared<FontHolder>(fontPath, logger);
     });
 
-    // 8. SaveManager 从 RuntimeConfig 拿路径
+    // 8. SaveManager
     container_.registerType<SaveManager>([this]() {
         auto cfg    = container_.resolve<RuntimeConfig>();
         auto logger = container_.resolve<Logger>();
@@ -100,8 +113,10 @@ void Application::registerDependencies() {
         auto fontHolder  = container_.resolve<FontHolder>();
         auto saveManager = container_.resolve<SaveManager>();
         auto prefs       = container_.resolve<Preferences>();
+        auto runtime     = container_.resolve<RuntimeConfig>();
         return std::make_shared<Game>(
-            window, logger, background, fontHolder, saveManager, prefs);
+            window, logger, background, fontHolder,
+            saveManager, prefs, runtime);
     });
 }
 
