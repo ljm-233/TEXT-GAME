@@ -1,15 +1,25 @@
 #include "console_scene.h"
 #include "calculator.h"
+#include "strings.h"
+#include "theme.h"
 #include "utf8.h"
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+#include <vector>
+
+// ============================================================
+// ConsoleScene
+// ============================================================
 
 ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
                            std::shared_ptr<Preferences> preferences,
+                           std::shared_ptr<SaveManager> saveManager,
                            const sf::Font&              font,
                            std::shared_ptr<Logger>      logger)
     : background_(std::move(background)),
       preferences_(std::move(preferences)),
+      saveManager_(std::move(saveManager)),
       logger_(std::move(logger)) {
 
     int fontSize     = preferences_->getInt("console_font_size", 18);
@@ -32,7 +42,8 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
     oldCout_ = std::cout.rdbuf(consoleBuf_.get());
     oldCerr_ = std::cerr.rdbuf(consoleBuf_.get());
 
-    startCalculator();
+    printWelcome();
+    startCommandLoop();
     logger_->info("进入控制台场景");
 }
 
@@ -43,10 +54,21 @@ ConsoleScene::~ConsoleScene() {
     if (oldCerr_) std::cerr.rdbuf(oldCerr_);
 }
 
-void ConsoleScene::startCalculator() {
-    auto calc = std::make_shared<Calculator>(logger_);
-    worker_ = std::thread([this, calc]() {
-        calc->run();
+void ConsoleScene::printWelcome() {
+    std::cout << "TEXT-GAME 控制台\n";
+    std::cout << "输入 help 查看可用命令\n";
+    std::cout << "\n";
+}
+
+void ConsoleScene::startCommandLoop() {
+    worker_ = std::thread([this]() {
+        while (true) {
+            std::string line = console_->waitForLine();
+            if (console_->isShutdown()) break;
+            if (!line.empty()) {
+                dispatchCommand(line);
+            }
+        }
         workerDone_ = true;
     });
 }
@@ -56,10 +78,165 @@ void ConsoleScene::stopWorker() {
     if (worker_.joinable()) worker_.join();
 }
 
+SceneId ConsoleScene::nextScene() const {
+    int v = pendingScene_.load();
+    return static_cast<SceneId>(v);
+}
+
+// ============================================================
+// 命令分发
+// ============================================================
+
+void ConsoleScene::dispatchCommand(const std::string& line) {
+    std::istringstream iss(line);
+    std::vector<std::string> tokens;
+    std::string t;
+    while (iss >> t) tokens.push_back(t);
+    if (tokens.empty()) return;
+
+    const std::string& cmd = tokens[0];
+
+    // ===== help =====
+    if (cmd == "help") {
+        std::cout << "可用命令:\n";
+        std::cout << "  help              显示帮助\n";
+        std::cout << "  clear             清空屏幕\n";
+        std::cout << "  echo <text>       回显文本\n";
+        std::cout << "  version           显示版本\n";
+        std::cout << "  calc              启动计算器\n";
+        std::cout << "  scene <name>      切换场景 (main/save/settings/quit)\n";
+        std::cout << "  log <level>       设置日志级别 (trace/debug/info/warn/error)\n";
+        std::cout << "  theme <name>      切换主题 (dark/blue/light)\n";
+        std::cout << "  save list         列出所有存档\n";
+        std::cout << "  exit              关闭控制台\n";
+        std::cout << "\n";
+    }
+
+    // ===== clear =====
+    else if (cmd == "clear") {
+        console_->clear();
+    }
+
+    // ===== echo =====
+    else if (cmd == "echo") {
+        std::string text;
+        for (size_t i = 1; i < tokens.size(); ++i) {
+            if (i > 1) text += ' ';
+            text += tokens[i];
+        }
+        std::cout << text << '\n';
+    }
+
+    // ===== version =====
+    else if (cmd == "version") {
+        std::cout << Str::AboutTitle << " "
+                  << PROJECT_VERSION << " (" << BUILD_DATE << ")\n";
+    }
+
+    // ===== calc =====
+    else if (cmd == "calc") {
+        std::cout << "[启动计算器...]\n";
+        Calculator calc(logger_);
+        calc.run();
+        std::cout << "[计算器已退出]\n";
+    }
+
+    // ===== scene =====
+    else if (cmd == "scene") {
+        if (tokens.size() < 2) {
+            std::cout << "用法: scene <main|save|settings|quit>\n";
+            return;
+        }
+        const std::string& name = tokens[1];
+        if      (name == "main")     pendingScene_ = static_cast<int>(SceneId::MainMenu);
+        else if (name == "save")     pendingScene_ = static_cast<int>(SceneId::SaveSelect);
+        else if (name == "settings") pendingScene_ = static_cast<int>(SceneId::Settings);
+        else if (name == "quit")     pendingScene_ = static_cast<int>(SceneId::Exit);
+        else {
+            std::cout << "未知场景: " << name << '\n';
+        }
+    }
+
+    // ===== log =====
+    else if (cmd == "log") {
+        if (tokens.size() < 2) {
+            std::cout << "用法: log <trace|debug|info|warn|error>\n";
+            return;
+        }
+        const std::string& level = tokens[1];
+        LogLevel lv;
+        if      (level == "trace") lv = LogLevel::Trace;
+        else if (level == "debug") lv = LogLevel::Debug;
+        else if (level == "info")  lv = LogLevel::Info;
+        else if (level == "warn")  lv = LogLevel::Warn;
+        else if (level == "error") lv = LogLevel::Error;
+        else {
+            std::cout << "未知级别: " << level << '\n';
+            return;
+        }
+        logger_->setMinLevel(lv);
+        preferences_->setInt("log_level", static_cast<int>(lv));
+        std::cout << "日志级别已切换: " << level << '\n';
+    }
+
+    // ===== theme =====
+    else if (cmd == "theme") {
+        if (tokens.size() < 2) {
+            std::cout << "用法: theme <dark|blue|light>\n";
+            return;
+        }
+        const std::string& name = tokens[1];
+        ThemeId id;
+        if      (name == "dark")  id = ThemeId::Dark;
+        else if (name == "blue")  id = ThemeId::Blue;
+        else if (name == "light") id = ThemeId::Light;
+        else {
+            std::cout << "未知主题: " << name << '\n';
+            return;
+        }
+        setTheme(id);
+        preferences_->setInt("theme", static_cast<int>(id));
+        std::cout << "主题已切换。返回主菜单再进入生效。\n";
+    }
+
+    // ===== save =====
+    else if (cmd == "save") {
+        if (tokens.size() < 2 || tokens[1] == "list") {
+            auto saves = saveManager_->listSaves();
+            if (saves.empty()) {
+                std::cout << "没有存档。\n";
+            } else {
+                std::cout << "共 " << saves.size() << " 个存档:\n";
+                for (size_t i = 0; i < saves.size(); ++i) {
+                    std::cout << "  " << (i + 1) << ". "
+                              << saves[i].name
+                              << "  (" << saves[i].filename << ")\n";
+                }
+            }
+        } else {
+            std::cout << "用法: save list\n";
+        }
+    }
+
+    // ===== exit =====
+    else if (cmd == "exit") {
+        pendingScene_ = static_cast<int>(SceneId::Back);
+    }
+
+    // ===== 未知命令 =====
+    else {
+        std::cout << "未知命令: " << cmd << "。输入 help 查看帮助。\n";
+    }
+}
+
+// ============================================================
+// 事件 / 更新 / 渲染
+// ============================================================
+
 void ConsoleScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
-            nextScene_ = SceneId::Back;
+            pendingScene_ = static_cast<int>(SceneId::Back);
             return;
         }
         console_->handleKeyPressed(kp->code);
@@ -83,14 +260,12 @@ void ConsoleScene::render(Window& window) {
     rt.clear(sf::Color::Black);
     if (background_) background_->render(rt);
 
-    // 全屏半透明遮罩
     int mask = preferences_->getInt("console_mask", 160);
     mask = std::max(0, std::min(255, mask));
     sf::RectangleShape overlay(sf::Vector2f{w, h});
     overlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(mask)));
     rt.draw(overlay);
 
-    // 终端面板
     int panelAlpha = preferences_->getInt("console_panel_alpha", 220);
     panelAlpha = std::max(0, std::min(255, panelAlpha));
 

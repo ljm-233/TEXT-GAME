@@ -226,6 +226,13 @@ void Console::shutdown() {
     cv_.notify_all();
 }
 
+void Console::clear() {
+    std::lock_guard<std::mutex> lock(mtx_);
+    lines_.clear();
+    outputBuffer_.clear();
+    scrollOffset_ = 0;
+}
+
 bool Console::isShutdown() const {
     std::lock_guard<std::mutex> lock(mtx_);
     return shutdown_;

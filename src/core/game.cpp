@@ -47,7 +47,7 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
                 window_, font, logger_);
         case SceneId::Console:
             return std::make_unique<ConsoleScene>(
-                background_, preferences_, font, logger_);
+                background_, preferences_, saveManager_, font, logger_);
         default:
             return nullptr;
     }

@@ -27,6 +27,7 @@ public:
     bool isShutdown() const;
 
     void render(sf::RenderTarget& target);
+    void clear();
 
 private:
     void submitCurrentInput();

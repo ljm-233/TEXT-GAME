@@ -13,7 +13,7 @@ constexpr const char* Off           = "关";
 
 // ===== 主菜单 =====
 constexpr const char* StartGame     = "启动游戏";
-constexpr const char* Calculator    = "计算器";
+constexpr const char* Calculator    = "控制台";
 constexpr const char* Settings      = "设置";
 constexpr const char* ExitGame      = "退出游戏";
 

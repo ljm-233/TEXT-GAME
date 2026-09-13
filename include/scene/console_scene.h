@@ -3,6 +3,8 @@
 #include "background.h"
 #include "console.h"
 #include "preferences.h"
+#include "save_manager.h"
+#include "logging.h"
 #include <memory>
 #include <thread>
 #include <atomic>
@@ -14,6 +16,7 @@ class ConsoleScene : public Scene {
 public:
     ConsoleScene(std::shared_ptr<Background>  background,
                  std::shared_ptr<Preferences> preferences,
+                 std::shared_ptr<SaveManager> saveManager,
                  const sf::Font&              font,
                  std::shared_ptr<Logger>      logger);
 
@@ -23,14 +26,17 @@ public:
     void update(float dt) override;
     void render(Window& window) override;
 
-    SceneId nextScene() const override { return nextScene_; }
+    SceneId nextScene() const override;
 
 private:
-    void startCalculator();
+    void startCommandLoop();
     void stopWorker();
+    void dispatchCommand(const std::string& line);
+    void printWelcome();
 
     std::shared_ptr<Background>  background_;
     std::shared_ptr<Preferences> preferences_;
+    std::shared_ptr<SaveManager> saveManager_;
     std::shared_ptr<Logger>      logger_;
 
     std::unique_ptr<Console> console_;
@@ -41,6 +47,5 @@ private:
 
     std::thread       worker_;
     std::atomic<bool> workerDone_{false};
-
-    SceneId nextScene_ = SceneId::None;
+    std::atomic<int>  pendingScene_{static_cast<int>(SceneId::None)};
 };
