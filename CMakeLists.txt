@@ -21,6 +21,8 @@ add_executable(text_game
     src/save_select_scene.cpp
     src/game_scene.cpp
     src/settings_scene.cpp
+    src/console.cpp
+    src/console_scene.cpp
     src/window.cpp
 )
 

@@ -3,6 +3,7 @@
 #include "save_select_scene.h"
 #include "game_scene.h"
 #include "settings_scene.h"
+#include "console_scene.h"
 #include <SFML/System/Clock.hpp>
 
 Game::Game(std::shared_ptr<Window>        window,
@@ -38,6 +39,10 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
             return std::make_unique<SettingsScene>(
                 background_, preferences_, runtimeConfig_,
                 window_, font, logger_);
+
+        case SceneId::Console:
+            return std::make_unique<ConsoleScene>(
+                background_, font, logger_);
 
         default:
             return nullptr;

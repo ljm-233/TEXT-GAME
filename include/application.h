@@ -5,7 +5,6 @@
 #include <stdexcept>
 #include <typeindex>
 
-// 简易 DI 容器
 class Container {
 public:
     template <typename T>
@@ -36,11 +35,9 @@ private:
     std::unordered_map<std::type_index, std::shared_ptr<void>> instances_;
 };
 
-// 主类：单例 + DI 容器
 class Application {
 public:
     static Application& instance();
-
     void run();
 
     Application(const Application&) = delete;
@@ -50,8 +47,7 @@ private:
     Application();
     ~Application() = default;
 
-    void registerDependencies();   // 注册所有依赖
-    int  showMenu();               // 显示主菜单并返回用户选择
+    void registerDependencies();
 
     Container container_;
 };

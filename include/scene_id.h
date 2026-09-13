@@ -6,5 +6,6 @@ enum class SceneId {
     MainMenu,
     SaveSelect,
     Game,
-    Settings
+    Settings,
+    Console
 };
