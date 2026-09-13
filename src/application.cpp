@@ -11,6 +11,7 @@
 #include "save_manager.h"
 #include "game.h"
 #include "ui_scale.h"
+#include "theme.h"
 
 using namespace std;
 
@@ -44,27 +45,27 @@ void Application::registerDependencies() {
         return make_shared<Preferences>(*paths);
     });
 
-    // ⭐ 应用 ui_scale：必须在 Window / Game 创建之前
+    // 应用 UI 缩放 + 主题
     {
         auto prefs = container_.resolve<Preferences>();
-        float s = static_cast<float>(prefs->getDouble("ui_scale", 1.0));
-        setUiScale(s);
+        setUiScale(static_cast<float>(prefs->getDouble("ui_scale", 1.0)));
+        setTheme(static_cast<ThemeId>(prefs->getInt("theme", 0)));
     }
 
     container_.registerType<Logger>([this]() {
-        auto cfg = container_.resolve<BootstrapConfig>();
+        auto cfg   = container_.resolve<BootstrapConfig>();
+        auto prefs = container_.resolve<Preferences>();
         auto logPath = cfg->configFile("app.log");
-        return make_shared<Logger>(logPath.string());
+        int lvl = prefs->getInt("log_level", static_cast<int>(LogLevel::Info));
+        return make_shared<Logger>(logPath.string(), static_cast<LogLevel>(lvl));
     });
 
-    // Window —— 按 remember_window_size 决定用 runtime 还是 preferences
     container_.registerType<Window>([this]() {
         auto prefs   = container_.resolve<Preferences>();
         auto runtime = container_.resolve<RuntimeConfig>();
 
         unsigned w = 0, h = 0;
         bool rememberSize = prefs->getBool("remember_window_size", true);
-
         if (rememberSize) {
             int lastW = runtime->getInt("last_window_width",  -1);
             int lastH = runtime->getInt("last_window_height", -1);
@@ -91,11 +92,13 @@ void Application::registerDependencies() {
 
     container_.registerType<Background>([this]() {
         auto paths  = container_.resolve<Paths>();
+        auto prefs  = container_.resolve<Preferences>();
         auto window = container_.resolve<Window>();
         auto logger = container_.resolve<Logger>();
         auto size   = window->native().getSize();
+        std::string initial = prefs->get("current_wallpaper", "");
         return std::make_shared<Background>(
-            paths->wallpaperDir(), size.x, size.y, logger);
+            paths->wallpaperDir(), initial, size.x, size.y, logger);
     });
 
     container_.registerType<FontHolder>([this]() {

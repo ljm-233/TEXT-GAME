@@ -1,122 +1,176 @@
 # TEXT-GAME
 
-一个基于 C++ 和 SFML 的跨平台游戏项目。包含日志模块、配置系统、路径管理、简易依赖注入（DI）容器，以及一个可扩展的窗口与场景架构。
+一个基于 C++20 和 SFML 3 的跨平台游戏项目。目前包含完整的**应用框架**：场景系统、依赖注入、配置管理、日志、存档、虚拟终端控制台、可扩展的设置页。
 
 ## 📁 项目结构
 
 ```text
 TEXT-GAME/
-├── .vscode/               # VS Code 调试与任务配置
-├── build/                 # CMake 构建产物（不提交至 Git）
-├── cache/                 # 可重建缓存（不提交）
-├── config/                # 用户配置（settings.conf、app.log）
-├── saves/                 # 存档（不提交）
-├── temp/                  # 临时文件（不提交）
-├── include/               # 头文件目录
-│   ├── application.h      # DI 容器 + Application 主类声明
-│   ├── config.h           # 配置对象，统一读写接口
-│   ├── logging.h          # 日志模块（颜色、多级别、线程安全）
-│   ├── paths.h            # 四个资源目录的管理
-│   ├── time_utils.h       # 时间工具接口
-│   └── window.h           # SFML 窗口封装
-├── scripts/               # 辅助脚本（如构建、打包）
-│   └── tree.sh
-├── src/                   # 源文件目录
-│   ├── application.cpp    # Application 实现，负责注册依赖
-│   ├── main.cpp           # 程序入口（仅启动 Application）
-│   └── window.cpp         # 窗口实现
+├── assets/                # 资源（字体等）
+│   └── font.otf
+├── cache/                 # 可重建缓存（不提交内容）
+├── config/                # 运行时配置（不提交内容）
+│   ├── app.log            # 日志
+│   ├── bootstrap.conf     # 引导配置
+│   ├── preferences.conf   # 用户偏好
+│   └── runtime.conf       # 运行时状态
+├── include/               # 头文件
+│   ├── application.h
+│   ├── background.h
+│   ├── bootstrap_config.h
+│   ├── button.h
+│   ├── calculator.h
+│   ├── config.h
+│   ├── confirm_dialog.h
+│   ├── console.h
+│   ├── console_scene.h
+│   ├── font_holder.h
+│   ├── game.h
+│   ├── game_scene.h
+│   ├── logging.h
+│   ├── main_menu_scene.h
+│   ├── paths.h
+│   ├── preferences.h
+│   ├── resolution.h
+│   ├── runtime_config.h
+│   ├── save_manager.h
+│   ├── save_select_scene.h
+│   ├── scene.h
+│   ├── scene_id.h
+│   ├── settings_scene.h
+│   ├── slider.h
+│   ├── theme.h
+│   ├── time_utils.h
+│   ├── ui_scale.h
+│   ├── utf8.h
+│   └── window.h
+├── saves/                 # 存档（不提交内容）
+├── src/                   # 源文件
+│   ├── application.cpp
+│   ├── background.cpp
+│   ├── button.cpp
+│   ├── calculator.cpp
+│   ├── confirm_dialog.cpp
+│   ├── console.cpp
+│   ├── console_scene.cpp
+│   ├── font_holder.cpp
+│   ├── game.cpp
+│   ├── game_scene.cpp
+│   ├── main.cpp
+│   ├── main_menu_scene.cpp
+│   ├── save_manager.cpp
+│   ├── save_select_scene.cpp
+│   ├── settings_scene.cpp
+│   ├── slider.cpp
+│   ├── theme.cpp
+│   ├── ui_scale.cpp
+│   ├── utf8.cpp
+│   └── window.cpp
+├── temp/                  # 临时文件（不提交内容）
+├── wallpaper/             # 壁纸
+│   └── wallpaper.jpg
 ├── .gitignore
 ├── CMakeLists.txt
 └── README.md
 ```
 
-## 🧩 核心模块说明
+## 🧩 核心架构
 
-| 文件/模块 | 职责 |
+| 模块 | 职责 |
 | :--- | :--- |
-| `time_utils.h` | 提供时间格式化接口 |
-| `logging.h` | 日志模块，支持彩色终端输出与文件记录，线程安全 |
-| `paths.h` | 管理项目根目录下的 `config/ cache/ temp/ saves/` 四个目录 |
-| `config.h` | 统一的配置读写接口，同时作为资源路径的唯一出口 |
-| `window.h` / `window.cpp` | 封装 SFML 窗口，隔离渲染库与游戏逻辑 |
-| `application.h` / `application.cpp` | 主类 `Application` 与简易 DI 容器 `Container` |
-| `main.cpp` | 程序入口，创建 `Application` 并运行 |
+| **DI 容器**（`application.h`） | 统一注册/解析所有依赖 |
+| **场景系统**（`scene.h` / `scene_id.h`） | `MainMenu` / `SaveSelect` / `Game` / `Settings` / `Console`，支持 ESC 返回上一场景 |
+| **配置分层** | `BootstrapConfig`（启动前）/ `RuntimeConfig`（运行时）/ `Preferences`（用户偏好） |
+| **日志**（`logging.h`） | 彩色终端输出 + 文件记录 + 多级别过滤（Trace~Error） |
+| **虚拟终端**（`console.h`） | 用 `streambuf` 重定向 `cin`/`cout`，在窗口内跑命令行程序 |
+| **UI 组件** | `Button` / `Slider` / `ConfirmDialog`，全部走主题系统 |
+| **主题**（`theme.h`） | 深色 / 蓝色 / 浅色，三套配色 |
+| **UI 缩放**（`ui_scale.h`） | 0.8x ~ 1.5x，全局字号系数 |
 
-## 🔧 依赖注入（DI）设计
+## 🎮 功能一览
 
-项目使用一个简易的 `Container` 类来管理对象的创建与依赖关系。
+### 主菜单
+- 启动游戏（选择/创建/删除存档）
+- 计算器（在虚拟终端里跑）
+- 设置
+- 退出游戏
 
-- 在 `Application` 的构造函数中**注册类型**（如 `Paths`、`Config`、`Logger`）。
-- 在 `Application::run()` 中**解析并获取实例**。
-- 新增类时，只需在 `Application::Application()` 中注册，无需修改 `main.cpp`。
+### 设置（左侧 Tab 分页）
+- **显示**：分辨率、全屏、V-Sync、抗锯齿、日志级别
+- **界面**：帧率显示、界面缩放、控制台遮罩、控制台字号、控制台历史行数、主题、壁纸切换
+- **其他**：记住窗口大小、恢复默认设置
 
-## 🎮 技术栈
+### 控制台
+- 全键盘输入，回车提交，退格删除
+- ↑/↓ 翻历史命令
+- ANSI 颜色码自动过滤
+- ESC 返回上一场景
+
+## 🛠 技术栈
 
 - **语言**：C++20
-- **构建**：CMake + Ninja
-- **窗口/渲染**：SFML 3（跨平台：Linux / Windows / macOS）
-- **依赖注入**：自研简易 DI 容器
+- **构建**：CMake ≥ 3.20 + Ninja
+- **图形/窗口**：SFML 3
+- **依赖注入**：自研简易 `Container`
+- **跨平台**：Linux / Windows / macOS
 
 ## 🚀 构建与运行
 
 ### 环境要求
 
-- **Linux / macOS / WSL**：`g++`（或 `clang++`）、`CMake 3.20+`、`Ninja`
-- **Windows**：Visual Studio 2022 + vcpkg（推荐）
+- **Arch Linux**：
+  ```bash
+  sudo pacman -S base-devel cmake ninja sfml python-fonttools
+  ```
+- **Ubuntu / Debian**：
+  ```bash
+  sudo apt install build-essential cmake ninja-build libsfml-dev
+  ```
+- **Windows**：Visual Studio 2022 + vcpkg
+  ```powershell
+  vcpkg install sfml:x64-windows
+  ```
 
-### 安装依赖
+### 准备资源
 
-**Arch Linux：**
+字体文件（必需，用于显示中文）：
+
 ```bash
-sudo pacman -S cmake ninja sfml
+# Arch Linux：从 Noto CJK 提取简体中文字体
+python3 -c "
+from fontTools.ttLib import TTCollection
+ttc = TTCollection('/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc')
+ttc.fonts[2].save('assets/font.otf')
+"
 ```
 
-**Ubuntu / Debian：**
-```bash
-sudo apt install cmake ninja-build libsfml-dev
-```
+壁纸（可选）：
 
-**Windows（vcpkg）：**
-```powershell
-vcpkg install sfml:x64-windows
+```bash
+cp ~/Pictures/你的图.jpg wallpaper/wallpaper.jpg
 ```
 
 ### 编译运行
 
 ```bash
-# 进入项目根目录
+git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
 
-# 创建构建目录
 mkdir -p build && cd build
-
-# 配置（使用 Ninja 作为生成器）
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug
-
-# 编译
 cmake --build . -j
-
-# 运行
 ./text_game
 ```
 
-> **提示**：在 VS Code（建议使用 VSCodium）中开发时，可直接使用 `.vscode/` 中预配置的 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
+### VS Code
+
+`.vscode/` 里预配置了 `tasks.json` 和 `launch.json`，按 `F5` 即可调试运行。
 
 ## 📥 克隆（下载）
 
-建议先创建一个名为 `coding` 的文件夹用于存放项目。
-
 ```bash
-# 进入你想存放项目的目录
 cd ~/coding
-
-# 克隆仓库（推荐 SSH，一次配置永久免密）
 git clone git@github.com:ljm-233/TEXT-GAME.git
-
-# 或者使用 HTTPS（需要输入 Token）
-git clone https://github.com/ljm-233/TEXT-GAME.git
-
-# 进入项目
 cd TEXT-GAME
 ```
 
@@ -125,19 +179,12 @@ cd TEXT-GAME
 
 ## 📤 推送（上传）
 
-每次写完代码后，按以下步骤提交并推送：
+每次写完代码后：
 
 ```bash
-# 查看改了哪些文件
 git status
-
-# 添加所有改动到暂存区
 git add .
-
-# 提交，并写清楚改了什么
-git commit -m "改了什么写什么"
-
-# 推送到远程 main 分支
+git commit -m "描述这次改了什么"
 git push
 ```
 
@@ -149,20 +196,27 @@ git push -u origin main
 
 ## 👥 多人协作
 
-推送前先拉取远程最新代码，避免冲突：
+推送前先拉取远程最新代码：
 
 ```bash
-# 拉取远程最新代码并变基
 git pull --rebase
 
 # 如果有冲突，手动解决冲突文件后：
 git add .
 git rebase --continue
-
-# 再次推送
 git push
 ```
 
+## 🧭 开发约定
+
+1. **新增 `.cpp` 文件后，记得加进 `CMakeLists.txt` 的 `add_executable` 列表。**
+2. **头文件用 `#pragma once`，`.cpp` 开头 `#include` 对应的 `.h`。**
+3. **新增类通过 DI 容器注册**，在 `Application::registerDependencies()` 里加一行。
+4. **中文要经过 `toSf()` 转换**（`#include "utf8.h"`），否则 SFML 3 会按 Latin-1 解释。
+5. **字号用 `scaledFontSize()`**（`#include "ui_scale.h"`），跟随全局 UI 缩放。
+6. **颜色从 `getTheme()` 取**（`#include "theme.h"`），不要硬编码。
+7. **配置读写走 `Config::set*` / `get*`**，不要直接操作文件；写盘由 `flush()` 统一处理。
+
 ---
 
-**开发习惯建议**：开始写代码前先 `git pull`，完成一个小功能就 `add → commit → push`，保持提交历史清晰。
+**开发习惯**：开始写代码前 `git pull`，完成一个小功能就 `add → commit → push`，保持提交历史清晰。

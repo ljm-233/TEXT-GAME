@@ -1,16 +1,7 @@
 #include "button.h"
+#include "theme.h"
 #include "ui_scale.h"
-
-namespace {
-const sf::Color kNormal  {70, 70, 80};
-const sf::Color kHover   {105, 105, 125};
-const sf::Color kPressed {45, 45, 55};
-const sf::Color kSelected{70, 140, 220};
-
-sf::String toSf(const std::string& s) {
-    return sf::String::fromUtf8(s.begin(), s.end());
-}
-}
+#include "utf8.h"
 
 Button::Button(const std::string& label,
                const sf::Font& font,
@@ -23,8 +14,8 @@ Button::Button(const std::string& label,
     shape_.setSize(size_);
     shape_.setPosition(position_);
     shape_.setOutlineThickness(2.f);
-    shape_.setOutlineColor(sf::Color::White);
-    text_.setFillColor(sf::Color::White);
+
+    text_.setFillColor(getTheme().textPrimary);
     refreshColor();
     centerText();
 }
@@ -52,10 +43,14 @@ void Button::setSelected(bool s) {
 }
 
 void Button::refreshColor() {
-    if (pressed_)         shape_.setFillColor(kPressed);
-    else if (hovered_)    shape_.setFillColor(kHover);
-    else if (selected_)   shape_.setFillColor(kSelected);
-    else                  shape_.setFillColor(kNormal);
+    const auto& t = getTheme();
+    if (pressed_)       shape_.setFillColor(t.buttonPressed);
+    else if (hovered_)  shape_.setFillColor(t.buttonHover);
+    else if (selected_) shape_.setFillColor(t.buttonSelected);
+    else                shape_.setFillColor(t.buttonNormal);
+
+    shape_.setOutlineColor(t.outline);
+    text_.setFillColor(t.textPrimary);
 }
 
 void Button::centerText() {

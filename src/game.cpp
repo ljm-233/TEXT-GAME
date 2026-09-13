@@ -55,6 +55,9 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
 void Game::switchScene(SceneId next) {
     if (next == SceneId::None) return;
 
+    // 切换场景前把配置落盘一次
+    flushConfigs();
+
     if (next == SceneId::Exit) {
         window_->close();
         return;
@@ -103,6 +106,11 @@ void Game::renderFpsOverlay() {
     window_->native().draw(fpsText_);
 }
 
+void Game::flushConfigs() {
+    preferences_->flush();
+    runtimeConfig_->flush();
+}
+
 void Game::run() {
     logger_->info("游戏启动");
 
@@ -123,15 +131,22 @@ void Game::run() {
             fpsElapsed_ = 0.f;
         }
 
+        // 每 5 秒 flush 一次配置
+        flushTimer_ += dt;
+        if (flushTimer_ >= 5.f) {
+            flushConfigs();
+            flushTimer_ = 0.f;
+        }
+
         window_->pollEvents([&](const sf::Event& e) {
             currentScene_->handleEvent(e);
         });
 
         currentScene_->update(dt);
-        currentScene_->render(*window_);   // scene 只画内容
+        currentScene_->render(*window_);
 
-        renderFpsOverlay();                // 最后叠加 FPS
-        window_->display();                // 统一在这里 present
+        renderFpsOverlay();
+        window_->display();
 
         SceneId next = currentScene_->nextScene();
         if (next != SceneId::None && next != currentId_) {
@@ -140,5 +155,7 @@ void Game::run() {
     }
 
     saveWindowState();
+    flushConfigs();   // 退出前最后落盘
+
     logger_->info("游戏结束");
 }

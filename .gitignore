@@ -1,10 +1,40 @@
+# ===== 构建产物 =====
 build/
-# 运行时生成的资源
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+
+# ===== CMake 临时 =====
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
+# ===== 运行时生成（保留目录，忽略内容）=====
 config/*
-cache/*
-temp/*
-saves/*
 !config/.gitkeep
-!cache/.gitkeep
-!temp/.gitkeep
+saves/*
 !saves/.gitkeep
+cache/*
+!cache/.gitkeep
+temp/*
+!temp/.gitkeep
+
+# ===== 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*~
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db

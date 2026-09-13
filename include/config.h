@@ -11,8 +11,12 @@ public:
           filePath_(paths.configDir() / filename) {
         load();
     }
-    virtual ~Config() = default;
 
+    virtual ~Config() {
+        flush();
+    }
+
+    // ---------- 读 ----------
     std::string get(const std::string& key, const std::string& defaultValue = "") const {
         auto it = values_.find(key);
         return it != values_.end() ? it->second : defaultValue;
@@ -37,15 +41,34 @@ public:
         return v == "true" || v == "1" || v == "yes";
     }
 
+    // ---------- 写（只改内存，延迟到 flush 才落盘） ----------
     void set(const std::string& key, const std::string& value) {
+        auto it = values_.find(key);
+        if (it != values_.end() && it->second == value) return;  // 值没变，不标脏
         values_[key] = value;
-        save();
+        dirty_ = true;
     }
     void setInt(const std::string& key, int v)       { set(key, std::to_string(v)); }
     void setDouble(const std::string& key, double v) { set(key, std::to_string(v)); }
     void setBool(const std::string& key, bool v)     { set(key, v ? "true" : "false"); }
 
-    // 资源路径统一出口
+    // 清空全部并落盘
+    void resetAll() {
+        values_.clear();
+        dirty_ = true;
+        flush();
+    }
+
+    // 立即写磁盘（dirty_ 为 false 时是空操作）
+    void flush() {
+        if (!dirty_) return;
+        save();
+        dirty_ = false;
+    }
+
+    bool isDirty() const { return dirty_; }
+
+    // ---------- 资源路径 ----------
     std::filesystem::path configDir()    const { return paths_.configDir(); }
     std::filesystem::path cacheDir()     const { return paths_.cacheDir(); }
     std::filesystem::path tempDir()      const { return paths_.tempDir(); }
@@ -68,6 +91,14 @@ protected:
     std::filesystem::path filePath_;
     std::unordered_map<std::string, std::string> values_;
 
+    void save() const {
+        std::ofstream out(filePath_);
+        if (!out) return;
+        for (const auto& [k, v] : values_) {
+            out << k << '=' << v << '\n';
+        }
+    }
+
 private:
     void load() {
         std::ifstream in(filePath_);
@@ -81,9 +112,5 @@ private:
         }
     }
 
-    void save() const {
-        std::ofstream out(filePath_);
-        if (!out) return;
-        for (const auto& [k, v] : values_) out << k << '=' << v << '\n';
-    }
+    bool dirty_ = false;
 };

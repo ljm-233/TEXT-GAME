@@ -1,18 +1,10 @@
 #include "slider.h"
+#include "theme.h"
 #include "ui_scale.h"
+#include "utf8.h"
 #include <algorithm>
 #include <cmath>
 #include <string>
-
-namespace {
-const sf::Color kTrackColor {60, 60, 80};
-const sf::Color kFillColor  {100, 150, 220};
-const sf::Color kHandleColor{230, 230, 240};
-
-sf::String toSf(const std::string& s) {
-    return sf::String::fromUtf8(s.begin(), s.end());
-}
-}
 
 Slider::Slider(const sf::Font& font,
                float minValue, float maxValue, float initialValue,
@@ -24,23 +16,29 @@ Slider::Slider(const sf::Font& font,
 
     track_.setSize(size_);
     track_.setPosition(position_);
-    track_.setFillColor(kTrackColor);
+    track_.setFillColor(getTheme().buttonNormal);
     track_.setOutlineThickness(1.f);
-    track_.setOutlineColor(sf::Color(90, 90, 120));
+    track_.setOutlineColor(getTheme().outline);
 
     fill_.setSize({0.f, size_.y});
-    fill_.setFillColor(kFillColor);
+    fill_.setFillColor(getTheme().buttonSelected);
 
     handle_.setSize({10.f, size_.y + 4.f});
-    handle_.setFillColor(kHandleColor);
+    handle_.setFillColor(getTheme().textPrimary);
 
-    valueText_.setFillColor(sf::Color(230, 230, 240));
+    valueText_.setFillColor(getTheme().textPrimary);
 
     updateLayout();
 }
 
 void Slider::setValue(float v) {
     value_ = std::clamp(v, min_, max_);
+    updateLayout();
+}
+
+void Slider::setPosition(sf::Vector2f p) {
+    position_ = p;
+    track_.setPosition(position_);
     updateLayout();
 }
 
@@ -107,14 +105,15 @@ bool Slider::consumeChanged() {
 }
 
 void Slider::render(sf::RenderTarget& target) {
+    // 每帧刷新颜色（主题可能变了）
+    track_.setFillColor(getTheme().buttonNormal);
+    track_.setOutlineColor(getTheme().outline);
+    fill_.setFillColor(getTheme().buttonSelected);
+    handle_.setFillColor(getTheme().textPrimary);
+    valueText_.setFillColor(getTheme().textPrimary);
+
     target.draw(track_);
     target.draw(fill_);
     target.draw(handle_);
     target.draw(valueText_);
-}
-
-void Slider::setPosition(sf::Vector2f p) {
-    position_ = p;
-    track_.setPosition(position_);
-    updateLayout();
 }

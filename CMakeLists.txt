@@ -10,6 +10,9 @@ find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 add_executable(text_game
     src/main.cpp
     src/application.cpp
+    src/ui_scale.cpp
+    src/theme.cpp
+    src/utf8.cpp
     src/calculator.cpp
     src/game.cpp
     src/background.cpp
@@ -25,7 +28,6 @@ add_executable(text_game
     src/console.cpp
     src/console_scene.cpp
     src/window.cpp
-    src/ui_scale.cpp
 )
 
 target_include_directories(text_game PRIVATE include src)

@@ -28,6 +28,7 @@ private:
     void switchScene(SceneId next);
     void saveWindowState();
     void renderFpsOverlay();
+    void flushConfigs();
 
     std::shared_ptr<Window>        window_;
     std::shared_ptr<Logger>        logger_;
@@ -38,10 +39,11 @@ private:
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
 
     sf::Text fpsText_;
+    int      fpsFrameCount_ = 0;
+    float    fpsElapsed_    = 0.f;
+    float    fpsDisplayed_  = 0.f;
 
-    int   fpsFrameCount_ = 0;
-    float fpsElapsed_    = 0.f;
-    float fpsDisplayed_  = 0.f;
+    float    flushTimer_    = 0.f;   // 每 5 秒 flush 一次
 
     std::unique_ptr<Scene> currentScene_;
     SceneId currentId_ = SceneId::None;
