@@ -1,4 +1,5 @@
 #include "console.h"
+#include "ui_scale.h"
 #include <algorithm>
 #include <streambuf>
 #include <ostream>
@@ -87,9 +88,13 @@ std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c) {
     return std::make_unique<ConsoleStreamBuf>(c);
 }
 
-Console::Console(const sf::Font& font, sf::Vector2u /*size*/)
+Console::Console(const sf::Font& font,
+                 unsigned fontSize,
+                 unsigned maxLines,
+                 sf::Vector2u /*size*/)
     : font_(font),
-      text_(font, sf::String(), 18) {
+      maxLines_(maxLines),
+      text_(font, sf::String(), scaledFontSize(fontSize)) {
     text_.setFillColor(sf::Color(220, 220, 220));
 
     inputLine_.setFillColor(sf::Color(20, 20, 30, 220));
@@ -131,7 +136,7 @@ void Console::flushOutputBuffer() {
         std::string line = outputBuffer_.substr(0, pos);
         if (!line.empty() && line.back() == '\r') line.pop_back();
         lines_.push_back(line);
-        if (lines_.size() > 200) lines_.pop_front();
+        if (lines_.size() > maxLines_) lines_.pop_front();
         outputBuffer_.erase(0, pos + 1);
     }
 }
@@ -147,7 +152,7 @@ void Console::submitCurrentInput() {
             if (history_.size() > 100) history_.erase(history_.begin());
         }
         lines_.push_back("> " + line);
-        if (lines_.size() > 200) lines_.pop_front();
+        if (lines_.size() > maxLines_) lines_.pop_front();
         currentInput_.clear();
         pendingLine_ = line;
         lineReady_ = true;

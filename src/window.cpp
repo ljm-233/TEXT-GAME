@@ -1,10 +1,11 @@
 #include "window.h"
 
 Window::Window(unsigned width, unsigned height,
-               const std::string& title, bool fullscreen)
-    : title_(title) {
+               const std::string& title,
+               bool fullscreen, unsigned antiAliasing)
+    : title_(title), antiAliasing_(antiAliasing) {
     sf::ContextSettings settings;
-    settings.antiAliasingLevel = 8;
+    settings.antiAliasingLevel = antiAliasing_;
 
     window_.create(
         sf::VideoMode({width, height}),
@@ -53,7 +54,7 @@ void Window::draw(const sf::Drawable& drawable) {
 
 void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
     sf::ContextSettings settings;
-    settings.antiAliasingLevel = 8;
+    settings.antiAliasingLevel = antiAliasing_;
 
     window_.create(
         sf::VideoMode({width, height}),

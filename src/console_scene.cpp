@@ -10,7 +10,14 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
       preferences_(std::move(preferences)),
       logger_(std::move(logger)) {
 
-    console_ = std::make_unique<Console>(font, sf::Vector2u{1280, 720});
+    int fontSize     = preferences_->getInt("console_font_size", 18);
+    int historyLines = preferences_->getInt("console_history_lines", 200);
+
+    console_ = std::make_unique<Console>(
+        font,
+        static_cast<unsigned>(fontSize),
+        static_cast<unsigned>(historyLines),
+        sf::Vector2u{1280, 720});
 
     consoleBuf_ = makeConsoleStreamBuf(console_.get());
     oldCin_  = std::cin.rdbuf(consoleBuf_.get());

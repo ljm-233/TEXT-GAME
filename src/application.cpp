@@ -10,6 +10,7 @@
 #include "font_holder.h"
 #include "save_manager.h"
 #include "game.h"
+#include "ui_scale.h"
 
 using namespace std;
 
@@ -23,6 +24,7 @@ Application::Application() {
 }
 
 void Application::registerDependencies() {
+
     container_.registerType<Paths>([]() {
         return make_shared<Paths>();
     });
@@ -31,14 +33,23 @@ void Application::registerDependencies() {
         auto paths = container_.resolve<Paths>();
         return make_shared<BootstrapConfig>(*paths);
     });
+
     container_.registerType<RuntimeConfig>([this]() {
         auto paths = container_.resolve<Paths>();
         return make_shared<RuntimeConfig>(*paths);
     });
+
     container_.registerType<Preferences>([this]() {
         auto paths = container_.resolve<Paths>();
         return make_shared<Preferences>(*paths);
     });
+
+    // ⭐ 应用 ui_scale：必须在 Window / Game 创建之前
+    {
+        auto prefs = container_.resolve<Preferences>();
+        float s = static_cast<float>(prefs->getDouble("ui_scale", 1.0));
+        setUiScale(s);
+    }
 
     container_.registerType<Logger>([this]() {
         auto cfg = container_.resolve<BootstrapConfig>();
@@ -46,24 +57,23 @@ void Application::registerDependencies() {
         return make_shared<Logger>(logPath.string());
     });
 
-        // 5. Window —— 按 remember_window_size 决定用 runtime 还是 preferences
+    // Window —— 按 remember_window_size 决定用 runtime 还是 preferences
     container_.registerType<Window>([this]() {
         auto prefs   = container_.resolve<Preferences>();
         auto runtime = container_.resolve<RuntimeConfig>();
 
-        unsigned w, h;
-
+        unsigned w = 0, h = 0;
         bool rememberSize = prefs->getBool("remember_window_size", true);
-        int lastW = -1, lastH = -1;
-        if (rememberSize) {
-            lastW = runtime->getInt("last_window_width",  -1);
-            lastH = runtime->getInt("last_window_height", -1);
-        }
 
-        if (lastW > 0 && lastH > 0) {
-            w = static_cast<unsigned>(lastW);
-            h = static_cast<unsigned>(lastH);
-        } else {
+        if (rememberSize) {
+            int lastW = runtime->getInt("last_window_width",  -1);
+            int lastH = runtime->getInt("last_window_height", -1);
+            if (lastW > 0 && lastH > 0) {
+                w = static_cast<unsigned>(lastW);
+                h = static_cast<unsigned>(lastH);
+            }
+        }
+        if (w == 0 || h == 0) {
             int idx = clampResolutionIndex(prefs->getInt("resolution_index", 0));
             w = kResolutions[idx].width;
             h = kResolutions[idx].height;
@@ -71,8 +81,10 @@ void Application::registerDependencies() {
 
         bool fs    = prefs->getBool("fullscreen", false);
         bool vsync = prefs->getBool("vsync", true);
+        int  aa    = prefs->getInt("anti_aliasing", 8);
 
-        auto win = std::make_shared<Window>(w, h, "TEXT-GAME", fs);
+        auto win = std::make_shared<Window>(
+            w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
         win->setVsync(vsync);
         return win;
     });
@@ -122,7 +134,6 @@ void Application::run() {
     logger->info("存档目录: " + paths->savesDir().string());
     logger->info("资源目录: " + paths->assetsDir().string());
 
-    // 直接启动游戏窗口，不再显示终端菜单
     auto game = container_.resolve<Game>();
     game->run();
 

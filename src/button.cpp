@@ -1,4 +1,5 @@
 #include "button.h"
+#include "ui_scale.h"
 
 namespace {
 const sf::Color kNormal  {70, 70, 80};
@@ -16,7 +17,7 @@ Button::Button(const std::string& label,
                sf::Vector2f position,
                sf::Vector2f size,
                unsigned characterSize)
-    : text_(font, toSf(label), characterSize),
+    : text_(font, toSf(label), scaledFontSize(characterSize)),
       position_(position),
       size_(size) {
     shape_.setSize(size_);

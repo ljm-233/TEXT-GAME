@@ -1,4 +1,5 @@
 #include "slider.h"
+#include "ui_scale.h"
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -16,7 +17,7 @@ sf::String toSf(const std::string& s) {
 Slider::Slider(const sf::Font& font,
                float minValue, float maxValue, float initialValue,
                sf::Vector2f position, sf::Vector2f size)
-    : valueText_(font, sf::String(), 20),
+    : valueText_(font, sf::String(), scaledFontSize(20)),
       position_(position), size_(size),
       min_(minValue), max_(maxValue),
       value_(std::clamp(initialValue, minValue, maxValue)) {

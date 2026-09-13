@@ -25,6 +25,7 @@ add_executable(text_game
     src/console.cpp
     src/console_scene.cpp
     src/window.cpp
+    src/ui_scale.cpp
 )
 
 target_include_directories(text_game PRIVATE include src)

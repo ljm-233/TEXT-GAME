@@ -8,7 +8,10 @@
 
 class Console {
 public:
-    Console(const sf::Font& font, sf::Vector2u size);
+    Console(const sf::Font& font,
+            unsigned fontSize,
+            unsigned maxLines,
+            sf::Vector2u size);
 
     void handleTextEntered(char32_t unicode);
     void handleKeyPressed(sf::Keyboard::Key key);
@@ -27,6 +30,7 @@ private:
     void flushOutputBuffer();
 
     const sf::Font& font_;
+    unsigned maxLines_;
 
     std::deque<std::string> lines_;
     std::string currentInput_;
