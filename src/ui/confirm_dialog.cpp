@@ -2,11 +2,14 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
+#include "strings.h"
 
 ConfirmDialog::ConfirmDialog(const sf::Font& font,
                              const std::string& message,
-                             sf::Vector2f windowSize)
-    : message_(font, toSf(message), scaledFontSize(26)),
+                             sf::Vector2f windowSize,
+                             Mode mode)
+    : mode_(mode),
+      message_(font, toSf(message), scaledFontSize(24)),
       windowSize_(windowSize) {
 
     backdrop_.setFillColor(sf::Color(0, 0, 0, 160));
@@ -15,51 +18,64 @@ ConfirmDialog::ConfirmDialog(const sf::Font& font,
     panel_.setFillColor(getTheme().panelBg);
     panel_.setOutlineThickness(2.f);
     panel_.setOutlineColor(getTheme().outline);
-
     message_.setFillColor(getTheme().textPrimary);
 
-    yesButton_ = std::make_unique<Button>("是", font, sf::Vector2f{0.f, 0.f},
-                                          sf::Vector2f{120.f, 50.f}, 22);
-    noButton_  = std::make_unique<Button>("否", font, sf::Vector2f{0.f, 0.f},
-                                          sf::Vector2f{120.f, 50.f}, 22);
+    if (mode_ == Mode::Info) {
+        yesButton_ = std::make_unique<Button>("确定", font,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{140.f, 50.f}, 22);
+    } else {
+        yesButton_ = std::make_unique<Button>(Str::Yes, font,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{120.f, 50.f}, 22);
+        noButton_  = std::make_unique<Button>(Str::No, font,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{120.f, 50.f}, 22);
+    }
 
     relayout(windowSize_);
 }
 
 void ConfirmDialog::relayout(sf::Vector2f windowSize) {
     windowSize_ = windowSize;
-
     backdrop_.setSize(windowSize_);
 
-    const float panelW = 480.f;
-    const float panelH = 220.f;
+    // 面板尺寸：Info 模式更高，因为要多行文本
+    const float panelW = 520.f;
+    const float panelH = (mode_ == Mode::Info) ? 340.f : 200.f;
     float px = (windowSize.x - panelW) / 2.f;
     float py = (windowSize.y - panelH) / 2.f;
 
     panel_.setSize({panelW, panelH});
     panel_.setPosition({px, py});
 
+    // 文字：水平居中，垂直从面板顶部固定偏移（不再垂直居中）
     auto b = message_.getLocalBounds();
-    message_.setOrigin({b.position.x + b.size.x / 2.f,
-                        b.position.y + b.size.y / 2.f});
-    message_.setPosition({windowSize.x / 2.f, py + 70.f});
+    message_.setOrigin({b.position.x + b.size.x / 2.f, b.position.y});
+    message_.setPosition({windowSize.x / 2.f, py + 40.f});
 
-    const float gap = 40.f;
-    float btnW = 120.f;
-    float totalW = btnW * 2 + gap;
-    float bx = px + (panelW - totalW) / 2.f;
-    float by = py + panelH - 80.f;
-
-    yesButton_->setPosition({bx, by});
-    noButton_->setPosition({bx + btnW + gap, by});
+    // 按钮：固定在面板底部内边距 30
+    float btnY = py + panelH - 80.f;
+    if (mode_ == Mode::Info) {
+        float bw = 140.f;
+        yesButton_->setPosition({px + (panelW - bw) / 2.f, btnY});
+    } else {
+        const float gap = 40.f;
+        float btnW = 120.f;
+        float totalW = btnW * 2 + gap;
+        float bx = px + (panelW - totalW) / 2.f;
+        yesButton_->setPosition({bx, btnY});
+        noButton_->setPosition({bx + btnW + gap, btnY});
+    }
 }
 
 void ConfirmDialog::handleEvent(const sf::Event& event) {
     yesButton_->handleEvent(event);
-    noButton_->handleEvent(event);
+    if (noButton_) noButton_->handleEvent(event);
 
-    if (yesButton_->consumeClick()) result_ = Result::Yes;
-    if (noButton_->consumeClick())  result_ = Result::No;
+    if (yesButton_->consumeClick()) {
+        result_ = (mode_ == Mode::Info) ? Result::Ok : Result::Yes;
+    }
+    if (noButton_ && noButton_->consumeClick()) {
+        result_ = Result::No;
+    }
 }
 
 ConfirmDialog::Result ConfirmDialog::consumeResult() {
@@ -69,7 +85,6 @@ ConfirmDialog::Result ConfirmDialog::consumeResult() {
 }
 
 void ConfirmDialog::render(sf::RenderTarget& target) {
-    // 每帧刷新颜色
     panel_.setFillColor(getTheme().panelBg);
     panel_.setOutlineColor(getTheme().outline);
     message_.setFillColor(getTheme().textPrimary);
@@ -78,5 +93,5 @@ void ConfirmDialog::render(sf::RenderTarget& target) {
     target.draw(panel_);
     target.draw(message_);
     yesButton_->render(target);
-    noButton_->render(target);
+    if (noButton_) noButton_->render(target);
 }

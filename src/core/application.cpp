@@ -13,6 +13,7 @@
 #include "ui_scale.h"
 #include "theme.h"
 #include "button_style.h"
+#include <algorithm>
 
 using namespace std;
 
@@ -62,12 +63,23 @@ void Application::registerDependencies() {
     }
 
     // ===== Logger =====
-    container_.registerType<Logger>([this]() {
+        container_.registerType<Logger>([this]() {
         auto cfg   = container_.resolve<BootstrapConfig>();
         auto prefs = container_.resolve<Preferences>();
         auto logPath = cfg->configFile("app.log");
         int lvl = prefs->getInt("log_level", static_cast<int>(LogLevel::Info));
-        return make_shared<Logger>(logPath.string(), static_cast<LogLevel>(lvl));
+
+        // 日志轮转配置
+        static const size_t sizes[] = {0, 1*1024*1024, 5*1024*1024, 10*1024*1024};
+        static const int    keeps[] = {1, 3, 5, 10};
+        int rotIdx  = std::clamp(prefs->getInt("log_rotate", 0), 0, 3);
+        int keepIdx = std::clamp(prefs->getInt("log_keep", 1),   0, 3);
+
+        return make_shared<Logger>(
+            logPath.string(),
+            static_cast<LogLevel>(lvl),
+            sizes[rotIdx],
+            keeps[keepIdx]);
     });
 
     // ===== Window =====

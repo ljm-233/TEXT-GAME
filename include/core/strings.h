@@ -81,4 +81,13 @@ constexpr const char* ThemeDark  = "深色";
 constexpr const char* ThemeBlue  = "蓝色";
 constexpr const char* ThemeLight = "浅色";
 
+constexpr const char* LabelLogRotate    = "日志轮转";
+constexpr const char* LabelLogKeep      = "日志保留";
+constexpr const char* LabelConsolePanelAlpha = "面板透明度";
+constexpr const char* LabelConsoleLineHeight = "控制台行高";
+constexpr const char* LabelClock        = "时间显示";
+constexpr const char* LabelClockPos     = "时钟位置";
+constexpr const char* ButtonAbout       = "关于";
+constexpr const char* AboutTitle        = "TEXT-GAME";
+
 } // namespace Str

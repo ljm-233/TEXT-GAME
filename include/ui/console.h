@@ -10,6 +10,7 @@ class Console {
 public:
     Console(const sf::Font& font,
             unsigned fontSize,
+            unsigned lineHeight,
             unsigned maxLines,
             bool autoScroll,
             bool blinkCursor,
@@ -33,6 +34,7 @@ private:
 
     const sf::Font& font_;
     unsigned maxLines_;
+    unsigned lineHeight_;
     bool     autoScroll_;
     bool     blinkCursor_;
 
@@ -42,7 +44,7 @@ private:
 
     std::vector<std::string> history_;
     int  historyIndex_ = -1;
-    int  scrollOffset_ = 0;   // 0 = 跟随最新
+    int  scrollOffset_ = 0;
 
     mutable std::mutex mtx_;
     std::condition_variable cv_;

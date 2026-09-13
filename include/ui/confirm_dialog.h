@@ -6,22 +6,21 @@
 
 class ConfirmDialog {
 public:
-    enum class Result { None, Yes, No };
+    enum class Mode { YesNo, Info };
+    enum class Result { None, Yes, No, Ok };
 
     ConfirmDialog(const sf::Font& font,
                   const std::string& message,
-                  sf::Vector2f windowSize);
+                  sf::Vector2f windowSize,
+                  Mode mode = Mode::YesNo);
 
     void handleEvent(const sf::Event& event);
     void render(sf::RenderTarget& target);
-
-    // 消费式读取结果
     Result consumeResult();
-
-    // 布局依赖窗口尺寸，若窗口重建需要更新
     void relayout(sf::Vector2f windowSize);
 
 private:
+    Mode mode_ = Mode::YesNo;
     sf::RectangleShape backdrop_;
     sf::RectangleShape panel_;
     sf::Text message_;

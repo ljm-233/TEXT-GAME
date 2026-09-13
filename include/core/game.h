@@ -27,7 +27,7 @@ private:
     std::unique_ptr<Scene> createScene(SceneId id);
     void handleTransition(SceneId next);
     void saveWindowState();
-    void renderFpsOverlay();
+    void renderOverlays();
     void flushConfigs();
 
     std::shared_ptr<Window>        window_;
@@ -41,8 +41,11 @@ private:
     std::unique_ptr<SceneManager>  sceneManager_;
 
     sf::Text fpsText_;
+    sf::Text clockText_;
+
     int      fpsFrameCount_ = 0;
     float    fpsElapsed_    = 0.f;
     float    fpsDisplayed_  = 0.f;
     float    flushTimer_    = 0.f;
+    float    clockTimer_    = 0.f;
 };

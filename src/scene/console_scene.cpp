@@ -1,7 +1,7 @@
 #include "console_scene.h"
 #include "calculator.h"
-#include "strings.h"
 #include "utf8.h"
+#include <algorithm>
 #include <iostream>
 
 ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
@@ -14,12 +14,14 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
 
     int fontSize     = preferences_->getInt("console_font_size", 18);
     int historyLines = preferences_->getInt("console_history_lines", 200);
+    int lineHeight   = preferences_->getInt("console_line_height", 26);
     bool autoScroll  = preferences_->getBool("console_auto_scroll", true);
     bool blinkCursor = preferences_->getBool("console_blink_cursor", true);
 
     console_ = std::make_unique<Console>(
         font,
         static_cast<unsigned>(fontSize),
+        static_cast<unsigned>(lineHeight),
         static_cast<unsigned>(historyLines),
         autoScroll,
         blinkCursor,
@@ -36,7 +38,6 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
 
 ConsoleScene::~ConsoleScene() {
     stopWorker();
-
     if (oldCin_)  std::cin.rdbuf(oldCin_);
     if (oldCout_) std::cout.rdbuf(oldCout_);
     if (oldCerr_) std::cerr.rdbuf(oldCerr_);
@@ -82,18 +83,21 @@ void ConsoleScene::render(Window& window) {
     rt.clear(sf::Color::Black);
     if (background_) background_->render(rt);
 
-    // 遮罩强度从 Preferences 读
+    // 全屏半透明遮罩
     int mask = preferences_->getInt("console_mask", 160);
     mask = std::max(0, std::min(255, mask));
-
-    sf::RectangleShape overlay({w, h});
+    sf::RectangleShape overlay(sf::Vector2f{w, h});
     overlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(mask)));
     rt.draw(overlay);
 
+    // 终端面板
+    int panelAlpha = preferences_->getInt("console_panel_alpha", 220);
+    panelAlpha = std::max(0, std::min(255, panelAlpha));
+
     const float pad = 16.f;
-    sf::RectangleShape panel({w - pad * 2, h - pad * 2});
+    sf::RectangleShape panel(sf::Vector2f{w - pad * 2, h - pad * 2});
     panel.setPosition({pad, pad});
-    panel.setFillColor(sf::Color(5, 5, 10, 215));
+    panel.setFillColor(sf::Color(5, 5, 10, static_cast<std::uint8_t>(panelAlpha)));
     panel.setOutlineThickness(1.f);
     panel.setOutlineColor(sf::Color(70, 70, 100));
     rt.draw(panel);

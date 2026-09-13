@@ -84,17 +84,18 @@ std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c) {
 
 Console::Console(const sf::Font& font,
                  unsigned fontSize,
+                 unsigned lineHeight,
                  unsigned maxLines,
                  bool autoScroll,
                  bool blinkCursor,
                  sf::Vector2u /*size*/)
     : font_(font),
       maxLines_(maxLines),
+      lineHeight_(lineHeight),
       autoScroll_(autoScroll),
       blinkCursor_(blinkCursor),
       text_(font, sf::String(), scaledFontSize(fontSize)) {
     text_.setFillColor(sf::Color(220, 220, 220));
-
     inputLine_.setFillColor(sf::Color(20, 20, 30, 220));
     inputLine_.setOutlineThickness(1.f);
     inputLine_.setOutlineColor(sf::Color(80, 80, 110));
@@ -236,7 +237,7 @@ void Console::render(sf::RenderTarget& target) {
     float h = static_cast<float>(size.y);
 
     const float margin  = 24.f;
-    const float lineH   = 26.f;
+    const float lineH = static_cast<float>(lineHeight_);
     const float padX    = 12.f;
     const float inputH  = 40.f;
 

@@ -41,6 +41,7 @@ private:
     void applyFpsPosition();
     void applyFpsLimit();
     void applyButtonStyle();
+    void applyLogRotation();
     void resetAllPreferences();
 
     void renderTabs        (Window& window);
@@ -57,66 +58,58 @@ private:
     const sf::Font&                font_;
 
     Tab currentTab_ = Tab::Display;
+
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
-    // Display
+    // ===== Display =====
     std::vector<std::unique_ptr<Button>> resolutionButtons_;
-    std::unique_ptr<Button> fullscreenOn_;
-    std::unique_ptr<Button> fullscreenOff_;
-    std::unique_ptr<Button> vsyncOn_;
-    std::unique_ptr<Button> vsyncOff_;
+    std::unique_ptr<Button> fullscreenOn_, fullscreenOff_;
+    std::unique_ptr<Button> vsyncOn_, vsyncOff_;
     std::vector<std::unique_ptr<Button>> antiAliasingButtons_;
     std::vector<std::unique_ptr<Button>> logLevelButtons_;
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
 
-    // Interface
-    std::unique_ptr<Button> fpsOn_;
-    std::unique_ptr<Button> fpsOff_;
+    // ===== Interface =====
+    std::unique_ptr<Button> fpsOn_, fpsOff_;
     std::vector<std::unique_ptr<Button>> fpsPosButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
     std::unique_ptr<Slider> consoleMaskSlider_;
+    std::unique_ptr<Slider> consolePanelAlphaSlider_;
     std::vector<std::unique_ptr<Button>> consoleFontButtons_;
     std::vector<std::unique_ptr<Button>> consoleHistoryButtons_;
-    std::unique_ptr<Button> consoleAutoScrollOn_;
-    std::unique_ptr<Button> consoleAutoScrollOff_;
-    std::unique_ptr<Button> consoleBlinkOn_;
-    std::unique_ptr<Button> consoleBlinkOff_;
+    std::vector<std::unique_ptr<Button>> consoleLineHeightButtons_;
+    std::unique_ptr<Button> consoleAutoScrollOn_, consoleAutoScrollOff_;
+    std::unique_ptr<Button> consoleBlinkOn_, consoleBlinkOff_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
     std::unique_ptr<Button> wallpaperButton_;
+    std::unique_ptr<Button> clockOn_, clockOff_;
+    std::vector<std::unique_ptr<Button>> clockPosButtons_;
+
+    // ===== Other =====
+    std::unique_ptr<Button> rememberOn_, rememberOff_;
+    std::vector<std::unique_ptr<Button>> logRotateButtons_;
+    std::vector<std::unique_ptr<Button>> logKeepButtons_;
     std::vector<std::unique_ptr<Button>> buttonCornerButtons_;
     std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
-
-    // Other
-    std::unique_ptr<Button> rememberOn_;
-    std::unique_ptr<Button> rememberOff_;
+    std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
 
     std::unique_ptr<Button> backButton_;
     std::unique_ptr<ConfirmDialog> resetConfirm_;
+    std::unique_ptr<ConfirmDialog> aboutDialog_;
 
     // 标签
-    sf::Text headingDisplay_;
-    sf::Text headingInterface_;
-    sf::Text headingOther_;
-    sf::Text labelResolution_;
-    sf::Text labelFullscreen_;
-    sf::Text labelVsync_;
-    sf::Text labelAntiAliasing_;
-    sf::Text labelLogLevel_;
-    sf::Text labelFpsLimit_;
-    sf::Text labelFps_;
-    sf::Text labelFpsPos_;
-    sf::Text labelUiScale_;
-    sf::Text labelConsoleMask_;
-    sf::Text labelConsoleFont_;
-    sf::Text labelConsoleHistory_;
-    sf::Text labelConsoleAutoScroll_;
-    sf::Text labelConsoleBlink_;
-    sf::Text labelTheme_;
-    sf::Text labelWallpaper_;
-    sf::Text labelButtonCorner_;
-    sf::Text labelButtonOutline_;
-    sf::Text labelRememberSize_;
+    sf::Text headingDisplay_, headingInterface_, headingOther_;
+    sf::Text labelResolution_, labelFullscreen_, labelVsync_;
+    sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
+    sf::Text labelFps_, labelFpsPos_, labelUiScale_;
+    sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
+    sf::Text labelConsoleFont_, labelConsoleHistory_;
+    sf::Text labelConsoleLineHeight_, labelConsoleAutoScroll_;
+    sf::Text labelConsoleBlink_, labelTheme_, labelWallpaper_;
+    sf::Text labelClock_, labelClockPos_;
+    sf::Text labelRememberSize_, labelLogRotate_, labelLogKeep_;
+    sf::Text labelButtonCorner_, labelButtonOutline_;
     sf::Text hintUiScale_;
 
     // 状态
@@ -129,14 +122,21 @@ private:
     bool    showFps_;
     int     fpsPosition_;
     float   uiScale_;
+    int     consoleMask_;
+    int     consolePanelAlpha_;
     int     consoleFontSize_;
     int     consoleHistoryLines_;
+    int     consoleLineHeight_;
     bool    consoleAutoScroll_;
     bool    consoleBlinkCursor_;
     ThemeId themeId_;
     float   buttonCorner_;
     float   buttonOutline_;
+    bool    showClock_;
+    int     clockPosition_;
     bool    rememberSize_;
+    int     logRotateIndex_;
+    int     logKeepIndex_;
 
     SceneId nextScene_ = SceneId::None;
 };

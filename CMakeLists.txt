@@ -48,8 +48,12 @@ target_include_directories(text_game PRIVATE
     include/scene
 )
 
+string(TIMESTAMP BUILD_DATE "%Y-%m-%d")
+
 target_compile_definitions(text_game PRIVATE
     PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    PROJECT_VERSION="0.1.0"
+    BUILD_DATE="${BUILD_DATE}"
 )
 
 target_link_libraries(text_game PRIVATE SFML::Graphics)

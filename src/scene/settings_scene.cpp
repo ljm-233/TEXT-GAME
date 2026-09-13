@@ -37,6 +37,10 @@ const char* kConsoleFontLabels[] = {"小", "中", "大", "特大"};
 const int kConsoleHistory[] = {50, 100, 200, 500};
 constexpr int kConsoleHistoryCount = 4;
 
+const int kConsoleLineHeights[] = {20, 26, 32};
+constexpr int kConsoleLineHeightCount = 3;
+const char* kConsoleLineHeightLabels[] = {"紧凑", "正常", "宽松"};
+
 const float kButtonCorners[]  = {0.f, 6.f, 14.f};
 constexpr int kButtonCornerCount = 3;
 const char* kButtonCornerLabels[] = {"直角", "小圆", "大圆"};
@@ -45,16 +49,23 @@ const float kButtonOutlines[]  = {0.f, 2.f, 4.f};
 constexpr int kButtonOutlineCount = 3;
 const char* kButtonOutlineLabels[] = {"无", "细", "粗"};
 
+const size_t kLogRotateSizes[] = {0, 1*1024*1024, 5*1024*1024, 10*1024*1024};
+constexpr int kLogRotateCount = 4;
+const char* kLogRotateLabels[] = {"无限", "1MB", "5MB", "10MB"};
+
+const int kLogKeeps[] = {1, 3, 5, 10};
+constexpr int kLogKeepCount = 4;
+
 // ===== 布局 =====
 constexpr float kTabX     = 40.f;
 constexpr float kTabY     = 100.f;
 constexpr float kContentX = kTabX + 200.f;
 constexpr float kCtrlX    = kContentX + 240.f;
-constexpr float kRowH     = 54.f;
+constexpr float kRowH     = 50.f;
 constexpr float kBtnW     = 280.f;
-constexpr float kBtnH     = 50.f;
+constexpr float kBtnH     = 46.f;
 constexpr float kGapX     = 16.f;
-constexpr float kGapY     = 12.f;
+constexpr float kGapY     = 10.f;
 
 // ===== 索引查找 =====
 int indexOfAA(int level) {
@@ -76,6 +87,11 @@ int indexOfConsoleHistory(int n) {
         if (kConsoleHistory[i] == n) return i;
     return 2;
 }
+int indexOfConsoleLineHeight(int h) {
+    for (int i = 0; i < kConsoleLineHeightCount; ++i)
+        if (kConsoleLineHeights[i] == h) return i;
+    return 1;
+}
 int indexOfLogLevel(int l) {
     for (int i = 0; i < kLogCount; ++i)
         if (static_cast<int>(kLogLevels[i]) == l) return i;
@@ -96,6 +112,14 @@ int indexOfButtonOutline(float o) {
         if (std::abs(kButtonOutlines[i] - o) < 0.5f) return i;
     return 1;
 }
+int indexOfLogRotate(int idx) {
+    if (idx < 0 || idx >= kLogRotateCount) return 0;
+    return idx;
+}
+int indexOfLogKeep(int idx) {
+    if (idx < 0 || idx >= kLogKeepCount) return 1;
+    return idx;
+}
 }
 
 // ============================================================
@@ -114,29 +138,35 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       window_(std::move(window)),
       logger_(std::move(logger)),
       font_(font),
-      headingDisplay_  (font, toSf(Str::TabDisplay),   scaledFontSize(26)),
-      headingInterface_(font, toSf(Str::TabInterface), scaledFontSize(26)),
-      headingOther_    (font, toSf(Str::TabOther),     scaledFontSize(26)),
-      labelResolution_      (font, toSf(Str::LabelResolution),      scaledFontSize(22)),
-      labelFullscreen_      (font, toSf(Str::LabelFullscreen),      scaledFontSize(22)),
-      labelVsync_           (font, toSf(Str::LabelVsync),           scaledFontSize(22)),
-      labelAntiAliasing_    (font, toSf(Str::LabelAntiAliasing),    scaledFontSize(22)),
-      labelLogLevel_        (font, toSf(Str::LabelLogLevel),        scaledFontSize(22)),
-      labelFpsLimit_        (font, toSf(Str::LabelFpsLimit),        scaledFontSize(22)),
-      labelFps_             (font, toSf(Str::LabelFps),             scaledFontSize(22)),
-      labelFpsPos_          (font, toSf(Str::LabelFpsPos),          scaledFontSize(22)),
-      labelUiScale_         (font, toSf(Str::LabelUiScale),         scaledFontSize(22)),
-      labelConsoleMask_     (font, toSf(Str::LabelConsoleMask),     scaledFontSize(22)),
-      labelConsoleFont_     (font, toSf(Str::LabelConsoleFont),     scaledFontSize(22)),
-      labelConsoleHistory_  (font, toSf(Str::LabelConsoleHistory),  scaledFontSize(22)),
-      labelConsoleAutoScroll_(font, toSf(Str::LabelConsoleAutoScroll), scaledFontSize(22)),
-      labelConsoleBlink_    (font, toSf(Str::LabelConsoleBlink),    scaledFontSize(22)),
-      labelTheme_           (font, toSf(Str::LabelTheme),           scaledFontSize(22)),
-      labelWallpaper_       (font, toSf(Str::LabelWallpaper),       scaledFontSize(22)),
-      labelButtonCorner_    (font, toSf(Str::LabelButtonCorner),    scaledFontSize(22)),
-      labelButtonOutline_   (font, toSf(Str::LabelButtonOutline),   scaledFontSize(22)),
-      labelRememberSize_    (font, toSf(Str::LabelRememberSize),    scaledFontSize(22)),
-      hintUiScale_          (font, toSf(Str::HintUiScale),          scaledFontSize(16)) {
+      headingDisplay_  (font, toSf(Str::TabDisplay),   scaledFontSize(24)),
+      headingInterface_(font, toSf(Str::TabInterface), scaledFontSize(24)),
+      headingOther_    (font, toSf(Str::TabOther),     scaledFontSize(24)),
+      labelResolution_      (font, toSf(Str::LabelResolution),      scaledFontSize(20)),
+      labelFullscreen_      (font, toSf(Str::LabelFullscreen),      scaledFontSize(20)),
+      labelVsync_           (font, toSf(Str::LabelVsync),           scaledFontSize(20)),
+      labelAntiAliasing_    (font, toSf(Str::LabelAntiAliasing),    scaledFontSize(20)),
+      labelLogLevel_        (font, toSf(Str::LabelLogLevel),        scaledFontSize(20)),
+      labelFpsLimit_        (font, toSf(Str::LabelFpsLimit),        scaledFontSize(20)),
+      labelFps_             (font, toSf(Str::LabelFps),             scaledFontSize(20)),
+      labelFpsPos_          (font, toSf(Str::LabelFpsPos),          scaledFontSize(20)),
+      labelUiScale_         (font, toSf(Str::LabelUiScale),         scaledFontSize(20)),
+      labelConsoleMask_     (font, toSf(Str::LabelConsoleMask),     scaledFontSize(20)),
+      labelConsolePanelAlpha_(font, toSf(Str::LabelConsolePanelAlpha), scaledFontSize(20)),
+      labelConsoleFont_     (font, toSf(Str::LabelConsoleFont),     scaledFontSize(20)),
+      labelConsoleHistory_  (font, toSf(Str::LabelConsoleHistory),  scaledFontSize(20)),
+      labelConsoleLineHeight_(font, toSf(Str::LabelConsoleLineHeight), scaledFontSize(20)),
+      labelConsoleAutoScroll_(font, toSf(Str::LabelConsoleAutoScroll), scaledFontSize(20)),
+      labelConsoleBlink_    (font, toSf(Str::LabelConsoleBlink),    scaledFontSize(20)),
+      labelTheme_           (font, toSf(Str::LabelTheme),           scaledFontSize(20)),
+      labelWallpaper_       (font, toSf(Str::LabelWallpaper),       scaledFontSize(20)),
+      labelClock_           (font, toSf(Str::LabelClock),           scaledFontSize(20)),
+      labelClockPos_        (font, toSf(Str::LabelClockPos),        scaledFontSize(20)),
+      labelRememberSize_    (font, toSf(Str::LabelRememberSize),    scaledFontSize(20)),
+      labelLogRotate_       (font, toSf(Str::LabelLogRotate),       scaledFontSize(20)),
+      labelLogKeep_         (font, toSf(Str::LabelLogKeep),         scaledFontSize(20)),
+      labelButtonCorner_    (font, toSf(Str::LabelButtonCorner),    scaledFontSize(20)),
+      labelButtonOutline_   (font, toSf(Str::LabelButtonOutline),   scaledFontSize(20)),
+      hintUiScale_          (font, toSf(Str::HintUiScale),          scaledFontSize(14)) {
 
     // ===== 读偏好 =====
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
@@ -148,14 +178,21 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     showFps_             = preferences_->getBool("show_fps", false);
     fpsPosition_         = preferences_->getInt("fps_position", 1);
     uiScale_             = static_cast<float>(preferences_->getDouble("ui_scale", 1.0));
+    consoleMask_         = std::clamp(preferences_->getInt("console_mask", 160), 0, 255);
+    consolePanelAlpha_   = std::clamp(preferences_->getInt("console_panel_alpha", 220), 0, 255);
     consoleFontSize_     = preferences_->getInt("console_font_size", 18);
     consoleHistoryLines_ = preferences_->getInt("console_history_lines", 200);
+    consoleLineHeight_   = preferences_->getInt("console_line_height", 26);
     consoleAutoScroll_   = preferences_->getBool("console_auto_scroll", true);
     consoleBlinkCursor_  = preferences_->getBool("console_blink_cursor", true);
     themeId_             = static_cast<ThemeId>(preferences_->getInt("theme", 0));
     buttonCorner_        = static_cast<float>(preferences_->getDouble("button_corner", 6.0));
     buttonOutline_       = static_cast<float>(preferences_->getDouble("button_outline", 2.0));
+    showClock_           = preferences_->getBool("show_clock", false);
+    clockPosition_       = preferences_->getInt("clock_position", 0);
     rememberSize_        = preferences_->getBool("remember_window_size", true);
+    logRotateIndex_      = indexOfLogRotate(preferences_->getInt("log_rotate", 0));
+    logKeepIndex_        = indexOfLogKeep(preferences_->getInt("log_keep", 1));
 
     // ===== 标签颜色 =====
     auto headingColor = sf::Color(160, 200, 240);
@@ -167,11 +204,13 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (auto* t : {&labelResolution_, &labelFullscreen_, &labelVsync_,
                     &labelAntiAliasing_, &labelLogLevel_, &labelFpsLimit_,
                     &labelFps_, &labelFpsPos_, &labelUiScale_,
-                    &labelConsoleMask_, &labelConsoleFont_, &labelConsoleHistory_,
-                    &labelConsoleAutoScroll_, &labelConsoleBlink_,
-                    &labelTheme_, &labelWallpaper_,
-                    &labelButtonCorner_, &labelButtonOutline_,
-                    &labelRememberSize_}) {
+                    &labelConsoleMask_, &labelConsolePanelAlpha_,
+                    &labelConsoleFont_, &labelConsoleHistory_,
+                    &labelConsoleLineHeight_, &labelConsoleAutoScroll_,
+                    &labelConsoleBlink_, &labelTheme_, &labelWallpaper_,
+                    &labelClock_, &labelClockPos_,
+                    &labelRememberSize_, &labelLogRotate_, &labelLogKeep_,
+                    &labelButtonCorner_, &labelButtonOutline_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
@@ -180,124 +219,101 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     const char* tabLabels[] = {Str::TabDisplay, Str::TabInterface, Str::TabOther};
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
-            tabLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{180.f, 56.f}, 24));
+            tabLabels[i], font_,
+            sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 52.f}, 22));
     }
 
     auto makeToggle = [&](const std::string& onText, const std::string& offText) {
         auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 42.f}, 20);
+                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
         auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 42.f}, 20);
+                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
 
     // ===== Display =====
     for (int i = 0; i < kResolutionCount; ++i) {
         resolutionButtons_.push_back(std::make_unique<Button>(
-            kResolutions[i].label, font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{kBtnW, kBtnH}, 20));
+            kResolutions[i].label, font_,
+            sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
     }
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        fullscreenOn_ = std::move(on);
-        fullscreenOff_ = std::move(off);
-    }
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        vsyncOn_ = std::move(on);
-        vsyncOff_ = std::move(off);
-    }
-    for (int i = 0; i < kAACount; ++i) {
+    { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
+    for (int i = 0; i < kAACount; ++i)
         antiAliasingButtons_.push_back(std::make_unique<Button>(
-            kAALabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
-    for (int i = 0; i < kLogCount; ++i) {
+            kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kLogCount; ++i)
         logLevelButtons_.push_back(std::make_unique<Button>(
-            kLogLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{100.f, 42.f}, 18));
-    }
-    for (int i = 0; i < kFpsLimitCount; ++i) {
+            kLogLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{96.f, 40.f}, 16));
+    for (int i = 0; i < kFpsLimitCount; ++i)
         fpsLimitButtons_.push_back(std::make_unique<Button>(
-            kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{80.f, 42.f}, 18));
-    }
+            kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // ===== Interface =====
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        fpsOn_ = std::move(on);
-        fpsOff_ = std::move(off);
-    }
-    for (int i = 0; i < kFpsPosCount; ++i) {
+    { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
+    for (int i = 0; i < kFpsPosCount; ++i)
         fpsPosButtons_.push_back(std::make_unique<Button>(
-            kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{80.f, 42.f}, 18));
-    }
-    for (int i = 0; i < kUiScaleCount; ++i) {
+            kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+    for (int i = 0; i < kUiScaleCount; ++i)
         uiScaleButtons_.push_back(std::make_unique<Button>(
-            kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
+            kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
 
-    int mask = std::clamp(preferences_->getInt("console_mask", 160), 0, 255);
     consoleMaskSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(mask),
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{260.f, 24.f});
+        font_, 0.f, 255.f, static_cast<float>(consoleMask_),
+        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    consolePanelAlphaSlider_ = std::make_unique<Slider>(
+        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_),
+        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
 
-    for (int i = 0; i < kConsoleFontCount; ++i) {
+    for (int i = 0; i < kConsoleFontCount; ++i)
         consoleFontButtons_.push_back(std::make_unique<Button>(
-            kConsoleFontLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
-    for (int i = 0; i < kConsoleHistoryCount; ++i) {
+            kConsoleFontLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kConsoleHistoryCount; ++i)
         consoleHistoryButtons_.push_back(std::make_unique<Button>(
-            std::to_string(kConsoleHistory[i]), font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        consoleAutoScrollOn_ = std::move(on);
-        consoleAutoScrollOff_ = std::move(off);
-    }
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        consoleBlinkOn_ = std::move(on);
-        consoleBlinkOff_ = std::move(off);
-    }
+            std::to_string(kConsoleHistory[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kConsoleLineHeightCount; ++i)
+        consoleLineHeightButtons_.push_back(std::make_unique<Button>(
+            kConsoleLineHeightLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    { auto [on, off] = makeToggle(Str::On, Str::Off); consoleAutoScrollOn_ = std::move(on); consoleAutoScrollOff_ = std::move(off); }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); consoleBlinkOn_ = std::move(on); consoleBlinkOff_ = std::move(off); }
 
-    for (int i = 0; i < kThemeCount; ++i) {
+    for (int i = 0; i < kThemeCount; ++i)
         themeButtons_.push_back(std::make_unique<Button>(
             themeName(static_cast<ThemeId>(i)), font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{110.f, 42.f}, 20));
-    }
-    wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 42.f}, 20);
+            sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
 
-    for (int i = 0; i < kButtonCornerCount; ++i) {
-        buttonCornerButtons_.push_back(std::make_unique<Button>(
-            kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
-    for (int i = 0; i < kButtonOutlineCount; ++i) {
-        buttonOutlineButtons_.push_back(std::make_unique<Button>(
-            kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{90.f, 42.f}, 20));
-    }
+    wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
+
+    { auto [on, off] = makeToggle(Str::On, Str::Off); clockOn_ = std::move(on); clockOff_ = std::move(off); }
+    for (int i = 0; i < kFpsPosCount; ++i)
+        clockPosButtons_.push_back(std::make_unique<Button>(
+            kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // ===== Other =====
-    {
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        rememberOn_ = std::move(on);
-        rememberOff_ = std::move(off);
-    }
-    resetButton_ = std::make_unique<Button>(Str::ResetDefault, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 50.f}, 22);
-    backButton_ = std::make_unique<Button>(Str::Back, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 55.f}, 24);
+    { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
+    for (int i = 0; i < kLogRotateCount; ++i)
+        logRotateButtons_.push_back(std::make_unique<Button>(
+            kLogRotateLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kLogKeepCount; ++i)
+        logKeepButtons_.push_back(std::make_unique<Button>(
+            std::to_string(kLogKeeps[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kButtonCornerCount; ++i)
+        buttonCornerButtons_.push_back(std::make_unique<Button>(
+            kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    for (int i = 0; i < kButtonOutlineCount; ++i)
+        buttonOutlineButtons_.push_back(std::make_unique<Button>(
+            kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
 
-    // ===== 应用初始按钮样式到全局 =====
+    aboutButton_ = std::make_unique<Button>(Str::ButtonAbout, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 46.f}, 20);
+    resetButton_ = std::make_unique<Button>(Str::ResetDefault, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{220.f, 46.f}, 20);
+
+    backButton_ = std::make_unique<Button>(Str::Back, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 52.f}, 22);
+
+    // 应用初始按钮样式
     {
         ButtonStyle bs;
         bs.cornerRadius = buttonCorner_;
@@ -352,6 +368,10 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kConsoleHistoryCount; ++i)
         consoleHistoryButtons_[i]->setSelected(i == chIdx);
 
+    int clhIdx = indexOfConsoleLineHeight(consoleLineHeight_);
+    for (int i = 0; i < kConsoleLineHeightCount; ++i)
+        consoleLineHeightButtons_[i]->setSelected(i == clhIdx);
+
     consoleAutoScrollOn_->setSelected(consoleAutoScroll_);
     consoleAutoScrollOff_->setSelected(!consoleAutoScroll_);
     consoleBlinkOn_->setSelected(consoleBlinkCursor_);
@@ -360,6 +380,19 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kThemeCount; ++i)
         themeButtons_[i]->setSelected(i == static_cast<int>(themeId_));
 
+    clockOn_->setSelected(showClock_);
+    clockOff_->setSelected(!showClock_);
+    for (int i = 0; i < kFpsPosCount; ++i)
+        clockPosButtons_[i]->setSelected(i == clockPosition_);
+
+    rememberOn_->setSelected(rememberSize_);
+    rememberOff_->setSelected(!rememberSize_);
+
+    for (int i = 0; i < kLogRotateCount; ++i)
+        logRotateButtons_[i]->setSelected(i == logRotateIndex_);
+    for (int i = 0; i < kLogKeepCount; ++i)
+        logKeepButtons_[i]->setSelected(i == logKeepIndex_);
+
     int bcIdx = indexOfButtonCorner(buttonCorner_);
     for (int i = 0; i < kButtonCornerCount; ++i)
         buttonCornerButtons_[i]->setSelected(i == bcIdx);
@@ -367,9 +400,6 @@ void SettingsScene::refreshSelection() {
     int boIdx = indexOfButtonOutline(buttonOutline_);
     for (int i = 0; i < kButtonOutlineCount; ++i)
         buttonOutlineButtons_[i]->setSelected(i == boIdx);
-
-    rememberOn_->setSelected(rememberSize_);
-    rememberOff_->setSelected(!rememberSize_);
 }
 
 // ============================================================
@@ -430,6 +460,12 @@ void SettingsScene::applyButtonStyle() {
     preferences_->setDouble("button_corner",  buttonCorner_);
     preferences_->setDouble("button_outline", buttonOutline_);
 }
+void SettingsScene::applyLogRotation() {
+    logger_->setRotation(kLogRotateSizes[logRotateIndex_], kLogKeeps[logKeepIndex_]);
+    preferences_->setInt("log_rotate", logRotateIndex_);
+    preferences_->setInt("log_keep",   logKeepIndex_);
+    logger_->info("日志轮转配置已更新");
+}
 void SettingsScene::resetAllPreferences() {
     preferences_->resetAll();
     logger_->warn("已恢复默认设置，请重启程序");
@@ -440,10 +476,9 @@ void SettingsScene::resetAllPreferences() {
 // ============================================================
 
 void SettingsScene::handleEvent(const sf::Event& event) {
-    if (resetConfirm_) {
-        resetConfirm_->handleEvent(event);
-        return;
-    }
+    if (resetConfirm_) { resetConfirm_->handleEvent(event); return; }
+    if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }
+
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
             nextScene_ = SceneId::Back;
@@ -454,34 +489,37 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     switch (currentTab_) {
         case Tab::Display:
             for (auto& b : resolutionButtons_) b->handleEvent(event);
-            fullscreenOn_->handleEvent(event);
-            fullscreenOff_->handleEvent(event);
-            vsyncOn_->handleEvent(event);
-            vsyncOff_->handleEvent(event);
+            fullscreenOn_->handleEvent(event);  fullscreenOff_->handleEvent(event);
+            vsyncOn_->handleEvent(event);       vsyncOff_->handleEvent(event);
             for (auto& b : antiAliasingButtons_) b->handleEvent(event);
             for (auto& b : logLevelButtons_) b->handleEvent(event);
             for (auto& b : fpsLimitButtons_) b->handleEvent(event);
             break;
         case Tab::Interface:
-            fpsOn_->handleEvent(event);
-            fpsOff_->handleEvent(event);
+            fpsOn_->handleEvent(event);  fpsOff_->handleEvent(event);
             for (auto& b : fpsPosButtons_) b->handleEvent(event);
             for (auto& b : uiScaleButtons_) b->handleEvent(event);
             consoleMaskSlider_->handleEvent(event);
+            consolePanelAlphaSlider_->handleEvent(event);
             for (auto& b : consoleFontButtons_) b->handleEvent(event);
             for (auto& b : consoleHistoryButtons_) b->handleEvent(event);
+            for (auto& b : consoleLineHeightButtons_) b->handleEvent(event);
             consoleAutoScrollOn_->handleEvent(event);
             consoleAutoScrollOff_->handleEvent(event);
             consoleBlinkOn_->handleEvent(event);
             consoleBlinkOff_->handleEvent(event);
             for (auto& b : themeButtons_) b->handleEvent(event);
             wallpaperButton_->handleEvent(event);
-            for (auto& b : buttonCornerButtons_) b->handleEvent(event);
-            for (auto& b : buttonOutlineButtons_) b->handleEvent(event);
+            clockOn_->handleEvent(event); clockOff_->handleEvent(event);
+            for (auto& b : clockPosButtons_) b->handleEvent(event);
             break;
         case Tab::Other:
-            rememberOn_->handleEvent(event);
-            rememberOff_->handleEvent(event);
+            rememberOn_->handleEvent(event); rememberOff_->handleEvent(event);
+            for (auto& b : logRotateButtons_) b->handleEvent(event);
+            for (auto& b : logKeepButtons_) b->handleEvent(event);
+            for (auto& b : buttonCornerButtons_) b->handleEvent(event);
+            for (auto& b : buttonOutlineButtons_) b->handleEvent(event);
+            aboutButton_->handleEvent(event);
             resetButton_->handleEvent(event);
             break;
     }
@@ -500,6 +538,15 @@ void SettingsScene::update(float /*dt*/) {
             nextScene_ = SceneId::Exit;
         } else if (r == ConfirmDialog::Result::No) {
             resetConfirm_.reset();
+        }
+        return;
+    }
+
+    if (aboutDialog_) {
+        auto r = aboutDialog_->consumeResult();
+        if (r == ConfirmDialog::Result::Ok ||
+            r == ConfirmDialog::Result::No) {
+            aboutDialog_.reset();
         }
         return;
     }
@@ -604,8 +651,12 @@ void SettingsScene::update(float /*dt*/) {
                 }
             }
             if (consoleMaskSlider_->consumeChanged()) {
-                int v = static_cast<int>(consoleMaskSlider_->value());
-                preferences_->setInt("console_mask", v);
+                consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
+                preferences_->setInt("console_mask", consoleMask_);
+            }
+            if (consolePanelAlphaSlider_->consumeChanged()) {
+                consolePanelAlpha_ = static_cast<int>(consolePanelAlphaSlider_->value());
+                preferences_->setInt("console_panel_alpha", consolePanelAlpha_);
             }
             for (int i = 0; i < kConsoleFontCount; ++i) {
                 if (consoleFontButtons_[i]->consumeClick()) {
@@ -624,6 +675,17 @@ void SettingsScene::update(float /*dt*/) {
                         refreshSelection();
                         preferences_->setInt("console_history_lines",
                                              consoleHistoryLines_);
+                    }
+                    return;
+                }
+            }
+            for (int i = 0; i < kConsoleLineHeightCount; ++i) {
+                if (consoleLineHeightButtons_[i]->consumeClick()) {
+                    if (consoleLineHeight_ != kConsoleLineHeights[i]) {
+                        consoleLineHeight_ = kConsoleLineHeights[i];
+                        refreshSelection();
+                        preferences_->setInt("console_line_height",
+                                             consoleLineHeight_);
                     }
                     return;
                 }
@@ -662,6 +724,59 @@ void SettingsScene::update(float /*dt*/) {
                 applyWallpaper();
                 return;
             }
+            if (clockOn_->consumeClick() && !showClock_) {
+                showClock_ = true; refreshSelection();
+                preferences_->setBool("show_clock", true);
+                return;
+            }
+            if (clockOff_->consumeClick() && showClock_) {
+                showClock_ = false; refreshSelection();
+                preferences_->setBool("show_clock", false);
+                return;
+            }
+            for (int i = 0; i < kFpsPosCount; ++i) {
+                if (clockPosButtons_[i]->consumeClick()) {
+                    if (clockPosition_ != i) {
+                        clockPosition_ = i;
+                        refreshSelection();
+                        preferences_->setInt("clock_position", clockPosition_);
+                    }
+                    return;
+                }
+            }
+            break;
+        }
+        case Tab::Other: {
+            if (rememberOn_->consumeClick() && !rememberSize_) {
+                rememberSize_ = true; refreshSelection();
+                preferences_->setBool("remember_window_size", true);
+                return;
+            }
+            if (rememberOff_->consumeClick() && rememberSize_) {
+                rememberSize_ = false; refreshSelection();
+                preferences_->setBool("remember_window_size", false);
+                return;
+            }
+            for (int i = 0; i < kLogRotateCount; ++i) {
+                if (logRotateButtons_[i]->consumeClick()) {
+                    if (logRotateIndex_ != i) {
+                        logRotateIndex_ = i;
+                        refreshSelection();
+                        applyLogRotation();
+                    }
+                    return;
+                }
+            }
+            for (int i = 0; i < kLogKeepCount; ++i) {
+                if (logKeepButtons_[i]->consumeClick()) {
+                    if (logKeepIndex_ != i) {
+                        logKeepIndex_ = i;
+                        refreshSelection();
+                        applyLogRotation();
+                    }
+                    return;
+                }
+            }
             for (int i = 0; i < kButtonCornerCount; ++i) {
                 if (buttonCornerButtons_[i]->consumeClick()) {
                     if (std::abs(buttonCorner_ - kButtonCorners[i]) > 0.5f) {
@@ -682,17 +797,15 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             }
-            break;
-        }
-        case Tab::Other: {
-            if (rememberOn_->consumeClick() && !rememberSize_) {
-                rememberSize_ = true; refreshSelection();
-                preferences_->setBool("remember_window_size", true);
-                return;
-            }
-            if (rememberOff_->consumeClick() && rememberSize_) {
-                rememberSize_ = false; refreshSelection();
-                preferences_->setBool("remember_window_size", false);
+            if (aboutButton_->consumeClick()) {
+                std::string msg =
+                    std::string(Str::AboutTitle) + "\n\n"
+                    + "版本: " + PROJECT_VERSION + "\n"
+                    + "构建: " + BUILD_DATE + "\n"
+                    + "作者: ljm-233";
+                aboutDialog_ = std::make_unique<ConfirmDialog>(
+                    font_, msg, sf::Vector2f(1280.f, 720.f),
+                    ConfirmDialog::Mode::Info);
                 return;
             }
             if (resetButton_->consumeClick()) {
@@ -716,7 +829,7 @@ void SettingsScene::update(float /*dt*/) {
 
 void SettingsScene::renderTabs(Window& window) {
     for (int i = 0; i < kTabCount; ++i) {
-        tabButtons_[i]->setPosition({kTabX, kTabY + i * 70.f});
+        tabButtons_[i]->setPosition({kTabX, kTabY + i * 66.f});
         tabButtons_[i]->render(window.native());
     }
 }
@@ -725,10 +838,9 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
                                      float ctrlX, float y) {
     headingDisplay_.setPosition({contentX, y});
     window.native().draw(headingDisplay_);
-    y += 40.f;
+    y += 36.f;
 
-    // 分辨率
-    labelResolution_.setPosition({contentX, y + 12.f});
+    labelResolution_.setPosition({contentX, y + 10.f});
     window.native().draw(labelResolution_);
     for (int i = 0; i < kResolutionCount; ++i) {
         int row = i / 2, col = i % 2;
@@ -737,139 +849,103 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
             y + row * (kBtnH + kGapY)});
         resolutionButtons_[i]->render(window.native());
     }
-    y += 2 * (kBtnH + kGapY) + 12.f;
+    y += 2 * (kBtnH + kGapY) + 6.f;
 
-    // 全屏
-    labelFullscreen_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelFullscreen_);
-    fullscreenOn_->setPosition ({ctrlX, y});
-    fullscreenOff_->setPosition({ctrlX + 100.f, y});
-    fullscreenOn_->render(window.native());
-    fullscreenOff_->render(window.native());
-    y += kRowH;
+    auto drawToggleRow = [&](sf::Text& label,
+                             const std::unique_ptr<Button>& on,
+                             const std::unique_ptr<Button>& off) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        on->setPosition ({ctrlX, y});
+        off->setPosition({ctrlX + 96.f, y});
+        on->render(window.native());
+        off->render(window.native());
+        y += kRowH;
+    };
 
-    // V-Sync
-    labelVsync_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelVsync_);
-    vsyncOn_->setPosition ({ctrlX, y});
-    vsyncOff_->setPosition({ctrlX + 100.f, y});
-    vsyncOn_->render(window.native());
-    vsyncOff_->render(window.native());
-    y += kRowH;
+    auto drawMultiRow = [&](sf::Text& label,
+                            std::vector<std::unique_ptr<Button>>& btns,
+                            float gap = 96.f) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        for (size_t i = 0; i < btns.size(); ++i) {
+            btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
+            btns[i]->render(window.native());
+        }
+        y += kRowH;
+    };
 
-    // 抗锯齿
-    labelAntiAliasing_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelAntiAliasing_);
-    for (int i = 0; i < kAACount; ++i) {
-        antiAliasingButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-        antiAliasingButtons_[i]->render(window.native());
-    }
-    y += kRowH;
-
-    // 日志级别
-    labelLogLevel_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelLogLevel_);
-    for (int i = 0; i < kLogCount; ++i) {
-        logLevelButtons_[i]->setPosition({ctrlX + i * 110.f, y});
-        logLevelButtons_[i]->render(window.native());
-    }
-    y += kRowH;
-
-    // 帧率上限
-    labelFpsLimit_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelFpsLimit_);
-    for (int i = 0; i < kFpsLimitCount; ++i) {
-        fpsLimitButtons_[i]->setPosition({ctrlX + i * 90.f, y});
-        fpsLimitButtons_[i]->render(window.native());
-    }
+    drawToggleRow(labelFullscreen_, fullscreenOn_, fullscreenOff_);
+    drawToggleRow(labelVsync_,      vsyncOn_,      vsyncOff_);
+    drawMultiRow (labelAntiAliasing_, antiAliasingButtons_, 96.f);
+    drawMultiRow (labelLogLevel_,     logLevelButtons_,     106.f);
+    drawMultiRow (labelFpsLimit_,     fpsLimitButtons_,     86.f);
 }
 
 void SettingsScene::renderInterfaceTab(Window& window, float contentX,
                                        float ctrlX, float y) {
     headingInterface_.setPosition({contentX, y});
     window.native().draw(headingInterface_);
-    y += 40.f;
+    y += 36.f;
 
-    // 帧率显示 + 位置
-    labelFps_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelFps_);
-    fpsOn_->setPosition ({ctrlX, y});
-    fpsOff_->setPosition({ctrlX + 100.f, y});
-    fpsOn_->render(window.native());
-    fpsOff_->render(window.native());
-    y += kRowH;
+    auto drawToggleRow = [&](sf::Text& label,
+                             const std::unique_ptr<Button>& on,
+                             const std::unique_ptr<Button>& off) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        on->setPosition ({ctrlX, y});
+        off->setPosition({ctrlX + 96.f, y});
+        on->render(window.native());
+        off->render(window.native());
+        y += kRowH;
+    };
 
-    labelFpsPos_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelFpsPos_);
-    for (int i = 0; i < kFpsPosCount; ++i) {
-        fpsPosButtons_[i]->setPosition({ctrlX + i * 90.f, y});
-        fpsPosButtons_[i]->render(window.native());
-    }
-    y += kRowH;
+    auto drawMultiRow = [&](sf::Text& label,
+                            std::vector<std::unique_ptr<Button>>& btns,
+                            float gap = 96.f) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        for (size_t i = 0; i < btns.size(); ++i) {
+            btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
+            btns[i]->render(window.native());
+        }
+        y += kRowH;
+    };
 
-    // UI 缩放
-    labelUiScale_.setPosition({contentX, y + 10.f});
+    auto drawSliderRow = [&](sf::Text& label, Slider* s) {
+        label.setPosition({contentX, y + 4.f});
+        window.native().draw(label);
+        s->setPosition({ctrlX, y + 4.f});
+        s->render(window.native());
+        y += kRowH;
+    };
+
+    // FPS 显示
+    drawToggleRow(labelFps_,     fpsOn_,       fpsOff_);
+    drawMultiRow (labelFpsPos_,  fpsPosButtons_, 86.f);
+
+    // ⭐ UI 缩放：提示独占一行
+    labelUiScale_.setPosition({contentX, y + 8.f});
     window.native().draw(labelUiScale_);
-    for (int i = 0; i < kUiScaleCount; ++i) {
-        uiScaleButtons_[i]->setPosition({ctrlX + i * 100.f, y});
+    for (size_t i = 0; i < uiScaleButtons_.size(); ++i) {
+        uiScaleButtons_[i]->setPosition({
+            ctrlX + static_cast<float>(i) * 96.f, y});
         uiScaleButtons_[i]->render(window.native());
     }
-    y += kRowH;
-    hintUiScale_.setPosition({ctrlX, y - 8.f});
+    y += 44.f;
+    hintUiScale_.setPosition({contentX, y});
     window.native().draw(hintUiScale_);
     y += 20.f;
 
-    // 控制台遮罩
-    labelConsoleMask_.setPosition({contentX, y + 6.f});
-    window.native().draw(labelConsoleMask_);
-    consoleMaskSlider_->setPosition({ctrlX, y + 2.f});
-    consoleMaskSlider_->render(window.native());
-    y += kRowH;
-
-    // 控制台字号
-    labelConsoleFont_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelConsoleFont_);
-    for (int i = 0; i < kConsoleFontCount; ++i) {
-        consoleFontButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-        consoleFontButtons_[i]->render(window.native());
-    }
-    y += kRowH;
-
-    // 控制台历史
-    labelConsoleHistory_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelConsoleHistory_);
-    for (int i = 0; i < kConsoleHistoryCount; ++i) {
-        consoleHistoryButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-        consoleHistoryButtons_[i]->render(window.native());
-    }
-    y += kRowH;
-
-    // 控制台自动滚动
-    labelConsoleAutoScroll_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelConsoleAutoScroll_);
-    consoleAutoScrollOn_->setPosition ({ctrlX, y});
-    consoleAutoScrollOff_->setPosition({ctrlX + 100.f, y});
-    consoleAutoScrollOn_->render(window.native());
-    consoleAutoScrollOff_->render(window.native());
-    y += kRowH;
-
-    // 控制台光标闪烁
-    labelConsoleBlink_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelConsoleBlink_);
-    consoleBlinkOn_->setPosition ({ctrlX, y});
-    consoleBlinkOff_->setPosition({ctrlX + 100.f, y});
-    consoleBlinkOn_->render(window.native());
-    consoleBlinkOff_->render(window.native());
-    y += kRowH;
-
-    // 主题
-    labelTheme_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelTheme_);
-    for (int i = 0; i < kThemeCount; ++i) {
-        themeButtons_[i]->setPosition({ctrlX + i * 120.f, y});
-        themeButtons_[i]->render(window.native());
-    }
-    y += kRowH;
+    // 控制台相关
+    drawSliderRow(labelConsoleMask_,       consoleMaskSlider_.get());
+    drawSliderRow(labelConsolePanelAlpha_, consolePanelAlphaSlider_.get());
+    drawMultiRow (labelConsoleFont_,       consoleFontButtons_, 96.f);
+    drawMultiRow (labelConsoleHistory_,    consoleHistoryButtons_, 96.f);
+    drawMultiRow (labelConsoleLineHeight_, consoleLineHeightButtons_, 96.f);
+    drawToggleRow(labelConsoleAutoScroll_, consoleAutoScrollOn_, consoleAutoScrollOff_);
+    drawToggleRow(labelConsoleBlink_,      consoleBlinkOn_,      consoleBlinkOff_);
+    drawMultiRow (labelTheme_,             themeButtons_, 110.f);
 
     // 壁纸
     if (background_) {
@@ -878,52 +954,65 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
             + std::to_string(background_->currentIndex() + 1) + "/"
             + std::to_string(background_->totalWallpapers()) + ")"));
     }
-    labelWallpaper_.setPosition({contentX, y + 10.f});
+    labelWallpaper_.setPosition({contentX, y + 8.f});
     window.native().draw(labelWallpaper_);
     wallpaperButton_->setPosition({ctrlX, y});
     wallpaperButton_->render(window.native());
     y += kRowH;
 
-    // 按钮圆角
-    labelButtonCorner_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelButtonCorner_);
-    for (int i = 0; i < kButtonCornerCount; ++i) {
-        buttonCornerButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-        buttonCornerButtons_[i]->render(window.native());
-    }
-    y += kRowH;
-
-    // 按钮边框
-    labelButtonOutline_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelButtonOutline_);
-    for (int i = 0; i < kButtonOutlineCount; ++i) {
-        buttonOutlineButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-        buttonOutlineButtons_[i]->render(window.native());
-    }
+    // 时钟
+    drawToggleRow(labelClock_,    clockOn_, clockOff_);
+    drawMultiRow (labelClockPos_, clockPosButtons_, 86.f);
 }
 
 void SettingsScene::renderOtherTab(Window& window, float contentX,
                                    float ctrlX, float y) {
     headingOther_.setPosition({contentX, y});
     window.native().draw(headingOther_);
-    y += 40.f;
+    y += 36.f;
 
-    labelRememberSize_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelRememberSize_);
-    rememberOn_->setPosition ({ctrlX, y});
-    rememberOff_->setPosition({ctrlX + 100.f, y});
-    rememberOn_->render(window.native());
-    rememberOff_->render(window.native());
-    y += kRowH + 30.f;
+    auto drawToggleRow = [&](sf::Text& label,
+                             const std::unique_ptr<Button>& on,
+                             const std::unique_ptr<Button>& off) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        on->setPosition ({ctrlX, y});
+        off->setPosition({ctrlX + 96.f, y});
+        on->render(window.native());
+        off->render(window.native());
+        y += kRowH;
+    };
 
-    resetButton_->setPosition({contentX, y});
+    auto drawMultiRow = [&](sf::Text& label,
+                            std::vector<std::unique_ptr<Button>>& btns,
+                            float gap = 96.f) {
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+        for (size_t i = 0; i < btns.size(); ++i) {
+            btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
+            btns[i]->render(window.native());
+        }
+        y += kRowH;
+    };
+
+    drawToggleRow(labelRememberSize_, rememberOn_, rememberOff_);
+    drawMultiRow (labelLogRotate_,    logRotateButtons_, 96.f);
+    drawMultiRow (labelLogKeep_,      logKeepButtons_,   96.f);
+    drawMultiRow (labelButtonCorner_, buttonCornerButtons_, 96.f);
+    drawMultiRow (labelButtonOutline_,buttonOutlineButtons_,96.f);
+
+    y += 20.f;
+    aboutButton_->setPosition({contentX, y});
+    aboutButton_->render(window.native());
+
+    resetButton_->setPosition({contentX + 220.f, y});
     resetButton_->render(window.native());
 }
 
 void SettingsScene::renderBackButton(Window& window) {
     auto size = window.native().getSize();
     backButton_->setPosition({static_cast<float>(size.x) - 200.f,
-                              static_cast<float>(size.y) - 80.f});
+                              static_cast<float>(size.y) - 70.f});
     backButton_->render(window.native());
 }
 
@@ -943,13 +1032,13 @@ void SettingsScene::render(Window& window) {
 
     switch (currentTab_) {
         case Tab::Display:
-            renderDisplayTab(window, kContentX, kCtrlX, 80.f);
+            renderDisplayTab(window, kContentX, kCtrlX, 60.f);
             break;
         case Tab::Interface:
-            renderInterfaceTab(window, kContentX, kCtrlX, 60.f);
+            renderInterfaceTab(window, kContentX, kCtrlX, 50.f);
             break;
         case Tab::Other:
-            renderOtherTab(window, kContentX, kCtrlX, 100.f);
+            renderOtherTab(window, kContentX, kCtrlX, 60.f);
             break;
     }
 
@@ -958,5 +1047,9 @@ void SettingsScene::render(Window& window) {
     if (resetConfirm_) {
         resetConfirm_->relayout({w, h});
         resetConfirm_->render(window.native());
+    }
+    if (aboutDialog_) {
+        aboutDialog_->relayout({w, h});
+        aboutDialog_->render(window.native());
     }
 }
