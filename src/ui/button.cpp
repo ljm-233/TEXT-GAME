@@ -3,6 +3,7 @@
 #include "ui_scale.h"
 #include "utf8.h"
 #include "button_style.h"
+#include "animation.h"
 #include <algorithm>
 #include <cmath>
 
@@ -21,7 +22,6 @@ Button::Button(const std::string& label,
     shape_.setPosition(position_);
     text_.setFillColor(getTheme().textPrimary);
     refreshShape();
-    refreshColor();
     centerText();
 }
 
@@ -44,7 +44,6 @@ void Button::setText(const std::string& text) {
 
 void Button::setSelected(bool s) {
     selected_ = s;
-    refreshColor();
 }
 
 void Button::refreshShape() {
@@ -53,7 +52,6 @@ void Button::refreshShape() {
     float r = std::clamp(style.cornerRadius, 0.f, maxR);
 
     if (r < 0.5f) {
-        // 直角矩形
         shape_.setPointCount(4);
         shape_.setPoint(0, {0.f, 0.f});
         shape_.setPoint(1, {size_.x, 0.f});
@@ -73,25 +71,38 @@ void Button::refreshShape() {
                 shape_.setPoint(idx++, {x, y});
             }
         };
-        // 从左上角开始逆时针
-        arc({r, r}, kPi);                  // 左上
-        arc({size_.x - r, r}, -kPi / 2.f); // 右上
-        arc({size_.x - r, size_.y - r}, 0.f);          // 右下
-        arc({r, size_.y - r}, kPi / 2.f);              // 左下
+        arc({r, r}, kPi);
+        arc({size_.x - r, r}, -kPi / 2.f);
+        arc({size_.x - r, size_.y - r}, 0.f);
+        arc({r, size_.y - r}, kPi / 2.f);
     }
 
     shape_.setOutlineThickness(style.outlineThickness);
 }
 
-void Button::refreshColor() {
+void Button::updateColors(float dt) {
     const auto& t = getTheme();
-    if (pressed_)       shape_.setFillColor(t.buttonPressed);
-    else if (hovered_)  shape_.setFillColor(t.buttonHover);
-    else if (selected_) shape_.setFillColor(t.buttonSelected);
-    else                shape_.setFillColor(t.buttonNormal);
 
-    shape_.setOutlineColor(t.outline);
-    text_.setFillColor(t.textPrimary);
+    sf::Color targetFill;
+    if (pressed_)        targetFill = t.buttonPressed;
+    else if (hovered_)   targetFill = t.buttonHover;
+    else if (selected_)  targetFill = t.buttonSelected;
+    else                 targetFill = t.buttonNormal;
+
+    const sf::Color targetOutline = t.outline;
+    const sf::Color targetText    = t.textPrimary;
+
+    if (!colorsInitialized_) {
+        currentFill_    = targetFill;
+        currentOutline_ = targetOutline;
+        currentText_    = targetText;
+        colorsInitialized_ = true;
+        return;
+    }
+
+    currentFill_    = Anim::approach(currentFill_,    targetFill,    dt);
+    currentOutline_ = Anim::approach(currentOutline_, targetOutline, dt);
+    currentText_    = Anim::approach(currentText_,    targetText,    dt);
 }
 
 void Button::centerText() {
@@ -127,7 +138,6 @@ void Button::handleEvent(const sf::Event& event) {
             pressed_ = false;
         }
     }
-    refreshColor();
 }
 
 bool Button::consumeClick() {
@@ -137,9 +147,15 @@ bool Button::consumeClick() {
 }
 
 void Button::render(sf::RenderTarget& target) {
-    // 主题可能变了，每帧刷新一次颜色和形状（成本很低）
+    // 用自上次 render 起的时间做颜色平滑
+    float dt = animClock_.restart().asSeconds();
+    updateColors(dt);
+
     refreshShape();
-    refreshColor();
+    shape_.setFillColor(currentFill_);
+    shape_.setOutlineColor(currentOutline_);
+    text_.setFillColor(currentText_);
+
     target.draw(shape_);
     target.draw(text_);
 }

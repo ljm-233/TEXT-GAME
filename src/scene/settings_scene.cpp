@@ -3,7 +3,7 @@
 #include "utf8.h"
 #include "ui_scale.h"
 #include "button_style.h"
-#include "text_input.h"
+#include "animation.h"
 #include <algorithm>
 #include <cmath>
 
@@ -23,6 +23,10 @@ const char* kLogLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
 const int kFpsLimits[]  = {0, 30, 60, 120, 144};
 constexpr int kFpsLimitCount = 5;
 const char* kFpsLimitLabels[] = {"无", "30", "60", "120", "144"};
+
+const float kAnimSpeeds[] = {0.5f, 1.0f, 2.0f};
+constexpr int kAnimSpeedCount = 3;
+const char* kAnimSpeedLabels[] = {Str::AnimSpeedSlow, Str::AnimSpeedNormal, Str::AnimSpeedFast};
 
 const char* kFpsPosLabels[] = {"左上", "右上", "左下", "右下"};
 constexpr int kFpsPosCount  = 4;
@@ -121,6 +125,10 @@ int indexOfLogKeep(int idx) {
     if (idx < 0 || idx >= kLogKeepCount) return 1;
     return idx;
 }
+int indexOfAnimSpeed(int idx) {
+    if (idx < 0 || idx >= kAnimSpeedCount) return 1;
+    return idx;
+}
 }
 
 // ============================================================
@@ -148,6 +156,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelAntiAliasing_    (font, toSf(Str::LabelAntiAliasing),    scaledFontSize(20)),
       labelLogLevel_        (font, toSf(Str::LabelLogLevel),        scaledFontSize(20)),
       labelFpsLimit_        (font, toSf(Str::LabelFpsLimit),        scaledFontSize(20)),
+      labelAnimation_       (font, toSf(Str::LabelAnimation),       scaledFontSize(20)),
+      labelAnimationSpeed_  (font, toSf(Str::LabelAnimationSpeed),  scaledFontSize(20)),
       labelFps_             (font, toSf(Str::LabelFps),             scaledFontSize(20)),
       labelFpsPos_          (font, toSf(Str::LabelFpsPos),          scaledFontSize(20)),
       labelUiScale_         (font, toSf(Str::LabelUiScale),         scaledFontSize(20)),
@@ -170,15 +180,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelPlayerName_      (font, toSf(Str::LabelPlayerName),      scaledFontSize(20)),
       hintUiScale_          (font, toSf(Str::HintUiScale),          scaledFontSize(14)) {
 
-        // 玩家名输入框
-    playerNameInput_ = std::make_unique<TextInput>(
-        font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
-        Str::PlayerNamePlaceholder, 18, 16);
-    playerNameInput_->setText(preferences_->get("player_name", ""));
-    playerNameInput_->setOnChanged([this](const std::string& s) {
-        preferences_->set("player_name", s);
-    });
-
     // ===== 读偏好 =====
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
     fullscreen_          = preferences_->getBool("fullscreen", false);
@@ -186,6 +187,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     antiAliasingLevel_   = preferences_->getInt("anti_aliasing", 8);
     logLevel_            = preferences_->getInt("log_level", static_cast<int>(LogLevel::Info));
     fpsLimit_            = preferences_->getInt("fps_limit", 60);
+    animationEnabled_    = preferences_->getBool("animation_enabled", true);
+    animationSpeedIndex_ = indexOfAnimSpeed(preferences_->getInt("animation_speed_index", 1));
     showFps_             = preferences_->getBool("show_fps", false);
     fpsPosition_         = preferences_->getInt("fps_position", 1);
     uiScale_             = static_cast<float>(preferences_->getDouble("ui_scale", 1.0));
@@ -205,7 +208,16 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     logRotateIndex_      = indexOfLogRotate(preferences_->getInt("log_rotate", 0));
     logKeepIndex_        = indexOfLogKeep(preferences_->getInt("log_keep", 1));
 
-    // ===== 标签颜色 =====
+    // 玩家名输入框
+    playerNameInput_ = std::make_unique<TextInput>(
+        font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
+        Str::PlayerNamePlaceholder, 18, 16);
+    playerNameInput_->setText(preferences_->get("player_name", ""));
+    playerNameInput_->setOnChanged([this](const std::string& s) {
+        preferences_->set("player_name", s);
+    });
+
+    // 标签颜色
     auto headingColor = sf::Color(160, 200, 240);
     headingDisplay_.setFillColor(headingColor);
     headingInterface_.setFillColor(headingColor);
@@ -214,6 +226,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     auto labelColor = sf::Color(230, 230, 230);
     for (auto* t : {&labelResolution_, &labelFullscreen_, &labelVsync_,
                     &labelAntiAliasing_, &labelLogLevel_, &labelFpsLimit_,
+                    &labelAnimation_, &labelAnimationSpeed_,
                     &labelFps_, &labelFpsPos_, &labelUiScale_,
                     &labelConsoleMask_, &labelConsolePanelAlpha_,
                     &labelConsoleFont_, &labelConsoleHistory_,
@@ -222,12 +235,12 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelClock_, &labelClockPos_,
                     &labelRememberSize_, &labelLogRotate_, &labelLogKeep_,
                     &labelButtonCorner_, &labelButtonOutline_,
-                    &labelPlayerName_}) {           // ← 新增
+                    &labelPlayerName_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
-    // ===== Tab =====
+    // Tab
     const char* tabLabels[] = {Str::TabDisplay, Str::TabInterface, Str::TabOther};
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
@@ -243,7 +256,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         return std::make_pair(std::move(on), std::move(off));
     };
 
-    // ===== Display =====
+    // Display
     for (int i = 0; i < kResolutionCount; ++i) {
         resolutionButtons_.push_back(std::make_unique<Button>(
             kResolutions[i].label, font_,
@@ -251,6 +264,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     }
     { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
     { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_  = std::move(on); animationOff_  = std::move(off); }
     for (int i = 0; i < kAACount; ++i)
         antiAliasingButtons_.push_back(std::make_unique<Button>(
             kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -260,8 +274,11 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (int i = 0; i < kFpsLimitCount; ++i)
         fpsLimitButtons_.push_back(std::make_unique<Button>(
             kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+    for (int i = 0; i < kAnimSpeedCount; ++i)
+        animationSpeedButtons_.push_back(std::make_unique<Button>(
+            kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
 
-    // ===== Interface =====
+    // Interface
     { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
     for (int i = 0; i < kFpsPosCount; ++i)
         fpsPosButtons_.push_back(std::make_unique<Button>(
@@ -302,7 +319,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         clockPosButtons_.push_back(std::make_unique<Button>(
             kFpsPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
-    // ===== Other =====
+    // Other
     { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
     for (int i = 0; i < kLogRotateCount; ++i)
         logRotateButtons_.push_back(std::make_unique<Button>(
@@ -325,7 +342,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     backButton_ = std::make_unique<Button>(Str::Back, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 52.f}, 22);
 
-    // 应用初始按钮样式
     {
         ButtonStyle bs;
         bs.cornerRadius = buttonCorner_;
@@ -350,6 +366,10 @@ void SettingsScene::refreshSelection() {
     fullscreenOff_->setSelected(!fullscreen_);
     vsyncOn_->setSelected(vsync_);
     vsyncOff_->setSelected(!vsync_);
+    animationOn_->setSelected(animationEnabled_);
+    animationOff_->setSelected(!animationEnabled_);
+    for (int i = 0; i < kAnimSpeedCount; ++i)
+        animationSpeedButtons_[i]->setSelected(i == animationSpeedIndex_);
 
     int aaIdx = indexOfAA(antiAliasingLevel_);
     for (int i = 0; i < kAACount; ++i)
@@ -443,18 +463,15 @@ void SettingsScene::applyAntiAliasing() {
 void SettingsScene::applyLogLevel() {
     logger_->setMinLevel(static_cast<LogLevel>(logLevel_));
     preferences_->setInt("log_level", logLevel_);
-    logger_->info("日志级别已切换");
 }
 void SettingsScene::applyTheme() {
     setTheme(themeId_);
     preferences_->setInt("theme", static_cast<int>(themeId_));
-    logger_->info("主题已切换");
 }
 void SettingsScene::applyWallpaper() {
     if (!background_) return;
     if (background_->next()) {
         preferences_->set("current_wallpaper", background_->currentFile());
-        logger_->info("壁纸切换: " + background_->currentFile());
     }
 }
 void SettingsScene::applyFpsPosition() {
@@ -476,21 +493,25 @@ void SettingsScene::applyLogRotation() {
     logger_->setRotation(kLogRotateSizes[logRotateIndex_], kLogKeeps[logKeepIndex_]);
     preferences_->setInt("log_rotate", logRotateIndex_);
     preferences_->setInt("log_keep",   logKeepIndex_);
-    logger_->info("日志轮转配置已更新");
+}
+void SettingsScene::applyAnimation() {
+    Anim::setEnabled(animationEnabled_);
+    Anim::setSpeed(kAnimSpeeds[animationSpeedIndex_]);
+    preferences_->setBool("animation_enabled", animationEnabled_);
+    preferences_->setInt("animation_speed_index", animationSpeedIndex_);
 }
 void SettingsScene::resetAllPreferences() {
     preferences_->resetAll();
-    logger_->warn("已恢复默认设置，请重启程序");
 }
 
 // ============================================================
 // 事件
 // ============================================================
+
 void SettingsScene::handleEvent(const sf::Event& event) {
     if (resetConfirm_) { resetConfirm_->handleEvent(event); return; }
     if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }
 
-    // 输入框聚焦时，ESC 只在输入框上生效，不返回上一页
     bool inputFocused = playerNameInput_ && playerNameInput_->isFocused();
 
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
@@ -501,7 +522,6 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     }
     for (auto& b : tabButtons_) b->handleEvent(event);
 
-    // 玩家名输入框事件优先（在 Other Tab）
     if (currentTab_ == Tab::Other && playerNameInput_) {
         playerNameInput_->handleEvent(event);
     }
@@ -511,6 +531,8 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             for (auto& b : resolutionButtons_) b->handleEvent(event);
             fullscreenOn_->handleEvent(event);  fullscreenOff_->handleEvent(event);
             vsyncOn_->handleEvent(event);       vsyncOff_->handleEvent(event);
+            animationOn_->handleEvent(event);   animationOff_->handleEvent(event);
+            for (auto& b : animationSpeedButtons_) b->handleEvent(event);
             for (auto& b : antiAliasingButtons_) b->handleEvent(event);
             for (auto& b : logLevelButtons_) b->handleEvent(event);
             for (auto& b : fpsLimitButtons_) b->handleEvent(event);
@@ -604,6 +626,22 @@ void SettingsScene::update(float /*dt*/) {
             }
             if (vsyncOff_->consumeClick() && vsync_) {
                 vsync_ = false; refreshSelection(); applyVsync(); return;
+            }
+            if (animationOn_->consumeClick() && !animationEnabled_) {
+                animationEnabled_ = true; refreshSelection(); applyAnimation(); return;
+            }
+            if (animationOff_->consumeClick() && animationEnabled_) {
+                animationEnabled_ = false; refreshSelection(); applyAnimation(); return;
+            }
+            for (int i = 0; i < kAnimSpeedCount; ++i) {
+                if (animationSpeedButtons_[i]->consumeClick()) {
+                    if (animationSpeedIndex_ != i) {
+                        animationSpeedIndex_ = i;
+                        refreshSelection();
+                        applyAnimation();
+                    }
+                    return;
+                }
             }
             for (int i = 0; i < kAACount; ++i) {
                 if (antiAliasingButtons_[i]->consumeClick()) {
@@ -844,7 +882,7 @@ void SettingsScene::update(float /*dt*/) {
 }
 
 // ============================================================
-// 渲染子函数
+// 渲染
 // ============================================================
 
 void SettingsScene::renderTabs(Window& window) {
@@ -895,11 +933,13 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
         y += kRowH;
     };
 
-    drawToggleRow(labelFullscreen_, fullscreenOn_, fullscreenOff_);
-    drawToggleRow(labelVsync_,      vsyncOn_,      vsyncOff_);
-    drawMultiRow (labelAntiAliasing_, antiAliasingButtons_, 96.f);
-    drawMultiRow (labelLogLevel_,     logLevelButtons_,     106.f);
-    drawMultiRow (labelFpsLimit_,     fpsLimitButtons_,     86.f);
+    drawToggleRow(labelFullscreen_,    fullscreenOn_,   fullscreenOff_);
+    drawToggleRow(labelVsync_,         vsyncOn_,        vsyncOff_);
+    drawToggleRow(labelAnimation_,     animationOn_,    animationOff_);
+    drawMultiRow (labelAnimationSpeed_,animationSpeedButtons_, 96.f);
+    drawMultiRow (labelAntiAliasing_,  antiAliasingButtons_,   96.f);
+    drawMultiRow (labelLogLevel_,      logLevelButtons_,       106.f);
+    drawMultiRow (labelFpsLimit_,      fpsLimitButtons_,       86.f);
 }
 
 void SettingsScene::renderInterfaceTab(Window& window, float contentX,
@@ -940,11 +980,9 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
         y += kRowH;
     };
 
-    // FPS 显示
     drawToggleRow(labelFps_,     fpsOn_,       fpsOff_);
     drawMultiRow (labelFpsPos_,  fpsPosButtons_, 86.f);
 
-    // ⭐ UI 缩放：提示独占一行
     labelUiScale_.setPosition({contentX, y + 8.f});
     window.native().draw(labelUiScale_);
     for (size_t i = 0; i < uiScaleButtons_.size(); ++i) {
@@ -957,7 +995,6 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     window.native().draw(hintUiScale_);
     y += 20.f;
 
-    // 控制台相关
     drawSliderRow(labelConsoleMask_,       consoleMaskSlider_.get());
     drawSliderRow(labelConsolePanelAlpha_, consolePanelAlphaSlider_.get());
     drawMultiRow (labelConsoleFont_,       consoleFontButtons_, 96.f);
@@ -967,7 +1004,6 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     drawToggleRow(labelConsoleBlink_,      consoleBlinkOn_,      consoleBlinkOff_);
     drawMultiRow (labelTheme_,             themeButtons_, 110.f);
 
-    // 壁纸
     if (background_) {
         labelWallpaper_.setString(toSf(
             std::string(Str::LabelWallpaper) + "  ("
@@ -980,7 +1016,6 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     wallpaperButton_->render(window.native());
     y += kRowH;
 
-    // 时钟
     drawToggleRow(labelClock_,    clockOn_, clockOff_);
     drawMultiRow (labelClockPos_, clockPosButtons_, 86.f);
 }
@@ -1043,10 +1078,6 @@ void SettingsScene::renderBackButton(Window& window) {
                               static_cast<float>(size.y) - 70.f});
     backButton_->render(window.native());
 }
-
-// ============================================================
-// 主渲染
-// ============================================================
 
 void SettingsScene::render(Window& window) {
     window.clear();

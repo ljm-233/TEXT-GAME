@@ -43,6 +43,7 @@ private:
     void applyFpsLimit();
     void applyButtonStyle();
     void applyLogRotation();
+    void applyAnimation();
     void resetAllPreferences();
 
     void renderTabs        (Window& window);
@@ -69,6 +70,8 @@ private:
     std::vector<std::unique_ptr<Button>> antiAliasingButtons_;
     std::vector<std::unique_ptr<Button>> logLevelButtons_;
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
+    std::unique_ptr<Button> animationOn_, animationOff_;
+    std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
 
     // Interface
     std::unique_ptr<Button> fpsOn_, fpsOff_;
@@ -99,13 +102,13 @@ private:
     std::unique_ptr<ConfirmDialog> resetConfirm_;
     std::unique_ptr<ConfirmDialog> aboutDialog_;
 
-    // ⭐ 玩家名输入框
     std::unique_ptr<TextInput> playerNameInput_;
 
     // 标签
     sf::Text headingDisplay_, headingInterface_, headingOther_;
     sf::Text labelResolution_, labelFullscreen_, labelVsync_;
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
+    sf::Text labelAnimation_, labelAnimationSpeed_;
     sf::Text labelFps_, labelFpsPos_, labelUiScale_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelConsoleFont_, labelConsoleHistory_;
@@ -124,6 +127,8 @@ private:
     int     antiAliasingLevel_;
     int     logLevel_;
     int     fpsLimit_;
+    bool    animationEnabled_;
+    int     animationSpeedIndex_;
     bool    showFps_;
     int     fpsPosition_;
     float   uiScale_;

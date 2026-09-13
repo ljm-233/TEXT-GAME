@@ -13,6 +13,7 @@
 #include "ui_scale.h"
 #include "theme.h"
 #include "button_style.h"
+#include "animation.h"
 #include <algorithm>
 
 using namespace std;
@@ -49,7 +50,7 @@ void Application::registerDependencies() {
         return make_shared<Preferences>(*paths);
     });
 
-    // ===== 应用 UI 缩放 / 主题 / 按钮样式 =====
+    // ===== 应用 UI 缩放 / 主题 / 按钮样式 / 动画 =====
     {
         auto prefs = container_.resolve<Preferences>();
 
@@ -60,6 +61,12 @@ void Application::registerDependencies() {
         bs.cornerRadius     = static_cast<float>(prefs->getDouble("button_corner", 6.0));
         bs.outlineThickness = static_cast<float>(prefs->getDouble("button_outline", 2.0));
         setButtonStyle(bs);
+
+        // 动画
+        Anim::setEnabled(prefs->getBool("animation_enabled", true));
+        static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
+        int idx = std::clamp(prefs->getInt("animation_speed_index", 1), 0, 2);
+        Anim::setSpeed(kSpeeds[idx]);
     }
 
     // ===== Logger =====

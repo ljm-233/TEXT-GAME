@@ -101,4 +101,11 @@ constexpr const char* NewSavePlaceholder = "我的存档";
 constexpr const char* BtnCreate       = "创建";
 constexpr const char* BtnCancel       = "取消";
 
+// ===== 动画 =====
+constexpr const char* LabelAnimation      = "动画效果";
+constexpr const char* LabelAnimationSpeed = "动画速度";
+constexpr const char* AnimSpeedSlow       = "慢";
+constexpr const char* AnimSpeedNormal     = "正常";
+constexpr const char* AnimSpeedFast       = "快";
+
 } // namespace Str

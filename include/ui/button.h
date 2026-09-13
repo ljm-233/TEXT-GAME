@@ -25,8 +25,8 @@ public:
 private:
     bool contains(sf::Vector2f point) const;
     void centerText();
-    void refreshColor();
     void refreshShape();
+    void updateColors(float dt);
 
     sf::ConvexShape shape_;
     sf::Text       text_;
@@ -36,4 +36,11 @@ private:
     bool pressed_  = false;
     bool clicked_  = false;
     bool selected_ = false;
+
+    // ===== 动画状态 =====
+    sf::Clock animClock_;
+    bool      colorsInitialized_ = false;
+    sf::Color currentFill_;
+    sf::Color currentOutline_;
+    sf::Color currentText_;
 };
