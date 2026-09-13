@@ -8,29 +8,37 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 
 add_executable(text_game
-    src/main.cpp
-    src/application.cpp
-    src/ui_scale.cpp
-    src/theme.cpp
-    src/utf8.cpp
-    src/calculator.cpp
-    src/game.cpp
-    src/background.cpp
-    src/font_holder.cpp
-    src/button.cpp
-    src/slider.cpp
-    src/confirm_dialog.cpp
-    src/save_manager.cpp
-    src/main_menu_scene.cpp
-    src/save_select_scene.cpp
-    src/game_scene.cpp
-    src/settings_scene.cpp
-    src/console.cpp
-    src/console_scene.cpp
-    src/window.cpp
+    src/core/main.cpp
+    src/core/application.cpp
+    src/core/game.cpp
+    src/core/scene_manager.cpp
+    src/ui/button.cpp
+    src/ui/slider.cpp
+    src/ui/confirm_dialog.cpp
+    src/ui/theme.cpp
+    src/ui/ui_scale.cpp
+    src/ui/utf8.cpp
+    src/ui/window.cpp
+    src/ui/background.cpp
+    src/ui/font_holder.cpp
+    src/ui/console.cpp
+    src/game/calculator.cpp
+    src/game/save_manager.cpp
+    src/scene/main_menu_scene.cpp
+    src/scene/save_select_scene.cpp
+    src/scene/game_scene.cpp
+    src/scene/settings_scene.cpp
+    src/scene/console_scene.cpp
 )
 
-target_include_directories(text_game PRIVATE include src)
+target_include_directories(text_game PRIVATE
+    include
+    include/core
+    include/config
+    include/ui
+    include/game
+    include/scene
+)
 
 target_compile_definitions(text_game PRIVATE
     PROJECT_ROOT="${CMAKE_SOURCE_DIR}"

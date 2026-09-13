@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <vector>
 #include "logging.h"
 #include "window.h"
 #include "background.h"
@@ -10,6 +9,7 @@
 #include "runtime_config.h"
 #include "scene.h"
 #include "scene_id.h"
+#include "scene_manager.h"
 
 class Game {
 public:
@@ -25,7 +25,7 @@ public:
 
 private:
     std::unique_ptr<Scene> createScene(SceneId id);
-    void switchScene(SceneId next);
+    void handleTransition(SceneId next);
     void saveWindowState();
     void renderFpsOverlay();
     void flushConfigs();
@@ -38,14 +38,11 @@ private:
     std::shared_ptr<Preferences>   preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
 
+    std::unique_ptr<SceneManager>  sceneManager_;
+
     sf::Text fpsText_;
     int      fpsFrameCount_ = 0;
     float    fpsElapsed_    = 0.f;
     float    fpsDisplayed_  = 0.f;
-
-    float    flushTimer_    = 0.f;   // 每 5 秒 flush 一次
-
-    std::unique_ptr<Scene> currentScene_;
-    SceneId currentId_ = SceneId::None;
-    std::vector<SceneId> history_;
+    float    flushTimer_    = 0.f;
 };

@@ -1,4 +1,5 @@
 #include "calculator.h"
+#include "strings.h"
 #include <iostream>
 #include <limits>
 #include <cmath>
@@ -11,26 +12,26 @@ void Calculator::run() {
     char c;
     double result = 0.0;
 
-    logger_->normal("请输入第一个数字·Enter 1st number:");
+    logger_->normal(Str::CalcFirstNum);
     cin >> a;
     if (cin.fail()) {
-        logger_->error("输入无效");
+        logger_->error(Str::CalcInvalid);
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
         return;
     }
 
-    logger_->normal("请输入第二个数字·Enter 2nd number:");
+    logger_->normal(Str::CalcSecondNum);
     cin >> b;
     if (cin.fail()) {
-        logger_->error("输入无效");
+        logger_->error(Str::CalcInvalid);
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
         return;
     }
 
     while (true) {
-        logger_->normal("你想要什么·What do you want?\n1+ 2- 3x 4/ 5幂函数\n");
+        logger_->normal(Str::CalcWhatWant);
         cin >> c;
 
         switch (c) {
@@ -39,7 +40,7 @@ void Calculator::run() {
             case '3': result = a * b; break;
             case '4':
                 if (fabs(b) < 1e-12) {
-                    logger_->warn("不能除以零·Cannot divide by zero!");
+                    logger_->warn(Str::CalcDivZero);
                     return;
                 }
                 result = a / b;
@@ -47,17 +48,17 @@ void Calculator::run() {
             case '5':
                 result = pow(a, b);
                 if (isinf(result)) {
-                    logger_->warn("结果过大，无法显示!");
+                    logger_->warn(Str::CalcOverflow);
                     return;
                 }
                 break;
             default:
-                logger_->error(" Fail! :( ");
-                logger_->normal("[再试·Retry]");
+                logger_->error(Str::CalcFail);
+                logger_->normal(Str::CalcRetry);
                 continue;
         }
 
-        logger_->normal("结果·End Number: " + to_string(result));
+        logger_->normal(std::string(Str::CalcResult) + to_string(result));
         return;
     }
 }

@@ -31,6 +31,7 @@ private:
     enum class Tab { Display = 0, Interface = 1, Other = 2 };
     static constexpr int kTabCount = 3;
 
+    // ----- 状态应用 -----
     void refreshSelection();
     void applyResolution();
     void applyFullscreen();
@@ -41,6 +42,14 @@ private:
     void applyWallpaper();
     void resetAllPreferences();
 
+    // ----- 渲染子函数 -----
+    void renderTabs        (Window& window);
+    void renderDisplayTab  (Window& window, float contentX, float ctrlX, float y);
+    void renderInterfaceTab(Window& window, float contentX, float ctrlX, float y);
+    void renderOtherTab    (Window& window, float contentX, float ctrlX, float y);
+    void renderBackButton  (Window& window);
+
+    // ----- 依赖 -----
     std::shared_ptr<Background>    background_;
     std::shared_ptr<Preferences>   preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;

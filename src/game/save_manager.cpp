@@ -1,4 +1,5 @@
 #include "save_manager.h"
+#include "strings.h"
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -55,7 +56,7 @@ SaveInfo SaveManager::createSave() {
 
     SaveInfo info;
     info.filename   = filename;
-    info.name       = "存档 " + now;
+    info.name       = std::string(Str::SaveNamePrefix) + now;
     info.createdAt  = now;
     info.lastPlayed = now;
 
@@ -78,7 +79,7 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     if (!in) return false;
 
     out.filename   = filename;
-    out.name       = "未命名存档";
+    out.name       = Str::UnnamedSave;
     out.createdAt  = "";
     out.lastPlayed = "";
 

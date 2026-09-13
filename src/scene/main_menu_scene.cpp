@@ -1,14 +1,15 @@
 #include "main_menu_scene.h"
+#include "strings.h"
 
 MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
                              const sf::Font& font,
                              std::shared_ptr<Logger> logger)
     : background_(std::move(background)),
       logger_(std::move(logger)),
-      startButton_("启动游戏",      font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      calculatorButton_("计算器",   font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      settingsButton_("设置",       font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      exitButton_("退出游戏",       font, {0.f, 0.f}, {280.f, 70.f}, 30) {}
+      startButton_     (Str::StartGame,  font, {0.f, 0.f}, {280.f, 70.f}, 30),
+      calculatorButton_(Str::Calculator, font, {0.f, 0.f}, {280.f, 70.f}, 30),
+      settingsButton_  (Str::Settings,   font, {0.f, 0.f}, {280.f, 70.f}, 30),
+      exitButton_      (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 70.f}, 30) {}
 
 void MainMenuScene::handleEvent(const sf::Event& event) {
     startButton_.handleEvent(event);
@@ -44,10 +45,7 @@ void MainMenuScene::render(Window& window) {
     float cx = static_cast<float>(size.x) / 2.f;
     float cy = static_cast<float>(size.y) / 2.f;
 
-    const float btnW = 280.f;
-    const float btnH = 70.f;
-    const float gap  = 20.f;
-
+    const float btnW = 280.f, btnH = 70.f, gap = 20.f;
     float totalH = btnH * 4 + gap * 3;
     float startY = cy - totalH / 2.f;
 

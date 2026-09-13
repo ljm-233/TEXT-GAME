@@ -22,6 +22,9 @@ Game::Game(std::shared_ptr<Window>        window,
       runtimeConfig_(std::move(runtimeConfig)),
       fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20) {
     fpsText_.setFillColor(sf::Color(255, 255, 100));
+
+    sceneManager_ = std::make_unique<SceneManager>(
+        [this](SceneId id) { return createScene(id); });
 }
 
 std::unique_ptr<Scene> Game::createScene(SceneId id) {
@@ -52,35 +55,30 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
     }
 }
 
-void Game::switchScene(SceneId next) {
-    if (next == SceneId::None) return;
-
-    // 切换场景前把配置落盘一次
+void Game::handleTransition(SceneId next) {
+    // 场景切换前落盘配置
     flushConfigs();
 
     if (next == SceneId::Exit) {
+        logger_->info("场景切换: Exit");
         window_->close();
         return;
     }
 
     if (next == SceneId::Back) {
-        if (history_.empty()) return;
-        SceneId prev = history_.back();
-        history_.pop_back();
-
-        auto newScene = createScene(prev);
-        currentScene_ = std::move(newScene);
-        currentId_ = prev;
+        if (sceneManager_->pop()) {
+            logger_->info("场景回退: -> "
+                          + std::to_string(static_cast<int>(sceneManager_->currentId())));
+        } else {
+            logger_->warn("场景回退失败：历史为空");
+        }
         return;
     }
 
-    if (currentId_ != SceneId::None) {
-        history_.push_back(currentId_);
-    }
-
-    auto newScene = createScene(next);
-    currentScene_ = std::move(newScene);
-    currentId_ = next;
+    logger_->info("场景切换: "
+                  + std::to_string(static_cast<int>(sceneManager_->currentId()))
+                  + " -> " + std::to_string(static_cast<int>(next)));
+    sceneManager_->push(next);
 }
 
 void Game::saveWindowState() {
@@ -114,8 +112,10 @@ void Game::flushConfigs() {
 void Game::run() {
     logger_->info("游戏启动");
 
-    currentId_ = SceneId::MainMenu;
-    currentScene_ = createScene(currentId_);
+    if (!sceneManager_->start(SceneId::MainMenu)) {
+        logger_->error("无法创建主菜单场景");
+        return;
+    }
 
     sf::Clock clock;
 
@@ -131,31 +131,33 @@ void Game::run() {
             fpsElapsed_ = 0.f;
         }
 
-        // 每 5 秒 flush 一次配置
+        // 每 5 秒 flush 一次
         flushTimer_ += dt;
         if (flushTimer_ >= 5.f) {
             flushConfigs();
             flushTimer_ = 0.f;
         }
 
+        Scene& scene = sceneManager_->current();
+
         window_->pollEvents([&](const sf::Event& e) {
-            currentScene_->handleEvent(e);
+            scene.handleEvent(e);
         });
 
-        currentScene_->update(dt);
-        currentScene_->render(*window_);
+        scene.update(dt);
+        scene.render(*window_);
 
         renderFpsOverlay();
         window_->display();
 
-        SceneId next = currentScene_->nextScene();
-        if (next != SceneId::None && next != currentId_) {
-            switchScene(next);
+        SceneId next = scene.nextScene();
+        if (next != SceneId::None && next != sceneManager_->currentId()) {
+            handleTransition(next);
         }
     }
 
     saveWindowState();
-    flushConfigs();   // 退出前最后落盘
+    flushConfigs();
 
     logger_->info("游戏结束");
 }

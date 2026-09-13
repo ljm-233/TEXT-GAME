@@ -1,4 +1,5 @@
 #include "console.h"
+#include "strings.h"
 #include "ui_scale.h"
 #include <algorithm>
 #include <streambuf>
@@ -101,8 +102,8 @@ Console::Console(const sf::Font& font,
     inputLine_.setOutlineThickness(1.f);
     inputLine_.setOutlineColor(sf::Color(80, 80, 110));
 
-    lines_.push_back("=== TEXT-GAME 控制台 ===");
-    lines_.push_back("提示: ↑/↓ 翻历史，ESC 返回");
+    lines_.push_back(Str::ConsoleTitle);
+    lines_.push_back(Str::ConsoleHint);
     lines_.push_back("");
 }
 
@@ -151,7 +152,7 @@ void Console::submitCurrentInput() {
             history_.push_back(line);
             if (history_.size() > 100) history_.erase(history_.begin());
         }
-        lines_.push_back("> " + line);
+        lines_.push_back(Str::ConsolePrompt + line);
         if (lines_.size() > maxLines_) lines_.pop_front();
         currentInput_.clear();
         pendingLine_ = line;
@@ -238,7 +239,7 @@ void Console::render(sf::RenderTarget& target) {
         flushOutputBuffer();
         tail = outputBuffer_;
         display = lines_;
-        inputDisplay = "> " + currentInput_;
+        inputDisplay = std::string(Str::ConsolePrompt) + currentInput_;
     }
 
     int maxLines = static_cast<int>((outputBottom - outputTop) / lineH);
@@ -253,7 +254,6 @@ void Console::render(sf::RenderTarget& target) {
         else display.back() += tail;
     }
 
-    // 输出区
     text_.setFillColor(sf::Color(220, 220, 220));
     float y = outputTop;
     for (const auto& line : display) {
@@ -263,12 +263,10 @@ void Console::render(sf::RenderTarget& target) {
         y += lineH;
     }
 
-    // 输入行背景
     inputLine_.setSize({w - 2 * margin, inputH});
     inputLine_.setPosition({margin, h - inputH - margin});
     target.draw(inputLine_);
 
-    // 输入行文本
     text_.setFillColor(sf::Color(230, 230, 230));
     text_.setString(sf::String::fromUtf8(inputDisplay.begin(), inputDisplay.end()));
     text_.setPosition({margin + padX, h - inputH - margin + 8.f});

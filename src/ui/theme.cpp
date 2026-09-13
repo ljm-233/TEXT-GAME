@@ -1,4 +1,5 @@
 #include "theme.h"
+#include "strings.h"
 
 namespace {
 const Theme kThemes[kThemeCount] = {
@@ -49,9 +50,9 @@ void         setTheme(ThemeId id) { g_current = id; }
 
 const char* themeName(ThemeId id) {
     switch (id) {
-        case ThemeId::Dark:  return "深色";
-        case ThemeId::Blue:  return "蓝色";
-        case ThemeId::Light: return "浅色";
+        case ThemeId::Dark:  return Str::ThemeDark;
+        case ThemeId::Blue:  return Str::ThemeBlue;
+        case ThemeId::Light: return Str::ThemeLight;
     }
-    return "未知";
+    return "?";
 }

@@ -1,10 +1,6 @@
 #include "game_scene.h"
-
-namespace {
-sf::String toSf(const std::string& s) {
-    return sf::String::fromUtf8(s.begin(), s.end());
-}
-}
+#include "strings.h"
+#include "utf8.h"
 
 GameScene::GameScene(std::shared_ptr<Background> background,
                      const sf::Font& font,
@@ -17,8 +13,9 @@ GameScene::GameScene(std::shared_ptr<Background> background,
     infoText_.setFillColor(sf::Color::White);
 
     std::string content =
-        "游戏尚未实现\n\n当前存档: " + save_.name +
-        "\n\n按 ESC 返回存档选择";
+        std::string(Str::GameNotImpl) + "\n\n" +
+        Str::CurrentSave + save_.name + "\n\n" +
+        Str::EscToSaveSelect;
     infoText_.setString(toSf(content));
 
     logger_->info("进入游戏场景，存档: " + save_.filename);

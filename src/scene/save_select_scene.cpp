@@ -1,4 +1,5 @@
 #include "save_select_scene.h"
+#include "strings.h"
 
 SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
                                  std::shared_ptr<SaveManager> saveManager,
@@ -9,9 +10,9 @@ SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
       logger_(std::move(logger)),
       font_(font) {
 
-    newButton_  = std::make_unique<Button>("＋ 新建存档", font_,
+    newButton_  = std::make_unique<Button>(Str::NewSave, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{520.f, 60.f}, 26);
-    backButton_ = std::make_unique<Button>("返回", font_,
+    backButton_ = std::make_unique<Button>(Str::Back, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 50.f}, 22);
 
     rebuildButtons();
@@ -30,7 +31,7 @@ void SaveSelectScene::rebuildButtons() {
             sf::Vector2f{440.f, 55.f}, 22));
 
         deleteButtons_.push_back(std::make_unique<Button>(
-            "×", font_, sf::Vector2f{0.f, 0.f},
+            Str::DeleteMark, font_, sf::Vector2f{0.f, 0.f},
             sf::Vector2f{60.f, 55.f}, 26));
     }
 }
@@ -86,7 +87,8 @@ void SaveSelectScene::update(float /*dt*/) {
             pendingDeleteIndex_ = static_cast<int>(i);
             confirm_ = std::make_unique<ConfirmDialog>(
                 font_,
-                "确定删除存档「" + saves_[i].name + "」？",
+                std::string(Str::DeleteConfirmHead) + saves_[i].name
+                    + Str::DeleteConfirmTail,
                 sf::Vector2f(1280.f, 720.f));
             logger_->info("请求删除存档: " + saves_[i].filename);
             return;

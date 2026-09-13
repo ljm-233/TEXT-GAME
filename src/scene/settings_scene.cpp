@@ -1,10 +1,12 @@
 #include "settings_scene.h"
-#include "ui_scale.h"
+#include "strings.h"
 #include "utf8.h"
+#include "ui_scale.h"
 #include <algorithm>
 #include <cmath>
 
 namespace {
+// ===== 常量表 =====
 const int kAALevels[]     = {0, 4, 8, 16};
 constexpr int kAACount    = 4;
 const char* kAALabels[]   = {"关", "4x", "8x", "16x"};
@@ -16,7 +18,7 @@ const LogLevel kLogLevels[] = {
 constexpr int kLogCount = 5;
 const char* kLogLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
 
-const float kUiScales[]    = {0.8f, 1.0f, 1.2f, 1.5f};
+const float kUiScales[]     = {0.8f, 1.0f, 1.2f, 1.5f};
 constexpr int kUiScaleCount = 4;
 const char* kUiScaleLabels[] = {"0.8x", "1.0x", "1.2x", "1.5x"};
 
@@ -27,6 +29,18 @@ const char* kConsoleFontLabels[] = {"小", "中", "大", "特大"};
 const int kConsoleHistory[] = {50, 100, 200, 500};
 constexpr int kConsoleHistoryCount = 4;
 
+// ===== 布局常量 =====
+constexpr float kTabX     = 40.f;
+constexpr float kTabY     = 100.f;
+constexpr float kContentX = kTabX + 200.f;
+constexpr float kCtrlX    = kContentX + 240.f;
+constexpr float kRowH     = 58.f;
+constexpr float kBtnW     = 280.f;
+constexpr float kBtnH     = 50.f;
+constexpr float kGapX     = 16.f;
+constexpr float kGapY     = 12.f;
+
+// ===== 索引查找 =====
 int indexOfAA(int level) {
     for (int i = 0; i < kAACount; ++i) if (kAALevels[i] == level) return i;
     return 2;
@@ -53,6 +67,10 @@ int indexOfLogLevel(int l) {
 }
 }
 
+// ============================================================
+// 构造
+// ============================================================
+
 SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                              std::shared_ptr<Preferences>   preferences,
                              std::shared_ptr<RuntimeConfig> runtimeConfig,
@@ -65,24 +83,25 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       window_(std::move(window)),
       logger_(std::move(logger)),
       font_(font),
-      headingDisplay_(font, toSf("显示"), scaledFontSize(26)),
-      headingInterface_(font, toSf("界面"), scaledFontSize(26)),
-      headingOther_(font, toSf("其他"), scaledFontSize(26)),
-      labelResolution_(font, toSf("分辨率"), scaledFontSize(22)),
-      labelFullscreen_(font, toSf("全屏"), scaledFontSize(22)),
-      labelVsync_(font, toSf("垂直同步"), scaledFontSize(22)),
-      labelAntiAliasing_(font, toSf("抗锯齿"), scaledFontSize(22)),
-      labelLogLevel_(font, toSf("日志级别"), scaledFontSize(22)),
-      labelFps_(font, toSf("帧率显示"), scaledFontSize(22)),
-      labelUiScale_(font, toSf("界面缩放"), scaledFontSize(22)),
-      labelConsoleMask_(font, toSf("控制台遮罩"), scaledFontSize(22)),
-      labelConsoleFont_(font, toSf("控制台字号"), scaledFontSize(22)),
-      labelConsoleHistory_(font, toSf("控制台历史"), scaledFontSize(22)),
-      labelTheme_(font, toSf("主题"), scaledFontSize(22)),
-      labelWallpaper_(font, toSf("壁纸"), scaledFontSize(22)),
-      labelRememberSize_(font, toSf("记住窗口大小"), scaledFontSize(22)),
-      hintUiScale_(font, toSf("* 修改后返回主菜单再进入生效"), scaledFontSize(16)) {
+      headingDisplay_  (font, toSf(Str::TabDisplay),   scaledFontSize(26)),
+      headingInterface_(font, toSf(Str::TabInterface), scaledFontSize(26)),
+      headingOther_    (font, toSf(Str::TabOther),     scaledFontSize(26)),
+      labelResolution_    (font, toSf(Str::LabelResolution),     scaledFontSize(22)),
+      labelFullscreen_    (font, toSf(Str::LabelFullscreen),     scaledFontSize(22)),
+      labelVsync_         (font, toSf(Str::LabelVsync),          scaledFontSize(22)),
+      labelAntiAliasing_  (font, toSf(Str::LabelAntiAliasing),   scaledFontSize(22)),
+      labelLogLevel_      (font, toSf(Str::LabelLogLevel),       scaledFontSize(22)),
+      labelFps_           (font, toSf(Str::LabelFps),            scaledFontSize(22)),
+      labelUiScale_       (font, toSf(Str::LabelUiScale),        scaledFontSize(22)),
+      labelConsoleMask_   (font, toSf(Str::LabelConsoleMask),    scaledFontSize(22)),
+      labelConsoleFont_   (font, toSf(Str::LabelConsoleFont),    scaledFontSize(22)),
+      labelConsoleHistory_(font, toSf(Str::LabelConsoleHistory), scaledFontSize(22)),
+      labelTheme_         (font, toSf(Str::LabelTheme),          scaledFontSize(22)),
+      labelWallpaper_     (font, toSf(Str::LabelWallpaper),      scaledFontSize(22)),
+      labelRememberSize_  (font, toSf(Str::LabelRememberSize),   scaledFontSize(22)),
+      hintUiScale_        (font, toSf(Str::HintUiScale),         scaledFontSize(16)) {
 
+    // ----- 读偏好 -----
     selectedResolution_ = clampResolutionIndex(
         preferences_->getInt("resolution_index", 0));
     fullscreen_          = preferences_->getBool("fullscreen", false);
@@ -95,10 +114,10 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                               preferences_->getDouble("ui_scale", 1.0));
     consoleFontSize_     = preferences_->getInt("console_font_size", 18);
     consoleHistoryLines_ = preferences_->getInt("console_history_lines", 200);
-    themeId_             = static_cast<ThemeId>(
-                              preferences_->getInt("theme", 0));
+    themeId_             = static_cast<ThemeId>(preferences_->getInt("theme", 0));
     rememberSize_        = preferences_->getBool("remember_window_size", true);
 
+    // ----- 标签颜色 -----
     auto headingColor = sf::Color(160, 200, 240);
     headingDisplay_.setFillColor(headingColor);
     headingInterface_.setFillColor(headingColor);
@@ -114,20 +133,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
-    // Tab
-    const char* tabLabels[] = {"显示", "界面", "其他"};
+    // ----- Tab 按钮 -----
+    const char* tabLabels[] = {Str::TabDisplay, Str::TabInterface, Str::TabOther};
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
             tabLabels[i], font_, sf::Vector2f{0.f, 0.f},
             sf::Vector2f{180.f, 56.f}, 24));
     }
 
-    // ===== Display =====
-    for (int i = 0; i < kResolutionCount; ++i) {
-        resolutionButtons_.push_back(std::make_unique<Button>(
-            kResolutions[i].label, font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 50.f}, 20));
-    }
     auto makeToggle = [&](const std::string& onText, const std::string& offText) {
         auto on  = std::make_unique<Button>(onText, font_,
                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 42.f}, 20);
@@ -135,14 +148,16 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 42.f}, 20);
         return std::make_pair(std::move(on), std::move(off));
     };
-    {
-        auto [on, off] = makeToggle("开", "关");
-        fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off);
+
+    // ===== Display =====
+    for (int i = 0; i < kResolutionCount; ++i) {
+        resolutionButtons_.push_back(std::make_unique<Button>(
+            kResolutions[i].label, font_,
+            sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 20));
     }
-    {
-        auto [on, off] = makeToggle("开", "关");
-        vsyncOn_ = std::move(on); vsyncOff_ = std::move(off);
-    }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
+
     for (int i = 0; i < kAACount; ++i) {
         antiAliasingButtons_.push_back(std::make_unique<Button>(
             kAALabels[i], font_, sf::Vector2f{0.f, 0.f},
@@ -155,15 +170,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     }
 
     // ===== Interface =====
-    {
-        auto [on, off] = makeToggle("开", "关");
-        fpsOn_ = std::move(on); fpsOff_ = std::move(off);
-    }
+    { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
+
     for (int i = 0; i < kUiScaleCount; ++i) {
         uiScaleButtons_.push_back(std::make_unique<Button>(
             kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f},
             sf::Vector2f{90.f, 42.f}, 20));
     }
+
     int mask = preferences_->getInt("console_mask", 160);
     mask = std::max(0, std::min(255, mask));
     consoleMaskSlider_ = std::make_unique<Slider>(
@@ -185,54 +199,68 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             themeName(static_cast<ThemeId>(i)), font_,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{110.f, 42.f}, 20));
     }
-    wallpaperButton_ = std::make_unique<Button>("下一张 →", font_,
+    wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 42.f}, 20);
 
     // ===== Other =====
-    {
-        auto [on, off] = makeToggle("开", "关");
-        rememberOn_ = std::move(on); rememberOff_ = std::move(off);
-    }
-    resetButton_ = std::make_unique<Button>("恢复默认设置", font_,
+    { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
+    resetButton_ = std::make_unique<Button>(Str::ResetDefault, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 50.f}, 22);
 
-    backButton_ = std::make_unique<Button>("返回", font_,
+    backButton_ = std::make_unique<Button>(Str::Back, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 55.f}, 24);
 
     refreshSelection();
 }
+
+// ============================================================
+// 选中状态刷新
+// ============================================================
 
 void SettingsScene::refreshSelection() {
     for (int i = 0; i < kTabCount; ++i)
         tabButtons_[i]->setSelected(i == static_cast<int>(currentTab_));
     for (int i = 0; i < kResolutionCount; ++i)
         resolutionButtons_[i]->setSelected(i == selectedResolution_);
+
     fullscreenOn_->setSelected(fullscreen_);
     fullscreenOff_->setSelected(!fullscreen_);
     vsyncOn_->setSelected(vsync_);
     vsyncOff_->setSelected(!vsync_);
+
     int aaIdx = indexOfAA(antiAliasingLevel_);
     for (int i = 0; i < kAACount; ++i)
         antiAliasingButtons_[i]->setSelected(i == aaIdx);
+
     int lgIdx = indexOfLogLevel(logLevel_);
     for (int i = 0; i < kLogCount; ++i)
         logLevelButtons_[i]->setSelected(i == lgIdx);
+
     fpsOn_->setSelected(showFps_);
     fpsOff_->setSelected(!showFps_);
+
     int uiIdx = indexOfUiScale(uiScale_);
     for (int i = 0; i < kUiScaleCount; ++i)
         uiScaleButtons_[i]->setSelected(i == uiIdx);
+
     int cfIdx = indexOfConsoleFont(consoleFontSize_);
     for (int i = 0; i < kConsoleFontCount; ++i)
         consoleFontButtons_[i]->setSelected(i == cfIdx);
+
     int chIdx = indexOfConsoleHistory(consoleHistoryLines_);
     for (int i = 0; i < kConsoleHistoryCount; ++i)
         consoleHistoryButtons_[i]->setSelected(i == chIdx);
+
     for (int i = 0; i < kThemeCount; ++i)
         themeButtons_[i]->setSelected(i == static_cast<int>(themeId_));
+
     rememberOn_->setSelected(rememberSize_);
     rememberOff_->setSelected(!rememberSize_);
 }
+
+// ============================================================
+// 应用状态变更
+// ============================================================
 
 void SettingsScene::applyResolution() {
     const auto& res = kResolutions[selectedResolution_];
@@ -278,6 +306,10 @@ void SettingsScene::resetAllPreferences() {
     logger_->warn("已恢复默认设置，请重启程序");
 }
 
+// ============================================================
+// 事件
+// ============================================================
+
 void SettingsScene::handleEvent(const sf::Event& event) {
     if (resetConfirm_) {
         resetConfirm_->handleEvent(event);
@@ -318,6 +350,10 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     }
     backButton_->handleEvent(event);
 }
+
+// ============================================================
+// 更新
+// ============================================================
 
 void SettingsScene::update(float /*dt*/) {
     if (resetConfirm_) {
@@ -464,7 +500,7 @@ void SettingsScene::update(float /*dt*/) {
             }
             if (resetButton_->consumeClick()) {
                 resetConfirm_ = std::make_unique<ConfirmDialog>(
-                    font_, "恢复默认设置？所有自定义将被清除",
+                    font_, Str::ResetConfirm,
                     sf::Vector2f(1280.f, 720.f));
                 return;
             }
@@ -477,6 +513,174 @@ void SettingsScene::update(float /*dt*/) {
     }
 }
 
+// ============================================================
+// 渲染子函数
+// ============================================================
+
+void SettingsScene::renderTabs(Window& window) {
+    for (int i = 0; i < kTabCount; ++i) {
+        tabButtons_[i]->setPosition({kTabX, kTabY + i * 70.f});
+        tabButtons_[i]->render(window.native());
+    }
+}
+
+void SettingsScene::renderDisplayTab(Window& window, float contentX,
+                                     float ctrlX, float y) {
+    headingDisplay_.setPosition({contentX, y});
+    window.native().draw(headingDisplay_);
+    y += 44.f;
+
+    // 分辨率
+    labelResolution_.setPosition({contentX, y + 12.f});
+    window.native().draw(labelResolution_);
+    for (int i = 0; i < kResolutionCount; ++i) {
+        int row = i / 2, col = i % 2;
+        resolutionButtons_[i]->setPosition({
+            ctrlX + col * (kBtnW + kGapX),
+            y + row * (kBtnH + kGapY)});
+        resolutionButtons_[i]->render(window.native());
+    }
+    y += 2 * (kBtnH + kGapY) + 16.f;
+
+    // 全屏
+    labelFullscreen_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelFullscreen_);
+    fullscreenOn_->setPosition ({ctrlX, y});
+    fullscreenOff_->setPosition({ctrlX + 100.f, y});
+    fullscreenOn_->render(window.native());
+    fullscreenOff_->render(window.native());
+    y += kRowH;
+
+    // V-Sync
+    labelVsync_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelVsync_);
+    vsyncOn_->setPosition ({ctrlX, y});
+    vsyncOff_->setPosition({ctrlX + 100.f, y});
+    vsyncOn_->render(window.native());
+    vsyncOff_->render(window.native());
+    y += kRowH;
+
+    // 抗锯齿
+    labelAntiAliasing_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelAntiAliasing_);
+    for (int i = 0; i < kAACount; ++i) {
+        antiAliasingButtons_[i]->setPosition({ctrlX + i * 100.f, y});
+        antiAliasingButtons_[i]->render(window.native());
+    }
+    y += kRowH;
+
+    // 日志级别
+    labelLogLevel_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelLogLevel_);
+    for (int i = 0; i < kLogCount; ++i) {
+        logLevelButtons_[i]->setPosition({ctrlX + i * 110.f, y});
+        logLevelButtons_[i]->render(window.native());
+    }
+}
+
+void SettingsScene::renderInterfaceTab(Window& window, float contentX,
+                                       float ctrlX, float y) {
+    headingInterface_.setPosition({contentX, y});
+    window.native().draw(headingInterface_);
+    y += 44.f;
+
+    // 帧率显示
+    labelFps_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelFps_);
+    fpsOn_->setPosition ({ctrlX, y});
+    fpsOff_->setPosition({ctrlX + 100.f, y});
+    fpsOn_->render(window.native());
+    fpsOff_->render(window.native());
+    y += kRowH;
+
+    // UI 缩放
+    labelUiScale_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelUiScale_);
+    for (int i = 0; i < kUiScaleCount; ++i) {
+        uiScaleButtons_[i]->setPosition({ctrlX + i * 100.f, y});
+        uiScaleButtons_[i]->render(window.native());
+    }
+    y += kRowH;
+    hintUiScale_.setPosition({ctrlX, y - 8.f});
+    window.native().draw(hintUiScale_);
+    y += 22.f;
+
+    // 控制台遮罩
+    labelConsoleMask_.setPosition({contentX, y + 6.f});
+    window.native().draw(labelConsoleMask_);
+    consoleMaskSlider_->setPosition({ctrlX, y + 2.f});
+    consoleMaskSlider_->render(window.native());
+    y += kRowH;
+
+    // 控制台字号
+    labelConsoleFont_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelConsoleFont_);
+    for (int i = 0; i < kConsoleFontCount; ++i) {
+        consoleFontButtons_[i]->setPosition({ctrlX + i * 100.f, y});
+        consoleFontButtons_[i]->render(window.native());
+    }
+    y += kRowH;
+
+    // 控制台历史
+    labelConsoleHistory_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelConsoleHistory_);
+    for (int i = 0; i < kConsoleHistoryCount; ++i) {
+        consoleHistoryButtons_[i]->setPosition({ctrlX + i * 100.f, y});
+        consoleHistoryButtons_[i]->render(window.native());
+    }
+    y += kRowH;
+
+    // 主题
+    labelTheme_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelTheme_);
+    for (int i = 0; i < kThemeCount; ++i) {
+        themeButtons_[i]->setPosition({ctrlX + i * 120.f, y});
+        themeButtons_[i]->render(window.native());
+    }
+    y += kRowH;
+
+    // 壁纸
+    if (background_) {
+        labelWallpaper_.setString(toSf(
+            std::string(Str::LabelWallpaper) + "  ("
+            + std::to_string(background_->currentIndex() + 1) + "/"
+            + std::to_string(background_->totalWallpapers()) + ")"));
+    }
+    labelWallpaper_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelWallpaper_);
+    wallpaperButton_->setPosition({ctrlX, y});
+    wallpaperButton_->render(window.native());
+}
+
+void SettingsScene::renderOtherTab(Window& window, float contentX,
+                                   float ctrlX, float y) {
+    headingOther_.setPosition({contentX, y});
+    window.native().draw(headingOther_);
+    y += 44.f;
+
+    labelRememberSize_.setPosition({contentX, y + 10.f});
+    window.native().draw(labelRememberSize_);
+    rememberOn_->setPosition ({ctrlX, y});
+    rememberOff_->setPosition({ctrlX + 100.f, y});
+    rememberOn_->render(window.native());
+    rememberOff_->render(window.native());
+    y += kRowH + 30.f;
+
+    resetButton_->setPosition({contentX, y});
+    resetButton_->render(window.native());
+}
+
+void SettingsScene::renderBackButton(Window& window) {
+    auto size = window.native().getSize();
+    backButton_->setPosition({static_cast<float>(size.x) - 200.f,
+                              static_cast<float>(size.y) - 80.f});
+    backButton_->render(window.native());
+}
+
+// ============================================================
+// 主渲染
+// ============================================================
+
 void SettingsScene::render(Window& window) {
     window.clear();
     if (background_) background_->render(window.native());
@@ -485,154 +689,21 @@ void SettingsScene::render(Window& window) {
     float w  = static_cast<float>(size.x);
     float h  = static_cast<float>(size.y);
 
-    // 左侧 Tab
-    const float tabX = 40.f;
-    for (int i = 0; i < kTabCount; ++i) {
-        tabButtons_[i]->setPosition({tabX, 100.f + i * 70.f});
-        tabButtons_[i]->render(window.native());
-    }
-
-    const float contentX = tabX + 200.f;
-    const float ctrlX    = contentX + 240.f;
-    const float rowH     = 58.f;
-    float y = 100.f;
+    renderTabs(window);
 
     switch (currentTab_) {
-        case Tab::Display: {
-            headingDisplay_.setPosition({contentX, y});
-            window.native().draw(headingDisplay_);
-            y += 44.f;
-
-            labelResolution_.setPosition({contentX, y + 12.f});
-            window.native().draw(labelResolution_);
-            const float btnW = 280.f, btnH = 50.f, gapX = 16.f, gapY = 12.f;
-            for (int i = 0; i < kResolutionCount; ++i) {
-                int row = i / 2, col = i % 2;
-                resolutionButtons_[i]->setPosition({
-                    ctrlX + col * (btnW + gapX),
-                    y + row * (btnH + gapY)});
-                resolutionButtons_[i]->render(window.native());
-            }
-            y += 2 * (btnH + gapY) + 16.f;
-
-            labelFullscreen_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelFullscreen_);
-            fullscreenOn_->setPosition ({ctrlX, y});
-            fullscreenOff_->setPosition({ctrlX + 100.f, y});
-            fullscreenOn_->render(window.native());
-            fullscreenOff_->render(window.native());
-            y += rowH;
-
-            labelVsync_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelVsync_);
-            vsyncOn_->setPosition ({ctrlX, y});
-            vsyncOff_->setPosition({ctrlX + 100.f, y});
-            vsyncOn_->render(window.native());
-            vsyncOff_->render(window.native());
-            y += rowH;
-
-            labelAntiAliasing_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelAntiAliasing_);
-            for (int i = 0; i < kAACount; ++i) {
-                antiAliasingButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-                antiAliasingButtons_[i]->render(window.native());
-            }
-            y += rowH;
-
-            labelLogLevel_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelLogLevel_);
-            for (int i = 0; i < kLogCount; ++i) {
-                logLevelButtons_[i]->setPosition({ctrlX + i * 110.f, y});
-                logLevelButtons_[i]->render(window.native());
-            }
+        case Tab::Display:
+            renderDisplayTab(window, kContentX, kCtrlX, 100.f);
             break;
-        }
-        case Tab::Interface: {
-            headingInterface_.setPosition({contentX, y});
-            window.native().draw(headingInterface_);
-            y += 44.f;
-
-            labelFps_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelFps_);
-            fpsOn_->setPosition ({ctrlX, y});
-            fpsOff_->setPosition({ctrlX + 100.f, y});
-            fpsOn_->render(window.native());
-            fpsOff_->render(window.native());
-            y += rowH;
-
-            labelUiScale_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelUiScale_);
-            for (int i = 0; i < kUiScaleCount; ++i) {
-                uiScaleButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-                uiScaleButtons_[i]->render(window.native());
-            }
-            y += rowH;
-            hintUiScale_.setPosition({ctrlX, y - 8.f});
-            window.native().draw(hintUiScale_);
-            y += 22.f;
-
-            labelConsoleMask_.setPosition({contentX, y + 6.f});
-            window.native().draw(labelConsoleMask_);
-            consoleMaskSlider_->setPosition({ctrlX, y + 2.f});
-            consoleMaskSlider_->render(window.native());
-            y += rowH;
-
-            labelConsoleFont_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelConsoleFont_);
-            for (int i = 0; i < kConsoleFontCount; ++i) {
-                consoleFontButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-                consoleFontButtons_[i]->render(window.native());
-            }
-            y += rowH;
-
-            labelConsoleHistory_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelConsoleHistory_);
-            for (int i = 0; i < kConsoleHistoryCount; ++i) {
-                consoleHistoryButtons_[i]->setPosition({ctrlX + i * 100.f, y});
-                consoleHistoryButtons_[i]->render(window.native());
-            }
-            y += rowH;
-
-            labelTheme_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelTheme_);
-            for (int i = 0; i < kThemeCount; ++i) {
-                themeButtons_[i]->setPosition({ctrlX + i * 120.f, y});
-                themeButtons_[i]->render(window.native());
-            }
-            y += rowH;
-
-            labelWallpaper_.setPosition({contentX, y + 10.f});
-            if (background_) {
-                labelWallpaper_.setString(toSf(
-                    "壁纸  (" + std::to_string(background_->currentIndex() + 1)
-                    + "/" + std::to_string(background_->totalWallpapers()) + ")"));
-            }
-            window.native().draw(labelWallpaper_);
-            wallpaperButton_->setPosition({ctrlX, y});
-            wallpaperButton_->render(window.native());
+        case Tab::Interface:
+            renderInterfaceTab(window, kContentX, kCtrlX, 100.f);
             break;
-        }
-        case Tab::Other: {
-            headingOther_.setPosition({contentX, y});
-            window.native().draw(headingOther_);
-            y += 44.f;
-
-            labelRememberSize_.setPosition({contentX, y + 10.f});
-            window.native().draw(labelRememberSize_);
-            rememberOn_->setPosition ({ctrlX, y});
-            rememberOff_->setPosition({ctrlX + 100.f, y});
-            rememberOn_->render(window.native());
-            rememberOff_->render(window.native());
-            y += rowH + 30.f;
-
-            resetButton_->setPosition({contentX, y});
-            resetButton_->render(window.native());
+        case Tab::Other:
+            renderOtherTab(window, kContentX, kCtrlX, 100.f);
             break;
-        }
     }
 
-    backButton_->setPosition({w - 200.f, h - 80.f});
-    backButton_->render(window.native());
+    renderBackButton(window);
 
     if (resetConfirm_) {
         resetConfirm_->relayout({w, h});
