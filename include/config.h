@@ -42,22 +42,37 @@ public:
         values_[key] = value;
         save();
     }
-    void setInt(const std::string& key, int v)    { set(key, std::to_string(v)); }
+    void setInt(const std::string& key, int v)       { set(key, std::to_string(v)); }
     void setDouble(const std::string& key, double v) { set(key, std::to_string(v)); }
-    void setBool(const std::string& key, bool v)  { set(key, v ? "true" : "false"); }
+    void setBool(const std::string& key, bool v)     { set(key, v ? "true" : "false"); }
 
     // ---------- 资源路径统一出口 ----------
-    std::filesystem::path configDir() const { return paths_.configDir(); }
-    std::filesystem::path cacheDir()  const { return paths_.cacheDir(); }
-    std::filesystem::path tempDir()   const { return paths_.tempDir(); }
-    std::filesystem::path savesDir()  const { return paths_.savesDir(); }
+    std::filesystem::path configDir()    const { return paths_.configDir(); }
+    std::filesystem::path cacheDir()     const { return paths_.cacheDir(); }
+    std::filesystem::path tempDir()      const { return paths_.tempDir(); }
+    std::filesystem::path savesDir()     const { return paths_.savesDir(); }
+    std::filesystem::path wallpaperDir() const { return paths_.wallpaperDir(); }
+    std::filesystem::path assetsDir()    const { return paths_.assetsDir(); }
 
-    // 常用便捷方法：拼一个 config 下的文件路径
+    // ---------- 便捷文件路径 ----------
+    // config 目录下的文件，如 configFile("app.log")
     std::filesystem::path configFile(const std::string& name) const {
         return paths_.configDir() / name;
     }
+
+    // saves 目录下的文件，如 saveFile("save1.conf")
     std::filesystem::path saveFile(const std::string& name) const {
         return paths_.savesDir() / name;
+    }
+
+    // assets 目录下的文件，如 assetFile("font.ttf")
+    std::filesystem::path assetFile(const std::string& name) const {
+        return paths_.assetsDir() / name;
+    }
+
+    // wallpaper 目录下的文件，如 wallpaperFile("wallpaper.jpg")
+    std::filesystem::path wallpaperFile(const std::string& name) const {
+        return paths_.wallpaperDir() / name;
     }
 
 private:

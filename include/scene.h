@@ -1,8 +1,8 @@
 #pragma once
 #include <SFML/Window/Event.hpp>
 #include "window.h"
+#include "scene_id.h"
 
-// 场景基类：后续 SettingsScene / PauseScene 都继承它
 class Scene {
 public:
     virtual ~Scene() = default;
@@ -11,6 +11,6 @@ public:
     virtual void update(float /*dt*/) {}
     virtual void render(Window& window) = 0;
 
-    // 返回 true 表示场景结束，可以切换到下一个场景
-    virtual bool isFinished() const { return false; }
+    // 返回要切换到的下一个场景；SceneId::None 表示保持当前场景
+    virtual SceneId nextScene() const { return SceneId::None; }
 };

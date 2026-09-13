@@ -1,0 +1,97 @@
+#include "save_manager.h"
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <ctime>
+#include <algorithm>
+
+namespace fs = std::filesystem;
+
+SaveManager::SaveManager(std::shared_ptr<Config> config,
+                         std::shared_ptr<Logger> logger)
+    : config_(std::move(config)), logger_(std::move(logger)) {}
+
+std::string SaveManager::currentTimestamp() const {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    return buf;
+}
+
+std::vector<SaveInfo> SaveManager::listSaves() const {
+    std::vector<SaveInfo> result;
+    auto dir = config_->savesDir();
+    if (!fs::exists(dir)) return result;
+
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (!entry.is_regular_file()) continue;
+        auto path = entry.path();
+        if (path.extension() != ".conf") continue;
+
+        SaveInfo info;
+        if (loadSave(path.filename().string(), info)) {
+            result.push_back(info);
+        }
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const SaveInfo& a, const SaveInfo& b) {
+                  return a.lastPlayed > b.lastPlayed;
+              });
+    return result;
+}
+
+SaveInfo SaveManager::createSave() {
+    auto now = currentTimestamp();
+    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+    std::string filename = "save_" + std::to_string(ts) + ".conf";
+
+    SaveInfo info;
+    info.filename   = filename;
+    info.name       = "存档 " + now;
+    info.createdAt  = now;
+    info.lastPlayed = now;
+
+    auto path = config_->saveFile(filename);
+    std::ofstream out(path);
+    if (out) {
+        out << "name="        << info.name       << '\n';
+        out << "created_at="  << info.createdAt  << '\n';
+        out << "last_played=" << info.lastPlayed << '\n';
+        out << "progress=0\n";
+    }
+
+    logger_->info("创建存档: " + path.string());
+    return info;
+}
+
+bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
+    auto path = config_->saveFile(filename);
+    std::ifstream in(path);
+    if (!in) return false;
+
+    out.filename   = filename;
+    out.name       = "未命名存档";
+    out.createdAt  = "";
+    out.lastPlayed = "";
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        auto pos = line.find('=');
+        if (pos == std::string::npos) continue;
+        std::string k = line.substr(0, pos);
+        std::string v = line.substr(pos + 1);
+        if      (k == "name")        out.name       = v;
+        else if (k == "created_at")  out.createdAt  = v;
+        else if (k == "last_played") out.lastPlayed = v;
+    }
+    return true;
+}

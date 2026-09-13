@@ -1,14 +1,16 @@
 #pragma once
 #include "scene.h"
 #include "background.h"
-#include "button.h"
+#include "save_manager.h"
 #include <memory>
 
-class MainMenuScene : public Scene {
+// 游戏主场景（占位）：显示存档信息，游戏内容待实现
+class GameScene : public Scene {
 public:
-    MainMenuScene(std::shared_ptr<Background> background,
-                  const sf::Font& font,
-                  std::shared_ptr<Logger> logger);
+    GameScene(std::shared_ptr<Background> background,
+              const sf::Font& font,
+              std::shared_ptr<Logger> logger,
+              SaveInfo save);
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
@@ -19,6 +21,7 @@ public:
 private:
     std::shared_ptr<Background> background_;
     std::shared_ptr<Logger> logger_;
-    Button startButton_;
+    SaveInfo save_;
+    sf::Text infoText_;
     SceneId nextScene_ = SceneId::None;
 };

@@ -3,17 +3,30 @@
 #include "logging.h"
 #include "window.h"
 #include "background.h"
+#include "font_holder.h"
+#include "save_manager.h"
+#include "scene.h"
+#include "scene_id.h"
 
 class Game {
 public:
-    Game(std::shared_ptr<Window>     window,
-         std::shared_ptr<Logger>     logger,
-         std::shared_ptr<Background> background);
+    Game(std::shared_ptr<Window>      window,
+         std::shared_ptr<Logger>      logger,
+         std::shared_ptr<Background>  background,
+         std::shared_ptr<FontHolder>  fontHolder,
+         std::shared_ptr<SaveManager> saveManager);
 
     void run();
 
 private:
-    std::shared_ptr<Window>     window_;
-    std::shared_ptr<Logger>     logger_;
-    std::shared_ptr<Background> background_;
+    std::unique_ptr<Scene> createScene(SceneId id);
+
+    std::shared_ptr<Window>      window_;
+    std::shared_ptr<Logger>      logger_;
+    std::shared_ptr<Background>  background_;
+    std::shared_ptr<FontHolder>  fontHolder_;
+    std::shared_ptr<SaveManager> saveManager_;
+
+    std::unique_ptr<Scene> currentScene_;
+    SceneId currentId_ = SceneId::None;
 };
