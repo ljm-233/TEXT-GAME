@@ -11,13 +11,15 @@ public:
     Console(const sf::Font& font,
             unsigned fontSize,
             unsigned maxLines,
+            bool autoScroll,
+            bool blinkCursor,
             sf::Vector2u size);
 
     void handleTextEntered(char32_t unicode);
     void handleKeyPressed(sf::Keyboard::Key key);
+    void handleMouseWheel(float delta);
 
     void appendText(const std::string& text);
-
     std::string waitForLine();
 
     void shutdown();
@@ -31,13 +33,16 @@ private:
 
     const sf::Font& font_;
     unsigned maxLines_;
+    bool     autoScroll_;
+    bool     blinkCursor_;
 
     std::deque<std::string> lines_;
     std::string currentInput_;
     std::string outputBuffer_;
 
     std::vector<std::string> history_;
-    int historyIndex_ = -1;
+    int  historyIndex_ = -1;
+    int  scrollOffset_ = 0;   // 0 = 跟随最新
 
     mutable std::mutex mtx_;
     std::condition_variable cv_;
@@ -47,4 +52,6 @@ private:
 
     sf::Text text_;
     sf::RectangleShape inputLine_;
+
+    sf::Clock blinkClock_;
 };

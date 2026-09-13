@@ -48,6 +48,12 @@ constexpr const char* LabelConsoleHistory = "控制台历史";
 constexpr const char* LabelTheme          = "主题";
 constexpr const char* LabelWallpaper      = "壁纸";
 constexpr const char* LabelRememberSize   = "记住窗口大小";
+constexpr const char* LabelFpsPos         = "FPS 位置";
+constexpr const char* LabelFpsLimit       = "帧率上限";
+constexpr const char* LabelConsoleAutoScroll = "自动滚动";
+constexpr const char* LabelConsoleBlink      = "光标闪烁";
+constexpr const char* LabelButtonCorner   = "按钮圆角";
+constexpr const char* LabelButtonOutline  = "按钮边框";
 
 constexpr const char* HintUiScale    = "* 修改后返回主菜单再进入生效";
 constexpr const char* ResetDefault   = "恢复默认设置";

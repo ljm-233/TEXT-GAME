@@ -1,7 +1,9 @@
 #include "console.h"
 #include "strings.h"
 #include "ui_scale.h"
+#include <algorithm>
 #include <streambuf>
+#include <ostream>
 #include <iostream>
 #include <memory>
 
@@ -60,17 +62,10 @@ protected:
     int sync() override { return 0; }
 
     int_type underflow() override {
-        if (gptr() < egptr())
-            return traits_type::to_int_type(*gptr());
-
-        if (console_->isShutdown())
-            return traits_type::eof();
-
+        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
+        if (console_->isShutdown()) return traits_type::eof();
         std::string line = console_->waitForLine();
-
-        if (console_->isShutdown())
-            return traits_type::eof();
-
+        if (console_->isShutdown()) return traits_type::eof();
         line += '\n';
         lineBuffer_ = std::move(line);
         char* base = lineBuffer_.data();
@@ -90,9 +85,13 @@ std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c) {
 Console::Console(const sf::Font& font,
                  unsigned fontSize,
                  unsigned maxLines,
+                 bool autoScroll,
+                 bool blinkCursor,
                  sf::Vector2u /*size*/)
     : font_(font),
       maxLines_(maxLines),
+      autoScroll_(autoScroll),
+      blinkCursor_(blinkCursor),
       text_(font, sf::String(), scaledFontSize(fontSize)) {
     text_.setFillColor(sf::Color(220, 220, 220));
 
@@ -107,8 +106,6 @@ Console::Console(const sf::Font& font,
 
 void Console::appendText(const std::string& text) {
     std::lock_guard<std::mutex> lock(mtx_);
-
-    // 过滤 ANSI 转义序列
     size_t i = 0;
     while (i < text.size()) {
         char c = text[i];
@@ -116,10 +113,7 @@ void Console::appendText(const std::string& text) {
             i += 2;
             while (i < text.size()) {
                 char e = text[i];
-                if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) {
-                    ++i;
-                    break;
-                }
+                if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) { ++i; break; }
                 ++i;
             }
         } else {
@@ -138,6 +132,8 @@ void Console::flushOutputBuffer() {
         if (lines_.size() > maxLines_) lines_.pop_front();
         outputBuffer_.erase(0, pos + 1);
     }
+    // 新内容到达时，如果处于自动滚动模式，把偏移归零
+    if (autoScroll_) scrollOffset_ = 0;
 }
 
 void Console::submitCurrentInput() {
@@ -156,6 +152,7 @@ void Console::submitCurrentInput() {
         pendingLine_ = line;
         lineReady_ = true;
         historyIndex_ = -1;
+        scrollOffset_ = 0;
     }
     cv_.notify_one();
 }
@@ -190,7 +187,24 @@ void Console::handleKeyPressed(sf::Keyboard::Key key) {
             historyIndex_ = -1;
             currentInput_.clear();
         }
+    } else if (key == sf::Keyboard::Key::PageUp) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        scrollOffset_ += 5;
+        int maxOff = std::max(0, static_cast<int>(lines_.size()) - 5);
+        scrollOffset_ = std::min(scrollOffset_, maxOff);
+    } else if (key == sf::Keyboard::Key::PageDown) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        scrollOffset_ = std::max(0, scrollOffset_ - 5);
     }
+}
+
+void Console::handleMouseWheel(float delta) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    // delta > 0 表示向上滚
+    scrollOffset_ += static_cast<int>(delta);
+    scrollOffset_ = std::max(0, scrollOffset_);
+    int maxOff = std::max(0, static_cast<int>(lines_.size()) - 5);
+    scrollOffset_ = std::min(scrollOffset_, maxOff);
 }
 
 std::string Console::waitForLine() {
@@ -232,22 +246,31 @@ void Console::render(sf::RenderTarget& target) {
     std::deque<std::string> display;
     std::string tail;
     std::string inputDisplay;
+    int offset;
     {
         std::lock_guard<std::mutex> lock(mtx_);
         flushOutputBuffer();
         tail = outputBuffer_;
         display = lines_;
         inputDisplay = std::string(Str::ConsolePrompt) + currentInput_;
+        offset = scrollOffset_;
     }
 
     int maxLines = static_cast<int>((outputBottom - outputTop) / lineH);
     if (maxLines < 1) maxLines = 1;
 
-    if (static_cast<int>(display.size()) > maxLines) {
-        int drop = static_cast<int>(display.size()) - maxLines;
-        for (int i = 0; i < drop; ++i) display.pop_front();
+    // 显示窗口：末尾往前 offset 行
+    int total = static_cast<int>(display.size());
+    int endIdx   = std::max(0, total - offset);
+    int startIdx = std::max(0, endIdx - maxLines);
+    for (int i = 0; i < startIdx; ++i) display.pop_front();
+    while (static_cast<int>(display.size()) > endIdx - startIdx &&
+           !display.empty()) {
+        display.pop_back();
     }
-    if (!tail.empty()) {
+
+    // 未换行的尾部：只在 offset==0 时并入最后一行
+    if (!tail.empty() && offset == 0) {
         if (display.empty()) display.push_back(tail);
         else display.back() += tail;
     }
@@ -261,9 +284,28 @@ void Console::render(sf::RenderTarget& target) {
         y += lineH;
     }
 
+    // 滚动条指示（当偏离底部时显示）
+    if (offset > 0) {
+        std::string hint = "↑ " + std::to_string(offset);
+        text_.setString(sf::String::fromUtf8(hint.begin(), hint.end()));
+        text_.setFillColor(sf::Color(180, 180, 200));
+        auto b = text_.getLocalBounds();
+        text_.setPosition({w - b.size.x - 24.f, 6.f});
+        target.draw(text_);
+    }
+
+    // 输入行
     inputLine_.setSize({w - 2 * margin, inputH});
     inputLine_.setPosition({margin, h - inputH - margin});
     target.draw(inputLine_);
+
+    // 光标闪烁
+    std::string cursor;
+    if (blinkCursor_) {
+        auto ms = blinkClock_.getElapsedTime().asMilliseconds();
+        cursor = ((ms / 500) % 2 == 0) ? "▊" : " ";
+    }
+    inputDisplay += cursor;
 
     text_.setFillColor(sf::Color(230, 230, 230));
     text_.setString(sf::String::fromUtf8(inputDisplay.begin(), inputDisplay.end()));

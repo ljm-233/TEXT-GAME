@@ -2,6 +2,13 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
+#include "button_style.h"
+#include <algorithm>
+#include <cmath>
+
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
+}
 
 Button::Button(const std::string& label,
                const sf::Font& font,
@@ -11,11 +18,9 @@ Button::Button(const std::string& label,
     : text_(font, toSf(label), scaledFontSize(characterSize)),
       position_(position),
       size_(size) {
-    shape_.setSize(size_);
     shape_.setPosition(position_);
-    shape_.setOutlineThickness(2.f);
-
     text_.setFillColor(getTheme().textPrimary);
+    refreshShape();
     refreshColor();
     centerText();
 }
@@ -28,7 +33,7 @@ void Button::setPosition(sf::Vector2f p) {
 
 void Button::setSize(sf::Vector2f s) {
     size_ = s;
-    shape_.setSize(size_);
+    refreshShape();
     centerText();
 }
 
@@ -40,6 +45,42 @@ void Button::setText(const std::string& text) {
 void Button::setSelected(bool s) {
     selected_ = s;
     refreshColor();
+}
+
+void Button::refreshShape() {
+    const auto& style = getButtonStyle();
+    float maxR = std::min(size_.x, size_.y) / 2.f;
+    float r = std::clamp(style.cornerRadius, 0.f, maxR);
+
+    if (r < 0.5f) {
+        // 直角矩形
+        shape_.setPointCount(4);
+        shape_.setPoint(0, {0.f, 0.f});
+        shape_.setPoint(1, {size_.x, 0.f});
+        shape_.setPoint(2, {size_.x, size_.y});
+        shape_.setPoint(3, {0.f, size_.y});
+    } else {
+        const int seg = 5;
+        const int total = seg * 4 + 4;
+        shape_.setPointCount(total);
+
+        int idx = 0;
+        auto arc = [&](sf::Vector2f center, float startAngle) {
+            for (int i = 0; i <= seg; ++i) {
+                float a = startAngle + (kPi / 2.f) * i / seg;
+                float x = center.x + r * std::cos(a);
+                float y = center.y + r * std::sin(a);
+                shape_.setPoint(idx++, {x, y});
+            }
+        };
+        // 从左上角开始逆时针
+        arc({r, r}, kPi);                  // 左上
+        arc({size_.x - r, r}, -kPi / 2.f); // 右上
+        arc({size_.x - r, size_.y - r}, 0.f);          // 右下
+        arc({r, size_.y - r}, kPi / 2.f);              // 左下
+    }
+
+    shape_.setOutlineThickness(style.outlineThickness);
 }
 
 void Button::refreshColor() {
@@ -96,6 +137,9 @@ bool Button::consumeClick() {
 }
 
 void Button::render(sf::RenderTarget& target) {
+    // 主题可能变了，每帧刷新一次颜色和形状（成本很低）
+    refreshShape();
+    refreshColor();
     target.draw(shape_);
     target.draw(text_);
 }

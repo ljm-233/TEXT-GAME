@@ -63,12 +63,18 @@ void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
         settings);
 
     window_.setVerticalSyncEnabled(vsync_);
+    window_.setFramerateLimit(framerateLimit_);
     applyView();
 }
 
 void Window::setVsync(bool enabled) {
     vsync_ = enabled;
     window_.setVerticalSyncEnabled(vsync_);
+}
+
+void Window::setFramerateLimit(unsigned limit) {
+    framerateLimit_ = limit;
+    window_.setFramerateLimit(framerateLimit_);
 }
 
 sf::RenderWindow& Window::native() { return window_; }

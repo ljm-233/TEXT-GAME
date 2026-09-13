@@ -26,11 +26,12 @@ private:
     bool contains(sf::Vector2f point) const;
     void centerText();
     void refreshColor();
+    void refreshShape();
 
-    sf::RectangleShape shape_;
-    sf::Text text_;
-    sf::Vector2f position_;
-    sf::Vector2f size_;
+    sf::ConvexShape shape_;
+    sf::Text       text_;
+    sf::Vector2f   position_;
+    sf::Vector2f   size_;
     bool hovered_  = false;
     bool pressed_  = false;
     bool clicked_  = false;

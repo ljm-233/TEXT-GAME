@@ -12,6 +12,7 @@
 #include "game.h"
 #include "ui_scale.h"
 #include "theme.h"
+#include "button_style.h"
 
 using namespace std;
 
@@ -26,10 +27,12 @@ Application::Application() {
 
 void Application::registerDependencies() {
 
+    // ===== Paths =====
     container_.registerType<Paths>([]() {
         return make_shared<Paths>();
     });
 
+    // ===== 三种配置 =====
     container_.registerType<BootstrapConfig>([this]() {
         auto paths = container_.resolve<Paths>();
         return make_shared<BootstrapConfig>(*paths);
@@ -45,13 +48,20 @@ void Application::registerDependencies() {
         return make_shared<Preferences>(*paths);
     });
 
-    // 应用 UI 缩放 + 主题
+    // ===== 应用 UI 缩放 / 主题 / 按钮样式 =====
     {
         auto prefs = container_.resolve<Preferences>();
+
         setUiScale(static_cast<float>(prefs->getDouble("ui_scale", 1.0)));
         setTheme(static_cast<ThemeId>(prefs->getInt("theme", 0)));
+
+        ButtonStyle bs;
+        bs.cornerRadius     = static_cast<float>(prefs->getDouble("button_corner", 6.0));
+        bs.outlineThickness = static_cast<float>(prefs->getDouble("button_outline", 2.0));
+        setButtonStyle(bs);
     }
 
+    // ===== Logger =====
     container_.registerType<Logger>([this]() {
         auto cfg   = container_.resolve<BootstrapConfig>();
         auto prefs = container_.resolve<Preferences>();
@@ -60,6 +70,7 @@ void Application::registerDependencies() {
         return make_shared<Logger>(logPath.string(), static_cast<LogLevel>(lvl));
     });
 
+    // ===== Window =====
     container_.registerType<Window>([this]() {
         auto prefs   = container_.resolve<Preferences>();
         auto runtime = container_.resolve<RuntimeConfig>();
@@ -80,16 +91,19 @@ void Application::registerDependencies() {
             h = kResolutions[idx].height;
         }
 
-        bool fs    = prefs->getBool("fullscreen", false);
-        bool vsync = prefs->getBool("vsync", true);
-        int  aa    = prefs->getInt("anti_aliasing", 8);
+        bool fs       = prefs->getBool("fullscreen", false);
+        bool vsync    = prefs->getBool("vsync", true);
+        int  aa       = prefs->getInt("anti_aliasing", 8);
+        int  fpsLimit = prefs->getInt("fps_limit", 60);
 
         auto win = std::make_shared<Window>(
             w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
         win->setVsync(vsync);
+        win->setFramerateLimit(static_cast<unsigned>(fpsLimit));
         return win;
     });
 
+    // ===== Background =====
     container_.registerType<Background>([this]() {
         auto paths  = container_.resolve<Paths>();
         auto prefs  = container_.resolve<Preferences>();
@@ -101,6 +115,7 @@ void Application::registerDependencies() {
             paths->wallpaperDir(), initial, size.x, size.y, logger);
     });
 
+    // ===== FontHolder =====
     container_.registerType<FontHolder>([this]() {
         auto cfg    = container_.resolve<BootstrapConfig>();
         auto logger = container_.resolve<Logger>();
@@ -108,12 +123,14 @@ void Application::registerDependencies() {
         return std::make_shared<FontHolder>(fontPath, logger);
     });
 
+    // ===== SaveManager =====
     container_.registerType<SaveManager>([this]() {
         auto cfg    = container_.resolve<RuntimeConfig>();
         auto logger = container_.resolve<Logger>();
         return std::make_shared<SaveManager>(cfg, logger);
     });
 
+    // ===== Game =====
     container_.registerType<Game>([this]() {
         auto window      = container_.resolve<Window>();
         auto logger      = container_.resolve<Logger>();

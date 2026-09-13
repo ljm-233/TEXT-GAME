@@ -1,5 +1,7 @@
 #include "console_scene.h"
 #include "calculator.h"
+#include "strings.h"
+#include "utf8.h"
 #include <iostream>
 
 ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
@@ -12,11 +14,15 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
 
     int fontSize     = preferences_->getInt("console_font_size", 18);
     int historyLines = preferences_->getInt("console_history_lines", 200);
+    bool autoScroll  = preferences_->getBool("console_auto_scroll", true);
+    bool blinkCursor = preferences_->getBool("console_blink_cursor", true);
 
     console_ = std::make_unique<Console>(
         font,
         static_cast<unsigned>(fontSize),
         static_cast<unsigned>(historyLines),
+        autoScroll,
+        blinkCursor,
         sf::Vector2u{1280, 720});
 
     consoleBuf_ = makeConsoleStreamBuf(console_.get());
@@ -59,6 +65,9 @@ void ConsoleScene::handleEvent(const sf::Event& event) {
     }
     if (const auto* te = event.getIf<sf::Event::TextEntered>()) {
         console_->handleTextEntered(te->unicode);
+    }
+    if (const auto* ws = event.getIf<sf::Event::MouseWheelScrolled>()) {
+        console_->handleMouseWheel(ws->delta);
     }
 }
 

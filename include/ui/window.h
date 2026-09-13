@@ -29,6 +29,10 @@ public:
     void setAntiAliasing(unsigned level) { antiAliasing_ = level; }
     unsigned getAntiAliasing() const { return antiAliasing_; }
 
+    // 0 = 无限
+    void setFramerateLimit(unsigned limit);
+    unsigned getFramerateLimit() const { return framerateLimit_; }
+
     sf::RenderWindow& native();
 
 private:
@@ -38,4 +42,5 @@ private:
     std::string      title_;
     bool             vsync_ = true;
     unsigned         antiAliasing_ = 8;
+    unsigned         framerateLimit_ = 0;
 };
