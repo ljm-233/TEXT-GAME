@@ -12,7 +12,7 @@ Window::Window(unsigned width, unsigned height,
         fullscreen ? sf::State::Fullscreen : sf::State::Windowed,
         settings);
 
-    window_.setVerticalSyncEnabled(true);
+    window_.setVerticalSyncEnabled(vsync_);
     applyView();
 }
 
@@ -61,8 +61,13 @@ void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
         fullscreen ? sf::State::Fullscreen : sf::State::Windowed,
         settings);
 
-    window_.setVerticalSyncEnabled(true);
+    window_.setVerticalSyncEnabled(vsync_);
     applyView();
+}
+
+void Window::setVsync(bool enabled) {
+    vsync_ = enabled;
+    window_.setVerticalSyncEnabled(vsync_);
 }
 
 sf::RenderWindow& Window::native() { return window_; }

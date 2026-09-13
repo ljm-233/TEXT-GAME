@@ -92,20 +92,19 @@ Console::Console(const sf::Font& font, sf::Vector2u /*size*/)
       text_(font, sf::String(), 18) {
     text_.setFillColor(sf::Color(220, 220, 220));
 
-    inputLine_.setFillColor(sf::Color(20, 20, 30, 200));
+    inputLine_.setFillColor(sf::Color(20, 20, 30, 220));
     inputLine_.setOutlineThickness(1.f);
-    inputLine_.setOutlineColor(sf::Color(80, 80, 100));
+    inputLine_.setOutlineColor(sf::Color(80, 80, 110));
 
     lines_.push_back("=== TEXT-GAME 控制台 ===");
-    lines_.push_back("输入 ESC 退出控制台");
+    lines_.push_back("提示: ↑/↓ 翻历史，ESC 返回");
     lines_.push_back("");
 }
 
 void Console::appendText(const std::string& text) {
     std::lock_guard<std::mutex> lock(mtx_);
 
-    // 过滤 ANSI 转义序列（ESC [ ... 字母）
-    // 这类序列会被 Logger 写到 std::cout，但终端面板不解析颜色，直接丢掉
+    // 过滤 ANSI 转义序列
     size_t i = 0;
     while (i < text.size()) {
         char c = text[i];
@@ -114,7 +113,7 @@ void Console::appendText(const std::string& text) {
             while (i < text.size()) {
                 char e = text[i];
                 if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) {
-                    ++i; // 跳过结束字符
+                    ++i;
                     break;
                 }
                 ++i;
@@ -143,11 +142,16 @@ void Console::submitCurrentInput() {
         std::lock_guard<std::mutex> lock(mtx_);
         flushOutputBuffer();
         line = currentInput_;
+        if (!line.empty()) {
+            history_.push_back(line);
+            if (history_.size() > 100) history_.erase(history_.begin());
+        }
         lines_.push_back("> " + line);
         if (lines_.size() > 200) lines_.pop_front();
         currentInput_.clear();
         pendingLine_ = line;
         lineReady_ = true;
+        historyIndex_ = -1;
     }
     cv_.notify_one();
 }
@@ -164,6 +168,24 @@ void Console::handleKeyPressed(sf::Keyboard::Key key) {
         popUtf8Char(currentInput_);
     } else if (key == sf::Keyboard::Key::Enter) {
         submitCurrentInput();
+    } else if (key == sf::Keyboard::Key::Up) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (history_.empty()) return;
+        if (historyIndex_ == -1)
+            historyIndex_ = static_cast<int>(history_.size()) - 1;
+        else if (historyIndex_ > 0)
+            --historyIndex_;
+        currentInput_ = history_[historyIndex_];
+    } else if (key == sf::Keyboard::Key::Down) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (historyIndex_ == -1) return;
+        if (historyIndex_ + 1 < static_cast<int>(history_.size())) {
+            ++historyIndex_;
+            currentInput_ = history_[historyIndex_];
+        } else {
+            historyIndex_ = -1;
+            currentInput_.clear();
+        }
     }
 }
 
@@ -205,11 +227,13 @@ void Console::render(sf::RenderTarget& target) {
 
     std::deque<std::string> display;
     std::string tail;
+    std::string inputDisplay;
     {
         std::lock_guard<std::mutex> lock(mtx_);
         flushOutputBuffer();
         tail = outputBuffer_;
         display = lines_;
+        inputDisplay = "> " + currentInput_;
     }
 
     int maxLines = static_cast<int>((outputBottom - outputTop) / lineH);
@@ -224,6 +248,8 @@ void Console::render(sf::RenderTarget& target) {
         else display.back() += tail;
     }
 
+    // 输出区
+    text_.setFillColor(sf::Color(220, 220, 220));
     float y = outputTop;
     for (const auto& line : display) {
         text_.setString(sf::String::fromUtf8(line.begin(), line.end()));
@@ -232,15 +258,13 @@ void Console::render(sf::RenderTarget& target) {
         y += lineH;
     }
 
+    // 输入行背景
     inputLine_.setSize({w - 2 * margin, inputH});
     inputLine_.setPosition({margin, h - inputH - margin});
     target.draw(inputLine_);
 
-    std::string inputDisplay;
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        inputDisplay = "> " + currentInput_;
-    }
+    // 输入行文本
+    text_.setFillColor(sf::Color(230, 230, 230));
     text_.setString(sf::String::fromUtf8(inputDisplay.begin(), inputDisplay.end()));
     text_.setPosition({margin + padX, h - inputH - margin + 8.f});
     target.draw(text_);

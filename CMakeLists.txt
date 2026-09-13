@@ -15,6 +15,7 @@ add_executable(text_game
     src/background.cpp
     src/font_holder.cpp
     src/button.cpp
+    src/slider.cpp
     src/confirm_dialog.cpp
     src/save_manager.cpp
     src/main_menu_scene.cpp

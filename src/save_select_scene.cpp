@@ -36,10 +36,16 @@ void SaveSelectScene::rebuildButtons() {
 }
 
 void SaveSelectScene::handleEvent(const sf::Event& event) {
-    // 确认框存在时，事件优先给它
     if (confirm_) {
         confirm_->handleEvent(event);
         return;
+    }
+
+    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (kp->code == sf::Keyboard::Key::Escape) {
+            nextScene_ = SceneId::Back;
+            return;
+        }
     }
 
     for (auto& b : saveButtons_)   b->handleEvent(event);
@@ -49,7 +55,6 @@ void SaveSelectScene::handleEvent(const sf::Event& event) {
 }
 
 void SaveSelectScene::update(float /*dt*/) {
-    // 确认框处理
     if (confirm_) {
         auto r = confirm_->consumeResult();
         if (r == ConfirmDialog::Result::Yes) {
@@ -67,7 +72,6 @@ void SaveSelectScene::update(float /*dt*/) {
         return;
     }
 
-    // 点击加载存档
     for (size_t i = 0; i < saveButtons_.size(); ++i) {
         if (saveButtons_[i]->consumeClick()) {
             logger_->info("选择存档: " + saves_[i].filename);
@@ -77,15 +81,12 @@ void SaveSelectScene::update(float /*dt*/) {
         }
     }
 
-    // 点击删除按钮
     for (size_t i = 0; i < deleteButtons_.size(); ++i) {
         if (deleteButtons_[i]->consumeClick()) {
             pendingDeleteIndex_ = static_cast<int>(i);
-            auto size = sf::Vector2f(0.f, 0.f); // 稍后在 relayout 里由窗口尺寸决定
             confirm_ = std::make_unique<ConfirmDialog>(
                 font_,
                 "确定删除存档「" + saves_[i].name + "」？",
-                // 用当前窗口尺寸不合适，用一个大致的默认值，稍后 render 里更新
                 sf::Vector2f(1280.f, 720.f));
             logger_->info("请求删除存档: " + saves_[i].filename);
             return;
@@ -100,7 +101,7 @@ void SaveSelectScene::update(float /*dt*/) {
     }
 
     if (backButton_->consumeClick()) {
-        nextScene_ = SceneId::MainMenu;
+        nextScene_ = SceneId::Back;
     }
 }
 
@@ -136,11 +137,8 @@ void SaveSelectScene::render(Window& window) {
     backButton_->setPosition({(w - 160.f) / 2.f, h - 90.f});
     backButton_->render(window.native());
 
-    // 确认框在最后画，覆盖在上面
     if (confirm_) {
         confirm_->relayout({w, h});
         confirm_->render(window.native());
     }
-
-    window.display();
 }

@@ -2,10 +2,12 @@
 #include "calculator.h"
 #include <iostream>
 
-ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
-                           const sf::Font& font,
-                           std::shared_ptr<Logger> logger)
+ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
+                           std::shared_ptr<Preferences> preferences,
+                           const sf::Font&              font,
+                           std::shared_ptr<Logger>      logger)
     : background_(std::move(background)),
+      preferences_(std::move(preferences)),
       logger_(std::move(logger)) {
 
     console_ = std::make_unique<Console>(font, sf::Vector2u{1280, 720});
@@ -43,7 +45,7 @@ void ConsoleScene::stopWorker() {
 void ConsoleScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
-            nextScene_ = SceneId::MainMenu;
+            nextScene_ = SceneId::Back;
             return;
         }
         console_->handleKeyPressed(kp->code);
@@ -61,17 +63,24 @@ void ConsoleScene::render(Window& window) {
     float w = static_cast<float>(size.x);
     float h = static_cast<float>(size.y);
 
-    // 1. 正常画背景铺满整个窗口
     rt.clear(sf::Color::Black);
     if (background_) background_->render(rt);
 
-    // 2. 半透明黑遮罩，让背景"变暗"
+    // 遮罩强度从 Preferences 读
+    int mask = preferences_->getInt("console_mask", 160);
+    mask = std::max(0, std::min(255, mask));
+
     sf::RectangleShape overlay({w, h});
-    overlay.setFillColor(sf::Color(0, 0, 0, 180));
+    overlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(mask)));
     rt.draw(overlay);
 
-    // 3. 画终端内容
-    console_->render(rt);
+    const float pad = 16.f;
+    sf::RectangleShape panel({w - pad * 2, h - pad * 2});
+    panel.setPosition({pad, pad});
+    panel.setFillColor(sf::Color(5, 5, 10, 215));
+    panel.setOutlineThickness(1.f);
+    panel.setOutlineColor(sf::Color(70, 70, 100));
+    rt.draw(panel);
 
-    rt.display();
+    console_->render(rt);
 }

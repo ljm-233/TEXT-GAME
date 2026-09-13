@@ -19,8 +19,10 @@ public:
     bool isKeyPressed(sf::Keyboard::Key key) const;
     void draw(const sf::Drawable& drawable);
 
-    // 重建窗口（分辨率 / 全屏切换时用）
     void recreate(unsigned width, unsigned height, bool fullscreen);
+
+    void setVsync(bool enabled);
+    bool getVsync() const { return vsync_; }
 
     sf::RenderWindow& native();
 
@@ -28,5 +30,6 @@ private:
     void applyView();
 
     sf::RenderWindow window_;
-    std::string title_;
+    std::string      title_;
+    bool             vsync_ = true;
 };

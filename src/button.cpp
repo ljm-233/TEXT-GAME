@@ -4,7 +4,7 @@ namespace {
 const sf::Color kNormal  {70, 70, 80};
 const sf::Color kHover   {105, 105, 125};
 const sf::Color kPressed {45, 45, 55};
-const sf::Color kSelected{140, 180, 220};
+const sf::Color kSelected{70, 140, 220};
 
 sf::String toSf(const std::string& s) {
     return sf::String::fromUtf8(s.begin(), s.end());

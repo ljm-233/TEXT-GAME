@@ -46,13 +46,20 @@ void Application::registerDependencies() {
         return make_shared<Logger>(logPath.string());
     });
 
+        // 5. Window —— 按 remember_window_size 决定用 runtime 还是 preferences
     container_.registerType<Window>([this]() {
         auto prefs   = container_.resolve<Preferences>();
         auto runtime = container_.resolve<RuntimeConfig>();
 
-        unsigned w = 0, h = 0;
-        int lastW = runtime->getInt("last_window_width",  -1);
-        int lastH = runtime->getInt("last_window_height", -1);
+        unsigned w, h;
+
+        bool rememberSize = prefs->getBool("remember_window_size", true);
+        int lastW = -1, lastH = -1;
+        if (rememberSize) {
+            lastW = runtime->getInt("last_window_width",  -1);
+            lastH = runtime->getInt("last_window_height", -1);
+        }
+
         if (lastW > 0 && lastH > 0) {
             w = static_cast<unsigned>(lastW);
             h = static_cast<unsigned>(lastH);
@@ -62,8 +69,12 @@ void Application::registerDependencies() {
             h = kResolutions[idx].height;
         }
 
-        bool fs = prefs->getBool("fullscreen", false);
-        return std::make_shared<Window>(w, h, "TEXT-GAME", fs);
+        bool fs    = prefs->getBool("fullscreen", false);
+        bool vsync = prefs->getBool("vsync", true);
+
+        auto win = std::make_shared<Window>(w, h, "TEXT-GAME", fs);
+        win->setVsync(vsync);
+        return win;
     });
 
     container_.registerType<Background>([this]() {

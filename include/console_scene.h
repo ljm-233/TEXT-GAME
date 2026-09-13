@@ -2,6 +2,7 @@
 #include "scene.h"
 #include "background.h"
 #include "console.h"
+#include "preferences.h"
 #include <memory>
 #include <thread>
 #include <atomic>
@@ -11,9 +12,10 @@ std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c);
 
 class ConsoleScene : public Scene {
 public:
-    ConsoleScene(std::shared_ptr<Background> background,
-                 const sf::Font& font,
-                 std::shared_ptr<Logger> logger);
+    ConsoleScene(std::shared_ptr<Background>  background,
+                 std::shared_ptr<Preferences> preferences,
+                 const sf::Font&              font,
+                 std::shared_ptr<Logger>      logger);
 
     ~ConsoleScene() override;
 
@@ -27,8 +29,9 @@ private:
     void startCalculator();
     void stopWorker();
 
-    std::shared_ptr<Background> background_;
-    std::shared_ptr<Logger>     logger_;
+    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Preferences> preferences_;
+    std::shared_ptr<Logger>      logger_;
 
     std::unique_ptr<Console> console_;
     std::unique_ptr<std::streambuf> consoleBuf_;

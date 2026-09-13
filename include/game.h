@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <vector>
 #include "logging.h"
 #include "window.h"
 #include "background.h"
@@ -24,7 +25,9 @@ public:
 
 private:
     std::unique_ptr<Scene> createScene(SceneId id);
+    void switchScene(SceneId next);
     void saveWindowState();
+    void renderFpsOverlay();
 
     std::shared_ptr<Window>        window_;
     std::shared_ptr<Logger>        logger_;
@@ -34,6 +37,13 @@ private:
     std::shared_ptr<Preferences>   preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
 
+    sf::Text fpsText_;
+
+    int   fpsFrameCount_ = 0;
+    float fpsElapsed_    = 0.f;
+    float fpsDisplayed_  = 0.f;
+
     std::unique_ptr<Scene> currentScene_;
     SceneId currentId_ = SceneId::None;
+    std::vector<SceneId> history_;
 };

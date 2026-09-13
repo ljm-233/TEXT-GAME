@@ -60,6 +60,4 @@ void MainMenuScene::render(Window& window) {
     calculatorButton_.render(window.native());
     settingsButton_.render(window.native());
     exitButton_.render(window.native());
-
-    window.display();
 }

@@ -27,7 +27,7 @@ GameScene::GameScene(std::shared_ptr<Background> background,
 void GameScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
-            nextScene_ = SceneId::SaveSelect;
+            nextScene_ = SceneId::Back;
         }
     }
 }
@@ -45,6 +45,4 @@ void GameScene::render(Window& window) {
     infoText_.setPosition({static_cast<float>(size.x) / 2.f,
                            static_cast<float>(size.y) / 2.f});
     window.native().draw(infoText_);
-
-    window.display();
 }
