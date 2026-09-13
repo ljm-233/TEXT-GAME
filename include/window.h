@@ -1,5 +1,6 @@
 #pragma once
 #include <SFML/Graphics.hpp>
+#include <functional>
 #include <string>
 
 class Window {
@@ -9,13 +10,16 @@ public:
     bool isOpen() const;
     void close();
 
-    void clear();                                  // 清屏
-    void display();                                // 呈现
-    void pollEvents();                             // 处理事件
-    bool isKeyPressed(sf::Keyboard::Key key) const; // 键盘查询
-    void draw(const sf::Drawable& drawable);       // 画任何可绘制对象
+    void clear();
+    void display();
 
-    sf::RenderWindow& native();                    // 需要底层时用
+    // 支持传入事件回调；传 nullptr 表示只处理关闭事件
+    void pollEvents(const std::function<void(const sf::Event&)>& handler = nullptr);
+
+    bool isKeyPressed(sf::Keyboard::Key key) const;
+    void draw(const sf::Drawable& drawable);
+
+    sf::RenderWindow& native();
 
 private:
     sf::RenderWindow window_;

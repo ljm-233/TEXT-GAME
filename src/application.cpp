@@ -5,6 +5,7 @@
 #include "calculator.h"
 #include "window.h"
 #include "game.h"
+#include "background.h"
 
 #include <iostream>
 
@@ -46,20 +47,31 @@ void Application::registerDependencies() {
         return make_shared<Calculator>(logger);
     });
 
-    // 5. Window 依赖 Config（懒加载：只有被 resolve 时才真正创建）
+    // 5. Window
     container_.registerType<Window>([this]() {
         auto config = container_.resolve<Config>();
         int w = config->getInt("window_width", 1280);
         int h = config->getInt("window_height", 720);
-        string title = config->get("window_title", "TEXT-GAME");
-        return make_shared<Window>(w, h, title);
+        std::string title = config->get("window_title", "TEXT-GAME");
+        return std::make_shared<Window>(w, h, title);
     });
 
-    // 6. Game 依赖 Window 和 Logger
-    container_.registerType<Game>([this]() {
+    // 6. Background：依赖 Paths、Window、Logger
+    container_.registerType<Background>([this]() {
+        auto paths  = container_.resolve<Paths>();
         auto window = container_.resolve<Window>();
         auto logger = container_.resolve<Logger>();
-        return make_shared<Game>(window, logger);
+        auto size   = window->native().getSize();
+        return std::make_shared<Background>(
+            paths->wallpaperDir(), size.x, size.y, logger);
+    });
+
+    // 7. Game：依赖 Window、Logger、Background
+    container_.registerType<Game>([this]() {
+        auto window     = container_.resolve<Window>();
+        auto logger     = container_.resolve<Logger>();
+        auto background = container_.resolve<Background>();
+        return std::make_shared<Game>(window, logger, background);
     });
 }
 
