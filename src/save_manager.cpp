@@ -7,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-SaveManager::SaveManager(std::shared_ptr<Config> config,
+SaveManager::SaveManager(std::shared_ptr<RuntimeConfig> config,
                          std::shared_ptr<Logger> logger)
     : config_(std::move(config)), logger_(std::move(logger)) {}
 
@@ -93,5 +93,18 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
         else if (k == "created_at")  out.createdAt  = v;
         else if (k == "last_played") out.lastPlayed = v;
     }
+    return true;
+}
+
+bool SaveManager::deleteSave(const std::string& filename) {
+    auto path = config_->saveFile(filename);
+    if (!fs::exists(path)) return false;
+    std::error_code ec;
+    fs::remove(path, ec);
+    if (ec) {
+        logger_->error("删除存档失败: " + path.string() + " " + ec.message());
+        return false;
+    }
+    logger_->info("删除存档: " + path.string());
     return true;
 }

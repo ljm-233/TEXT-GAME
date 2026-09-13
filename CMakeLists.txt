@@ -7,11 +7,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
 
-add_compile_options(
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-finput-charset=UTF-8>
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-fexec-charset=UTF-8>
-)
-
 add_executable(text_game
     src/main.cpp
     src/application.cpp
@@ -20,10 +15,12 @@ add_executable(text_game
     src/background.cpp
     src/font_holder.cpp
     src/button.cpp
+    src/confirm_dialog.cpp
     src/save_manager.cpp
     src/main_menu_scene.cpp
     src/save_select_scene.cpp
     src/game_scene.cpp
+    src/settings_scene.cpp
     src/window.cpp
 )
 

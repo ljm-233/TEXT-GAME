@@ -1,7 +1,10 @@
 #include "application.h"
 #include "logging.h"
 #include "paths.h"
-#include "config.h"
+#include "bootstrap_config.h"
+#include "runtime_config.h"
+#include "preferences.h"
+#include "resolution.h"
 #include "calculator.h"
 #include "window.h"
 #include "background.h"
@@ -12,8 +15,6 @@
 #include <iostream>
 
 using namespace std;
-
-// ---------- Application 单例实现 ----------
 
 Application& Application::instance() {
     static Application inst;
@@ -30,16 +31,24 @@ void Application::registerDependencies() {
         return make_shared<Paths>();
     });
 
-    // 2. Config
-    container_.registerType<Config>([this]() {
+    // 2. 三种配置
+    container_.registerType<BootstrapConfig>([this]() {
         auto paths = container_.resolve<Paths>();
-        return make_shared<Config>(*paths);
+        return make_shared<BootstrapConfig>(*paths);
+    });
+    container_.registerType<RuntimeConfig>([this]() {
+        auto paths = container_.resolve<Paths>();
+        return make_shared<RuntimeConfig>(*paths);
+    });
+    container_.registerType<Preferences>([this]() {
+        auto paths = container_.resolve<Paths>();
+        return make_shared<Preferences>(*paths);
     });
 
-    // 3. Logger
+    // 3. Logger 从 BootstrapConfig 拿路径
     container_.registerType<Logger>([this]() {
-        auto config = container_.resolve<Config>();
-        auto logPath = config->configFile("app.log");
+        auto cfg = container_.resolve<BootstrapConfig>();
+        auto logPath = cfg->configFile("app.log");
         return make_shared<Logger>(logPath.string());
     });
 
@@ -49,13 +58,13 @@ void Application::registerDependencies() {
         return make_shared<Calculator>(logger);
     });
 
-    // 5. Window
+    // 5. Window 从 Preferences 读分辨率
     container_.registerType<Window>([this]() {
-        auto config = container_.resolve<Config>();
-        int w = config->getInt("window_width", 1280);
-        int h = config->getInt("window_height", 720);
-        std::string title = config->get("window_title", "TEXT-GAME");
-        return std::make_shared<Window>(w, h, title);
+        auto prefs = container_.resolve<Preferences>();
+        int idx = clampResolutionIndex(prefs->getInt("resolution_index", 0));
+        bool fs = prefs->getBool("fullscreen", false);
+        auto& res = kResolutions[idx];
+        return std::make_shared<Window>(res.width, res.height, "TEXT-GAME", fs);
     });
 
     // 6. Background
@@ -68,19 +77,19 @@ void Application::registerDependencies() {
             paths->wallpaperDir(), size.x, size.y, logger);
     });
 
-    // 7. FontHolder
+    // 7. FontHolder 从 BootstrapConfig 拿路径
     container_.registerType<FontHolder>([this]() {
-        auto config = container_.resolve<Config>();
+        auto cfg    = container_.resolve<BootstrapConfig>();
         auto logger = container_.resolve<Logger>();
-        auto fontPath = config->assetFile("font.otf");
+        auto fontPath = cfg->assetFile("font.otf");
         return std::make_shared<FontHolder>(fontPath, logger);
     });
 
-    // 8. SaveManager
+    // 8. SaveManager 从 RuntimeConfig 拿路径
     container_.registerType<SaveManager>([this]() {
-        auto config = container_.resolve<Config>();
+        auto cfg    = container_.resolve<RuntimeConfig>();
         auto logger = container_.resolve<Logger>();
-        return std::make_shared<SaveManager>(config, logger);
+        return std::make_shared<SaveManager>(cfg, logger);
     });
 
     // 9. Game
@@ -90,8 +99,9 @@ void Application::registerDependencies() {
         auto background  = container_.resolve<Background>();
         auto fontHolder  = container_.resolve<FontHolder>();
         auto saveManager = container_.resolve<SaveManager>();
+        auto prefs       = container_.resolve<Preferences>();
         return std::make_shared<Game>(
-            window, logger, background, fontHolder, saveManager);
+            window, logger, background, fontHolder, saveManager, prefs);
     });
 }
 
@@ -104,7 +114,6 @@ int Application::showMenu() {
 
     int choice = 0;
     cin >> choice;
-
     if (cin.fail()) {
         cin.clear();
         cin.ignore(1000, '\n');
@@ -115,12 +124,12 @@ int Application::showMenu() {
 
 void Application::run() {
     auto logger = container_.resolve<Logger>();
-    auto config = container_.resolve<Config>();
+    auto paths  = container_.resolve<Paths>();
 
     logger->info("程序启动");
-    logger->info("配置目录: " + config->configDir().string());
-    logger->info("存档目录: " + config->savesDir().string());
-    logger->info("资源目录: " + config->assetsDir().string());
+    logger->info("配置目录: " + paths->configDir().string());
+    logger->info("存档目录: " + paths->savesDir().string());
+    logger->info("资源目录: " + paths->assetsDir().string());
 
     int choice = showMenu();
 
@@ -133,12 +142,6 @@ void Application::run() {
         case 2: {
             auto game = container_.resolve<Game>();
             game->run();
-
-            auto window = container_.resolve<Window>();
-            auto size = window->native().getSize();
-            config->setInt("window_width",  size.x);
-            config->setInt("window_height", size.y);
-            logger->info("窗口尺寸已保存: " + to_string(size.x) + "x" + to_string(size.y));
             break;
         }
         case 0:

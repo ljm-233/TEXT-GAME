@@ -5,7 +5,8 @@
 
 class Window {
 public:
-    Window(unsigned width, unsigned height, const std::string& title);
+    Window(unsigned width, unsigned height,
+           const std::string& title, bool fullscreen = false);
 
     bool isOpen() const;
     void close();
@@ -13,14 +14,19 @@ public:
     void clear();
     void display();
 
-    // 支持传入事件回调；传 nullptr 表示只处理关闭事件
     void pollEvents(const std::function<void(const sf::Event&)>& handler = nullptr);
 
     bool isKeyPressed(sf::Keyboard::Key key) const;
     void draw(const sf::Drawable& drawable);
 
+    // 重建窗口（分辨率 / 全屏切换时用）
+    void recreate(unsigned width, unsigned height, bool fullscreen);
+
     sf::RenderWindow& native();
 
 private:
+    void applyView();
+
     sf::RenderWindow window_;
+    std::string title_;
 };

@@ -4,8 +4,8 @@ namespace {
 const sf::Color kNormal  {70, 70, 80};
 const sf::Color kHover   {105, 105, 125};
 const sf::Color kPressed {45, 45, 55};
+const sf::Color kSelected{140, 180, 220};
 
-// 把 UTF-8 编码的 std::string 转成 sf::String
 sf::String toSf(const std::string& s) {
     return sf::String::fromUtf8(s.begin(), s.end());
 }
@@ -21,11 +21,10 @@ Button::Button(const std::string& label,
       size_(size) {
     shape_.setSize(size_);
     shape_.setPosition(position_);
-    shape_.setFillColor(kNormal);
     shape_.setOutlineThickness(2.f);
     shape_.setOutlineColor(sf::Color::White);
-
     text_.setFillColor(sf::Color::White);
+    refreshColor();
     centerText();
 }
 
@@ -44,6 +43,18 @@ void Button::setSize(sf::Vector2f s) {
 void Button::setText(const std::string& text) {
     text_.setString(toSf(text));
     centerText();
+}
+
+void Button::setSelected(bool s) {
+    selected_ = s;
+    refreshColor();
+}
+
+void Button::refreshColor() {
+    if (pressed_)         shape_.setFillColor(kPressed);
+    else if (hovered_)    shape_.setFillColor(kHover);
+    else if (selected_)   shape_.setFillColor(kSelected);
+    else                  shape_.setFillColor(kNormal);
 }
 
 void Button::centerText() {
@@ -79,10 +90,7 @@ void Button::handleEvent(const sf::Event& event) {
             pressed_ = false;
         }
     }
-
-    if (pressed_)      shape_.setFillColor(kPressed);
-    else if (hovered_) shape_.setFillColor(kHover);
-    else               shape_.setFillColor(kNormal);
+    refreshColor();
 }
 
 bool Button::consumeClick() {

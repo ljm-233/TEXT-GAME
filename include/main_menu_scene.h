@@ -20,5 +20,7 @@ private:
     std::shared_ptr<Background> background_;
     std::shared_ptr<Logger> logger_;
     Button startButton_;
+    Button settingsButton_;
+    Button exitButton_;
     SceneId nextScene_ = SceneId::None;
 };

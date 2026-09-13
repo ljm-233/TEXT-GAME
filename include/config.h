@@ -6,13 +6,13 @@
 
 class Config {
 public:
-    explicit Config(const Paths& paths)
+    Config(const Paths& paths, const std::string& filename)
         : paths_(paths),
-          filePath_(paths.configDir() / "settings.conf") {
+          filePath_(paths.configDir() / filename) {
         load();
     }
+    virtual ~Config() = default;
 
-    // ---------- 读配置 ----------
     std::string get(const std::string& key, const std::string& defaultValue = "") const {
         auto it = values_.find(key);
         return it != values_.end() ? it->second : defaultValue;
@@ -37,7 +37,6 @@ public:
         return v == "true" || v == "1" || v == "yes";
     }
 
-    // ---------- 写配置 ----------
     void set(const std::string& key, const std::string& value) {
         values_[key] = value;
         save();
@@ -46,7 +45,7 @@ public:
     void setDouble(const std::string& key, double v) { set(key, std::to_string(v)); }
     void setBool(const std::string& key, bool v)     { set(key, v ? "true" : "false"); }
 
-    // ---------- 资源路径统一出口 ----------
+    // 资源路径统一出口
     std::filesystem::path configDir()    const { return paths_.configDir(); }
     std::filesystem::path cacheDir()     const { return paths_.cacheDir(); }
     std::filesystem::path tempDir()      const { return paths_.tempDir(); }
@@ -54,52 +53,37 @@ public:
     std::filesystem::path wallpaperDir() const { return paths_.wallpaperDir(); }
     std::filesystem::path assetsDir()    const { return paths_.assetsDir(); }
 
-    // ---------- 便捷文件路径 ----------
-    // config 目录下的文件，如 configFile("app.log")
     std::filesystem::path configFile(const std::string& name) const {
         return paths_.configDir() / name;
     }
-
-    // saves 目录下的文件，如 saveFile("save1.conf")
     std::filesystem::path saveFile(const std::string& name) const {
         return paths_.savesDir() / name;
     }
-
-    // assets 目录下的文件，如 assetFile("font.ttf")
     std::filesystem::path assetFile(const std::string& name) const {
         return paths_.assetsDir() / name;
     }
 
-    // wallpaper 目录下的文件，如 wallpaperFile("wallpaper.jpg")
-    std::filesystem::path wallpaperFile(const std::string& name) const {
-        return paths_.wallpaperDir() / name;
-    }
+protected:
+    const Paths& paths_;
+    std::filesystem::path filePath_;
+    std::unordered_map<std::string, std::string> values_;
 
 private:
     void load() {
         std::ifstream in(filePath_);
-        if (!in) return;   // 首次运行没有文件，就用默认值
-
+        if (!in) return;
         std::string line;
         while (std::getline(in, line)) {
             if (line.empty() || line[0] == '#') continue;
             auto pos = line.find('=');
             if (pos == std::string::npos) continue;
-            std::string key = line.substr(0, pos);
-            std::string val = line.substr(pos + 1);
-            values_[key] = val;
+            values_[line.substr(0, pos)] = line.substr(pos + 1);
         }
     }
 
     void save() const {
         std::ofstream out(filePath_);
         if (!out) return;
-        for (const auto& [k, v] : values_) {
-            out << k << '=' << v << '\n';
-        }
+        for (const auto& [k, v] : values_) out << k << '=' << v << '\n';
     }
-
-    const Paths& paths_;
-    std::filesystem::path filePath_;
-    std::unordered_map<std::string, std::string> values_;
 };
