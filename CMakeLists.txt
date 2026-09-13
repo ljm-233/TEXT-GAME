@@ -41,6 +41,10 @@ add_executable(text_game
     src/scene/game_scene.cpp
     src/scene/settings_scene.cpp
     src/scene/console_scene.cpp
+    src/game/level.cpp
+    src/game/camera.cpp
+    src/game/player.cpp
+    src/game/game_world.cpp
 )
 
 target_include_directories(text_game PRIVATE

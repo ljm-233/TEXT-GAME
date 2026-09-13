@@ -1,10 +1,10 @@
 #pragma once
 #include "scene.h"
 #include "background.h"
+#include "game_world.h"
 #include "save_manager.h"
 #include <memory>
 
-// 游戏主场景（占位）：显示存档信息，游戏内容待实现
 class GameScene : public Scene {
 public:
     GameScene(std::shared_ptr<Background> background,
@@ -20,8 +20,15 @@ public:
 
 private:
     std::shared_ptr<Background> background_;
-    std::shared_ptr<Logger> logger_;
-    SaveInfo save_;
-    sf::Text infoText_;
-    SceneId nextScene_ = SceneId::None;
+    std::shared_ptr<Logger>     logger_;
+    SaveInfo                    save_;
+
+    std::unique_ptr<GameWorld> world_;
+
+    sf::Text  hudText_;
+    SceneId   nextScene_ = SceneId::None;
+
+    // 固定逻辑分辨率
+    static constexpr float kLogicalW = 1280.f;
+    static constexpr float kLogicalH = 720.f;
 };
