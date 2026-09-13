@@ -3,6 +3,7 @@
 #include "utf8.h"
 #include "ui_scale.h"
 #include "button_style.h"
+#include "text_input.h"
 #include <algorithm>
 #include <cmath>
 
@@ -166,7 +167,17 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelLogKeep_         (font, toSf(Str::LabelLogKeep),         scaledFontSize(20)),
       labelButtonCorner_    (font, toSf(Str::LabelButtonCorner),    scaledFontSize(20)),
       labelButtonOutline_   (font, toSf(Str::LabelButtonOutline),   scaledFontSize(20)),
+      labelPlayerName_      (font, toSf(Str::LabelPlayerName),      scaledFontSize(20)),
       hintUiScale_          (font, toSf(Str::HintUiScale),          scaledFontSize(14)) {
+
+        // 玩家名输入框
+    playerNameInput_ = std::make_unique<TextInput>(
+        font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
+        Str::PlayerNamePlaceholder, 18, 16);
+    playerNameInput_->setText(preferences_->get("player_name", ""));
+    playerNameInput_->setOnChanged([this](const std::string& s) {
+        preferences_->set("player_name", s);
+    });
 
     // ===== 读偏好 =====
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
@@ -210,7 +221,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelConsoleBlink_, &labelTheme_, &labelWallpaper_,
                     &labelClock_, &labelClockPos_,
                     &labelRememberSize_, &labelLogRotate_, &labelLogKeep_,
-                    &labelButtonCorner_, &labelButtonOutline_}) {
+                    &labelButtonCorner_, &labelButtonOutline_,
+                    &labelPlayerName_}) {           // ← 新增
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
@@ -474,18 +486,26 @@ void SettingsScene::resetAllPreferences() {
 // ============================================================
 // 事件
 // ============================================================
-
 void SettingsScene::handleEvent(const sf::Event& event) {
     if (resetConfirm_) { resetConfirm_->handleEvent(event); return; }
     if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }
 
+    // 输入框聚焦时，ESC 只在输入框上生效，不返回上一页
+    bool inputFocused = playerNameInput_ && playerNameInput_->isFocused();
+
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (kp->code == sf::Keyboard::Key::Escape) {
+        if (kp->code == sf::Keyboard::Key::Escape && !inputFocused) {
             nextScene_ = SceneId::Back;
             return;
         }
     }
     for (auto& b : tabButtons_) b->handleEvent(event);
+
+    // 玩家名输入框事件优先（在 Other Tab）
+    if (currentTab_ == Tab::Other && playerNameInput_) {
+        playerNameInput_->handleEvent(event);
+    }
+
     switch (currentTab_) {
         case Tab::Display:
             for (auto& b : resolutionButtons_) b->handleEvent(event);
@@ -1001,7 +1021,15 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
     drawMultiRow (labelButtonCorner_, buttonCornerButtons_, 96.f);
     drawMultiRow (labelButtonOutline_,buttonOutlineButtons_,96.f);
 
-    y += 20.f;
+    // 玩家名
+    labelPlayerName_.setPosition({contentX, y + 8.f});
+    window.native().draw(labelPlayerName_);
+    playerNameInput_->setPosition({ctrlX, y});
+    playerNameInput_->setSize({240.f, 40.f});
+    playerNameInput_->render(window.native());
+    y += kRowH;
+
+    y += 10.f;
     aboutButton_->setPosition({contentX, y});
     aboutButton_->render(window.native());
 

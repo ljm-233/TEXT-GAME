@@ -88,6 +88,17 @@ constexpr const char* LabelConsoleLineHeight = "控制台行高";
 constexpr const char* LabelClock        = "时间显示";
 constexpr const char* LabelClockPos     = "时钟位置";
 constexpr const char* ButtonAbout       = "关于";
-constexpr const char* AboutTitle        = "TEXT-GAME";
+constexpr const char* AboutTitle   = "TEXT-GAME";
+
+// ===== 玩家名 =====
+constexpr const char* LabelPlayerName       = "玩家名";
+constexpr const char* PlayerNamePlaceholder = "输入玩家名";
+
+// ===== 新建存档对话框 =====
+constexpr const char* NewSaveTitle    = "新建存档";
+constexpr const char* NewSaveHint     = "输入存档名：";
+constexpr const char* NewSavePlaceholder = "我的存档";
+constexpr const char* BtnCreate       = "创建";
+constexpr const char* BtnCancel       = "取消";
 
 } // namespace Str

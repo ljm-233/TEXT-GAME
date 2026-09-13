@@ -30,6 +30,8 @@ add_executable(text_game
     src/ui/font_holder.cpp
     src/ui/console.cpp
     src/ui/button_style.cpp
+    src/ui/text_input.cpp
+    src/ui/new_save_dialog.cpp
     src/game/calculator.cpp
     src/game/save_manager.cpp
     src/scene/main_menu_scene.cpp

@@ -18,7 +18,7 @@ public:
                 std::shared_ptr<Logger> logger);
 
     std::vector<SaveInfo> listSaves() const;
-    SaveInfo createSave();
+        SaveInfo createSave(const std::string& customName = "");
     bool loadSave(const std::string& filename, SaveInfo& out) const;
     bool deleteSave(const std::string& filename);
 

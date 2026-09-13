@@ -37,6 +37,11 @@ void SaveSelectScene::rebuildButtons() {
 }
 
 void SaveSelectScene::handleEvent(const sf::Event& event) {
+    // 优先级：新建对话框 > 删除确认框 > 正常控件
+    if (newSaveDialog_) {
+        newSaveDialog_->handleEvent(event);
+        return;
+    }
     if (confirm_) {
         confirm_->handleEvent(event);
         return;
@@ -56,6 +61,23 @@ void SaveSelectScene::handleEvent(const sf::Event& event) {
 }
 
 void SaveSelectScene::update(float /*dt*/) {
+    // ===== 新建存档对话框 =====
+    if (newSaveDialog_) {
+        auto r = newSaveDialog_->consumeResult();
+        if (r == NewSaveDialog::Result::Created) {
+            std::string name = newSaveDialog_->getName();
+            if (name.empty()) name = Str::NewSavePlaceholder;
+            auto info = saveManager_->createSave(name);
+            saveManager_->setPendingSave(info);
+            newSaveDialog_.reset();
+            nextScene_ = SceneId::Game;
+        } else if (r == NewSaveDialog::Result::Cancelled) {
+            newSaveDialog_.reset();
+        }
+        return;
+    }
+
+    // ===== 删除确认框 =====
     if (confirm_) {
         auto r = confirm_->consumeResult();
         if (r == ConfirmDialog::Result::Yes) {
@@ -73,6 +95,7 @@ void SaveSelectScene::update(float /*dt*/) {
         return;
     }
 
+    // ===== 正常交互 =====
     for (size_t i = 0; i < saveButtons_.size(); ++i) {
         if (saveButtons_[i]->consumeClick()) {
             logger_->info("选择存档: " + saves_[i].filename);
@@ -96,9 +119,10 @@ void SaveSelectScene::update(float /*dt*/) {
     }
 
     if (newButton_->consumeClick()) {
-        auto info = saveManager_->createSave();
-        saveManager_->setPendingSave(info);
-        nextScene_ = SceneId::Game;
+        // 弹出命名对话框
+        std::string defName = Str::NewSavePlaceholder;
+        newSaveDialog_ = std::make_unique<NewSaveDialog>(
+            font_, defName, sf::Vector2f(1280.f, 720.f));
         return;
     }
 
@@ -142,5 +166,10 @@ void SaveSelectScene::render(Window& window) {
     if (confirm_) {
         confirm_->relayout({w, h});
         confirm_->render(window.native());
+    }
+
+    if (newSaveDialog_) {
+        newSaveDialog_->relayout({w, h});
+        newSaveDialog_->render(window.native());
     }
 }

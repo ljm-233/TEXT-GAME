@@ -3,6 +3,7 @@
 #include "background.h"
 #include "button.h"
 #include "slider.h"
+#include "text_input.h"
 #include "preferences.h"
 #include "runtime_config.h"
 #include "window.h"
@@ -61,7 +62,7 @@ private:
 
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
-    // ===== Display =====
+    // Display
     std::vector<std::unique_ptr<Button>> resolutionButtons_;
     std::unique_ptr<Button> fullscreenOn_, fullscreenOff_;
     std::unique_ptr<Button> vsyncOn_, vsyncOff_;
@@ -69,7 +70,7 @@ private:
     std::vector<std::unique_ptr<Button>> logLevelButtons_;
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
 
-    // ===== Interface =====
+    // Interface
     std::unique_ptr<Button> fpsOn_, fpsOff_;
     std::vector<std::unique_ptr<Button>> fpsPosButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
@@ -85,7 +86,7 @@ private:
     std::unique_ptr<Button> clockOn_, clockOff_;
     std::vector<std::unique_ptr<Button>> clockPosButtons_;
 
-    // ===== Other =====
+    // Other
     std::unique_ptr<Button> rememberOn_, rememberOff_;
     std::vector<std::unique_ptr<Button>> logRotateButtons_;
     std::vector<std::unique_ptr<Button>> logKeepButtons_;
@@ -97,6 +98,9 @@ private:
     std::unique_ptr<Button> backButton_;
     std::unique_ptr<ConfirmDialog> resetConfirm_;
     std::unique_ptr<ConfirmDialog> aboutDialog_;
+
+    // ⭐ 玩家名输入框
+    std::unique_ptr<TextInput> playerNameInput_;
 
     // 标签
     sf::Text headingDisplay_, headingInterface_, headingOther_;
@@ -110,6 +114,7 @@ private:
     sf::Text labelClock_, labelClockPos_;
     sf::Text labelRememberSize_, labelLogRotate_, labelLogKeep_;
     sf::Text labelButtonCorner_, labelButtonOutline_;
+    sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
 
     // 状态

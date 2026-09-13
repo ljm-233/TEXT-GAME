@@ -4,6 +4,7 @@
 #include "button.h"
 #include "save_manager.h"
 #include "confirm_dialog.h"
+#include "new_save_dialog.h"
 #include <memory>
 #include <vector>
 
@@ -35,6 +36,7 @@ private:
     std::unique_ptr<Button> backButton_;
 
     std::unique_ptr<ConfirmDialog> confirm_;
+    std::unique_ptr<NewSaveDialog> newSaveDialog_;
     int pendingDeleteIndex_ = -1;
 
     SceneId nextScene_ = SceneId::None;

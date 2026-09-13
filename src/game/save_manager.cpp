@@ -49,14 +49,16 @@ std::vector<SaveInfo> SaveManager::listSaves() const {
     return result;
 }
 
-SaveInfo SaveManager::createSave() {
+SaveInfo SaveManager::createSave(const std::string& customName) {
     auto now = currentTimestamp();
     auto ts = std::chrono::system_clock::now().time_since_epoch().count();
     std::string filename = "save_" + std::to_string(ts) + ".conf";
 
     SaveInfo info;
     info.filename   = filename;
-    info.name       = std::string(Str::SaveNamePrefix) + now;
+    info.name       = customName.empty()
+                        ? (std::string(Str::SaveNamePrefix) + now)
+                        : customName;
     info.createdAt  = now;
     info.lastPlayed = now;
 
