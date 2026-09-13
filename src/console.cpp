@@ -103,7 +103,27 @@ Console::Console(const sf::Font& font, sf::Vector2u /*size*/)
 
 void Console::appendText(const std::string& text) {
     std::lock_guard<std::mutex> lock(mtx_);
-    outputBuffer_ += text;
+
+    // 过滤 ANSI 转义序列（ESC [ ... 字母）
+    // 这类序列会被 Logger 写到 std::cout，但终端面板不解析颜色，直接丢掉
+    size_t i = 0;
+    while (i < text.size()) {
+        char c = text[i];
+        if (c == '\x1b' && i + 1 < text.size() && text[i + 1] == '[') {
+            i += 2;
+            while (i < text.size()) {
+                char e = text[i];
+                if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) {
+                    ++i; // 跳过结束字符
+                    break;
+                }
+                ++i;
+            }
+        } else {
+            outputBuffer_ += c;
+            ++i;
+        }
+    }
 }
 
 void Console::flushOutputBuffer() {

@@ -7,7 +7,6 @@
 #include <atomic>
 #include <streambuf>
 
-// 前置声明：这是 makeConsoleStreamBuf 的返回类型
 std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c);
 
 class ConsoleScene : public Scene {
@@ -39,10 +38,6 @@ private:
 
     std::thread       worker_;
     std::atomic<bool> workerDone_{false};
-
-    sf::RenderTexture blurTarget_;
-    bool         blurReady_ = false;
-    sf::Vector2u lastSize_  = {0, 0};
 
     SceneId nextScene_ = SceneId::None;
 };
