@@ -2,6 +2,8 @@
 #include "camera.h"
 #include <algorithm>
 #include <sstream>
+#include <fstream>
+#include <sstream>
 
 bool Level::loadFromString(const std::string& text) {
     tiles_.clear();
@@ -41,6 +43,14 @@ bool Level::loadFromString(const std::string& text) {
         }
     }
     return true;
+}
+
+bool Level::loadFromFile(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return loadFromString(ss.str());
 }
 
 char Level::tileAt(int tx, int ty) const {

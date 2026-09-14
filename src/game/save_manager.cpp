@@ -37,9 +37,8 @@ std::vector<SaveInfo> SaveManager::listSaves() const {
         if (path.extension() != ".conf") continue;
 
         SaveInfo info;
-        if (loadSave(path.filename().string(), info)) {
+        if (loadSave(path.filename().string(), info))
             result.push_back(info);
-        }
     }
 
     std::sort(result.begin(), result.end(),
@@ -61,6 +60,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
                         : customName;
     info.createdAt  = now;
     info.lastPlayed = now;
+    info.progress   = 0;
 
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
@@ -68,7 +68,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
         out << "name="        << info.name       << '\n';
         out << "created_at="  << info.createdAt  << '\n';
         out << "last_played=" << info.lastPlayed << '\n';
-        out << "progress=0\n";
+        out << "progress="    << info.progress   << '\n';
     }
 
     logger_->info("创建存档: " + path.string());
@@ -84,6 +84,7 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.name       = Str::UnnamedSave;
     out.createdAt  = "";
     out.lastPlayed = "";
+    out.progress   = 0;
 
     std::string line;
     while (std::getline(in, line)) {
@@ -95,6 +96,9 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
         if      (k == "name")        out.name       = v;
         else if (k == "created_at")  out.createdAt  = v;
         else if (k == "last_played") out.lastPlayed = v;
+        else if (k == "progress") {
+            try { out.progress = std::stoi(v); } catch (...) { out.progress = 0; }
+        }
     }
     return true;
 }
@@ -109,5 +113,24 @@ bool SaveManager::deleteSave(const std::string& filename) {
         return false;
     }
     logger_->info("删除存档: " + path.string());
+    return true;
+}
+
+bool SaveManager::updateProgress(const std::string& filename, int progress) {
+    SaveInfo info;
+    if (!loadSave(filename, info)) return false;
+    info.progress = std::max(info.progress, progress);   // 只增不减
+    info.lastPlayed = currentTimestamp();
+
+    auto path = config_->saveFile(filename);
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "name="        << info.name       << '\n';
+    out << "created_at="  << info.createdAt  << '\n';
+    out << "last_played=" << info.lastPlayed << '\n';
+    out << "progress="    << info.progress   << '\n';
+
+    logger_->info("存档进度更新: " + filename +
+                  " progress=" + std::to_string(info.progress));
     return true;
 }

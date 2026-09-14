@@ -7,6 +7,7 @@
 class Level {
 public:
     bool loadFromString(const std::string& text);
+    bool loadFromFile(const std::string& path);
 
     int width()    const { return width_; }
     int height()   const { return height_; }
@@ -23,7 +24,6 @@ public:
     Vec2 goalPos() const { return goalPos_; }
     bool hasGoal() const { return hasGoal_; }
 
-    // 直接用世界坐标绘制；view 已经在做平移
     void render(sf::RenderTarget& target,
                 float camLeft, float camTop,
                 float camW,    float camH) const;

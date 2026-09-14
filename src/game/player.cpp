@@ -4,7 +4,6 @@
 #include <cmath>
 
 namespace {
-// ===== 物理常量 =====
 constexpr float GRAVITY       = 2200.f;
 constexpr float MOVE_SPEED    = 300.f;
 constexpr float JUMP_VELOCITY = -720.f;
@@ -14,7 +13,7 @@ constexpr float JUMP_BUFFER   = 0.12f;
 }
 
 Player::Player(Vec2 spawn)
-    : pos_(spawn) {
+    : pos_(spawn), spawn_(spawn) {
     body_.setSize({size_.x, size_.y});
     body_.setFillColor(sf::Color(80, 200, 120));
     body_.setOutlineThickness(2.f);
@@ -26,11 +25,13 @@ Player::Player(Vec2 spawn)
 
 void Player::respawn(Vec2 spawn) {
     pos_ = spawn;
+    spawn_ = spawn;
     vel_ = {0.f, 0.f};
     onGround_ = false;
     coyoteTimer_ = 0.f;
     jumpBufferTimer_ = 0.f;
     jumpConsumed_ = false;
+    fellOut_ = false;
 }
 
 void Player::handleEvent(const sf::Event& event) {
@@ -64,6 +65,8 @@ void Player::handleEvent(const sf::Event& event) {
 }
 
 void Player::update(float dt, const Level& level) {
+        // 无敌时间倒计时
+    if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
     float dir = 0.f;
     if (keyLeft_)  dir -= 1.f;
     if (keyRight_) dir += 1.f;
@@ -82,9 +85,7 @@ void Player::update(float dt, const Level& level) {
     }
     if (!keyJump_) jumpConsumed_ = false;
 
-    if (!keyJump_ && vel_.y < 0.f) {
-        vel_.y *= 0.5f;
-    }
+    if (!keyJump_ && vel_.y < 0.f) vel_.y *= 0.5f;
 
     vel_.y += GRAVITY * dt;
     if (vel_.y > MAX_FALL) vel_.y = MAX_FALL;
@@ -92,6 +93,12 @@ void Player::update(float dt, const Level& level) {
     onGround_ = false;
     moveHorizontal(vel_.x * dt, level);
     moveVertical(vel_.y * dt, level);
+
+    if (pos_.y > killY_) {
+        fellOut_ = true;
+        pos_ = spawn_;
+        vel_ = {0.f, 0.f};
+    }
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
@@ -109,11 +116,8 @@ void Player::moveHorizontal(float dx, const Level& level) {
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
             if (!level.isSolid(tx, ty)) continue;
-            if (dx > 0.f) {
-                pos_.x = static_cast<float>(tx * ts) - size_.x;
-            } else {
-                pos_.x = static_cast<float>((tx + 1) * ts);
-            }
+            if (dx > 0.f) pos_.x = static_cast<float>(tx * ts) - size_.x;
+            else          pos_.x = static_cast<float>((tx + 1) * ts);
             vel_.x = 0.f;
             return;
         }
@@ -150,7 +154,12 @@ void Player::moveVertical(float dy, const Level& level) {
 }
 
 void Player::render(sf::RenderTarget& target) const {
-    // 世界坐标，直接画
+    // 无敌闪烁：每 100ms 跳过一帧渲染
+    if (invincibleTimer_ > 0.f) {
+        auto ms = static_cast<int>(invincibleTimer_ * 1000.f);
+        if ((ms / 100) % 2 == 0) return;   // 这帧不画
+    }
+
     body_.setPosition({pos_.x, pos_.y});
     target.draw(body_);
 

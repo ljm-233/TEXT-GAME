@@ -10,6 +10,7 @@ struct SaveInfo {
     std::string name;
     std::string createdAt;
     std::string lastPlayed;
+    int         progress = 0;   // 0~100 或关卡数，看你怎么用
 };
 
 class SaveManager {
@@ -18,9 +19,10 @@ public:
                 std::shared_ptr<Logger> logger);
 
     std::vector<SaveInfo> listSaves() const;
-        SaveInfo createSave(const std::string& customName = "");
+    SaveInfo createSave(const std::string& customName = "");
     bool loadSave(const std::string& filename, SaveInfo& out) const;
     bool deleteSave(const std::string& filename);
+    bool updateProgress(const std::string& filename, int progress);
 
     void setPendingSave(const SaveInfo& info) { pending_ = info; }
     SaveInfo takePendingSave() { auto s = pending_; pending_ = {}; return s; }

@@ -3,14 +3,18 @@
 #include "background.h"
 #include "game_world.h"
 #include "save_manager.h"
+#include "preferences.h"
+#include "pause_menu.h"
 #include <memory>
 
 class GameScene : public Scene {
 public:
-    GameScene(std::shared_ptr<Background> background,
-              const sf::Font& font,
-              std::shared_ptr<Logger> logger,
-              SaveInfo save);
+    GameScene(std::shared_ptr<Background>  background,
+              const sf::Font&              font,
+              std::shared_ptr<Logger>      logger,
+              SaveInfo                     save,
+              std::shared_ptr<SaveManager> saveManager,
+              std::shared_ptr<Preferences> preferences);
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
@@ -19,16 +23,22 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
-    std::shared_ptr<Background> background_;
-    std::shared_ptr<Logger>     logger_;
-    SaveInfo                    save_;
+    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Logger>      logger_;
+    std::shared_ptr<SaveManager> saveManager_;
+    std::shared_ptr<Preferences> preferences_;
+    SaveInfo                     save_;
+
+    const sf::Font*              font_ = nullptr;
 
     std::unique_ptr<GameWorld> world_;
+
+    bool paused_ = false;
+    std::unique_ptr<PauseMenu> pauseMenu_;
 
     sf::Text  hudText_;
     SceneId   nextScene_ = SceneId::None;
 
-    // 固定逻辑分辨率
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;
 };

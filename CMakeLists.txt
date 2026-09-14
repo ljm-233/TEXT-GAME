@@ -45,6 +45,9 @@ add_executable(text_game
     src/game/camera.cpp
     src/game/player.cpp
     src/game/game_world.cpp
+    src/game/coin.cpp
+    src/game/enemy.cpp
+    src/ui/pause_menu.cpp
 )
 
 target_include_directories(text_game PRIVATE

@@ -34,12 +34,6 @@ void Window::pollEvents(const std::function<void(const sf::Event&)>& handler) {
         if (event->is<sf::Event::Closed>()) {
             window_.close();
         }
-        if (const auto* resized = event->getIf<sf::Event::Resized>()) {
-            window_.setView(sf::View(sf::FloatRect(
-                {0.f, 0.f},
-                {static_cast<float>(resized->size.x),
-                 static_cast<float>(resized->size.y)})));
-        }
         if (handler) handler(*event);
     }
 }

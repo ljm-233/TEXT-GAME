@@ -42,7 +42,10 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
                 background_, saveManager_, font, logger_);
         case SceneId::Game:
             return std::make_unique<GameScene>(
-                background_, font, logger_, saveManager_->takePendingSave());
+                background_, font, logger_,
+                saveManager_->takePendingSave(),
+                saveManager_,
+                preferences_);
         case SceneId::Settings:
             return std::make_unique<SettingsScene>(
                 background_, preferences_, runtimeConfig_,
@@ -77,9 +80,15 @@ void Game::saveWindowState() {
 }
 
 void Game::renderOverlays() {
-    auto size = window_->native().getSize();
-    float w = static_cast<float>(size.x);
-    float h = static_cast<float>(size.y);
+    auto& rt = window_->native();
+    auto winSize = rt.getSize();
+    float winW = static_cast<float>(winSize.x);
+    float winH = static_cast<float>(winSize.y);
+
+    // ⭐ 构造屏幕空间 view（尺寸 = 当前窗口尺寸）
+    sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
+    rt.setView(screenView);
+
     const float margin = 20.f;
 
     // FPS
@@ -90,13 +99,13 @@ void Game::renderOverlays() {
         sf::Vector2f p;
         switch (pos) {
             case 0: p = {margin, margin}; break;
-            case 1: p = {w - b.size.x - margin, margin}; break;
-            case 2: p = {margin, h - b.size.y - margin}; break;
-            case 3: p = {w - b.size.x - margin, h - b.size.y - margin}; break;
-            default: p = {w - b.size.x - margin, margin};
+            case 1: p = {winW - b.size.x - margin, margin}; break;
+            case 2: p = {margin, winH - b.size.y - margin}; break;
+            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
+            default: p = {winW - b.size.x - margin, margin};
         }
         fpsText_.setPosition(p);
-        window_->native().draw(fpsText_);
+        rt.draw(fpsText_);
     }
 
     // 时钟
@@ -118,15 +127,17 @@ void Game::renderOverlays() {
         sf::Vector2f p;
         switch (pos) {
             case 0: p = {margin, margin}; break;
-            case 1: p = {w - b.size.x - margin, margin}; break;
-            case 2: p = {margin, h - b.size.y - margin}; break;
-            case 3: p = {w - b.size.x - margin, h - b.size.y - margin}; break;
+            case 1: p = {winW - b.size.x - margin, margin}; break;
+            case 2: p = {margin, winH - b.size.y - margin}; break;
+            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
             default: p = {margin, margin};
         }
         clockText_.setPosition(p);
-        window_->native().draw(clockText_);
+        rt.draw(clockText_);
     }
-    NotificationSystem::instance().render(window_->native());
+
+    // 通知系统
+    NotificationSystem::instance().render(rt);
 }
 
 void Game::flushConfigs() {
