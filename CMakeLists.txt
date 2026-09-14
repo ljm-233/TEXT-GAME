@@ -49,6 +49,8 @@ add_executable(text_game
     src/game/enemy.cpp
     src/ui/pause_menu.cpp
     src/ui/sound_manager.cpp
+    src/game/jump_pad.cpp
+    src/game/checkpoint.cpp
 )
 
 target_include_directories(text_game PRIVATE

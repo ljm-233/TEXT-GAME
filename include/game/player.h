@@ -18,11 +18,13 @@ public:
     Vec2 velocity() const { return vel_; }
     bool onGround() const { return onGround_; }
 
+    void setSpawn(Vec2 spawn) { spawn_ = spawn; }
     void respawn(Vec2 spawn);
     void setKillY(float y) { killY_ = y; }
 
     void takeDamage();
     bool isInvincible() const { return invincibleTimer_ > 0.f; }
+    void setVelocityY(float vy) { vel_.y = vy; onGround_ = false; jumpConsumed_ = true; }
     void bounce();
 
     bool consumeFellOut() {

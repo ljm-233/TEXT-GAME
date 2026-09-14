@@ -20,7 +20,7 @@ public:
     virtual AABB bounds() const = 0;
 
     // 类型标记（用于查找/区分）
-    enum class Type { Player, Enemy, Coin, Goal, Platform };
+    enum class Type { Player, Enemy, Coin, Goal, Platform, JumpPad, Checkpoint };
     virtual Type type() const = 0;
 
     // 是否可以从世界移除（金币收集后、敌人死亡后）

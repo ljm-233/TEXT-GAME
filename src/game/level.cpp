@@ -4,22 +4,30 @@
 #include <fstream>
 #include <sstream>
 
+bool Level::loadFromFile(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return loadFromString(ss.str());
+}
+
 bool Level::loadFromString(const std::string& text) {
     tiles_.clear();
     enemySpawns_.clear();
     coinSpawns_.clear();
+    jumpPadSpawns_.clear();
+    checkpointSpawns_.clear();
     hasGoal_ = false;
 
     std::istringstream iss(text);
     std::string line;
     std::vector<std::string> lines;
     while (std::getline(iss, line)) {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         lines.push_back(line);
     }
-    if (lines.empty())
-        return false;
+    if (lines.empty()) return false;
 
     height_ = static_cast<int>(lines.size());
     width_ = 0;
@@ -34,25 +42,13 @@ bool Level::loadFromString(const std::string& text) {
             float px = static_cast<float>(x * tileSize_);
             float py = static_cast<float>(y * tileSize_);
             switch (c) {
-            case 'P':
-                playerSpawn_ = {px, py};
-                c = ' ';
-                break;
-            case 'E':
-                enemySpawns_.push_back({px, py});
-                c = ' ';
-                break;
-            case 'C':
-                coinSpawns_.push_back({px, py});
-                c = ' ';
-                break;
-            case 'G':
-                goalPos_ = {px, py};
-                hasGoal_ = true;
-                c = ' ';
-                break;
-            default:
-                break;
+                case 'P': playerSpawn_ = {px, py}; c = ' '; break;
+                case 'E': enemySpawns_.push_back({px, py}); c = ' '; break;
+                case 'C': coinSpawns_.push_back({px, py}); c = ' '; break;
+                case 'J': jumpPadSpawns_.push_back({px, py}); c = ' '; break;
+                case 'S': checkpointSpawns_.push_back({px, py}); c = ' '; break;
+                case 'G': goalPos_ = {px, py}; hasGoal_ = true; c = ' '; break;
+                default: break;
             }
             tiles_[static_cast<size_t>(y * width_ + x)] = c;
         }
@@ -60,18 +56,8 @@ bool Level::loadFromString(const std::string& text) {
     return true;
 }
 
-bool Level::loadFromFile(const std::string& path) {
-    std::ifstream in(path);
-    if (!in)
-        return false;
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return loadFromString(ss.str());
-}
-
 char Level::tileAt(int tx, int ty) const {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
-        return ' ';
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return ' ';
     return tiles_[static_cast<size_t>(ty * width_ + tx)];
 }
 
@@ -79,13 +65,14 @@ bool Level::isSolid(int tx, int ty) const {
     return tileAt(tx, ty) == '#';
 }
 
-void Level::render(sf::RenderTarget& target, float camLeft, float camTop, float camW,
-                   float camH) const {
+void Level::render(sf::RenderTarget& target,
+                   float camLeft, float camTop,
+                   float camW,    float camH) const {
     int ts = tileSize_;
 
-    int left = std::max(0, static_cast<int>(camLeft / ts));
-    int right = std::min(width_, static_cast<int>((camLeft + camW) / ts) + 1);
-    int top = std::max(0, static_cast<int>(camTop / ts));
+    int left   = std::max(0, static_cast<int>(camLeft / ts));
+    int right  = std::min(width_,  static_cast<int>((camLeft + camW) / ts) + 1);
+    int top    = std::max(0, static_cast<int>(camTop / ts));
     int bottom = std::min(height_, static_cast<int>((camTop + camH) / ts) + 1);
 
     sf::RectangleShape rect({static_cast<float>(ts), static_cast<float>(ts)});
@@ -95,10 +82,9 @@ void Level::render(sf::RenderTarget& target, float camLeft, float camTop, float 
 
     for (int y = top; y < bottom; ++y) {
         for (int x = left; x < right; ++x) {
-            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#')
-                continue;
-            // 世界坐标，直接画
-            rect.setPosition({static_cast<float>(x * ts), static_cast<float>(y * ts)});
+            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            rect.setPosition({static_cast<float>(x * ts),
+                              static_cast<float>(y * ts)});
             target.draw(rect);
         }
     }
