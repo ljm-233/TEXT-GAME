@@ -1,0 +1,80 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ============================================================
+  # Linux (Arch 容器)
+  # ============================================================
+  build-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel cmake ninja sfml git
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j
+
+  # ============================================================
+  # Ubuntu (从源码装 SFML 3)
+  # ============================================================
+  build-ubuntu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools & SFML 3 deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build git \
+            libxrandr-dev libxcursor-dev libudev-dev \
+            libopenal-dev libflac-dev libvorbis-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libfreetype6-dev \
+            libxi-dev libx11-dev
+
+      - name: Build & install SFML 3
+        run: |
+          git clone --depth 1 --branch 3.0.0 https://github.com/SFML/SFML.git /tmp/SFML
+          cmake -S /tmp/SFML -B /tmp/SFML/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DSFML_BUILD_EXAMPLES=OFF \
+            -DSFML_BUILD_DOC=OFF
+          cmake --build /tmp/SFML/build -j
+          sudo cmake --install /tmp/SFML/build
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j
+
+  # ============================================================
+  # macOS
+  # ============================================================
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja sfml
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j

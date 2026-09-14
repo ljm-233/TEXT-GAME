@@ -15,6 +15,7 @@ public:
     void display();
 
     void pollEvents(const std::function<void(const sf::Event&)>& handler = nullptr);
+    bool isFocused() const;
 
     bool isKeyPressed(sf::Keyboard::Key key) const;
     void draw(const sf::Drawable& drawable);

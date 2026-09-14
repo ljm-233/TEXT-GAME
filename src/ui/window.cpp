@@ -76,3 +76,7 @@ void Window::setFramerateLimit(unsigned limit) {
 sf::RenderWindow& Window::native() {
     return window_;
 }
+
+bool Window::isFocused() const {
+    return window_.hasFocus();
+}

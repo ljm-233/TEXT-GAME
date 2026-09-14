@@ -23,6 +23,7 @@ public:
 
     void render(sf::RenderTarget& target);
     void clear();
+    void setPrompt(const std::string& p) { prompt_ = p; }
 
 private:
     void submitCurrentInput();
@@ -30,6 +31,7 @@ private:
 
     const sf::Font& font_;
     unsigned maxLines_;
+    std::string prompt_ = "> ";
     unsigned lineHeight_;
     bool autoScroll_;
     bool blinkCursor_;

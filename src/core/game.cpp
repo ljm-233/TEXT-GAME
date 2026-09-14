@@ -1,78 +1,112 @@
 #include "game.h"
-#include "console_scene.h"
-#include "game_scene.h"
 #include "main_menu_scene.h"
-#include "notification.h"
 #include "save_select_scene.h"
+#include "game_scene.h"
 #include "settings_scene.h"
+#include "console_scene.h"
+#include "notification.h"
+#include "sound_manager.h"
 #include <SFML/System/Clock.hpp>
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 
-Game::Game(std::shared_ptr<Window> window, std::shared_ptr<Logger> logger,
-           std::shared_ptr<Background> background, std::shared_ptr<FontHolder> fontHolder,
-           std::shared_ptr<SaveManager> saveManager,
-           std::shared_ptr<Preferences> preferences,
+Game::Game(std::shared_ptr<Window>        window,
+           std::shared_ptr<Logger>        logger,
+           std::shared_ptr<Background>    background,
+           std::shared_ptr<FontHolder>    fontHolder,
+           std::shared_ptr<SaveManager>   saveManager,
+           std::shared_ptr<Preferences>   preferences,
            std::shared_ptr<RuntimeConfig> runtimeConfig)
-      : window_(std::move(window)),
-        logger_(std::move(logger)),
-        background_(std::move(background)),
-        fontHolder_(std::move(fontHolder)),
-        saveManager_(std::move(saveManager)),
-        preferences_(std::move(preferences)),
-        runtimeConfig_(std::move(runtimeConfig)),
-        fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
-        clockText_(fontHolder_->get(), sf::String(""), 20) {
-    NotificationSystem::instance().setFont(fontHolder_->get());
+    : window_(std::move(window)),
+      logger_(std::move(logger)),
+      background_(std::move(background)),
+      fontHolder_(std::move(fontHolder)),
+      saveManager_(std::move(saveManager)),
+      preferences_(std::move(preferences)),
+      runtimeConfig_(std::move(runtimeConfig)),
+      fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
+      clockText_(fontHolder_->get(), sf::String(""), 20) {
     fpsText_.setFillColor(sf::Color(255, 255, 100));
     clockText_.setFillColor(sf::Color(220, 220, 240));
-    sceneManager_ =
-        std::make_unique<SceneManager>([this](SceneId id) { return createScene(id); });
+
+    NotificationSystem::instance().setFont(fontHolder_->get());
+    sceneManager_ = std::make_unique<SceneManager>(
+        [this](SceneId id) { return createScene(id); });
+
+    transitionOverlay_.setFillColor(sf::Color(0, 0, 0, 0));
 }
 
 std::unique_ptr<Scene> Game::createScene(SceneId id) {
     const sf::Font& font = fontHolder_->get();
     switch (id) {
-    case SceneId::MainMenu:
-        return std::make_unique<MainMenuScene>(background_, font, logger_);
-    case SceneId::SaveSelect:
-        return std::make_unique<SaveSelectScene>(background_, saveManager_, font,
-                                                 logger_);
-    case SceneId::Game:
-        return std::make_unique<GameScene>(background_, font, logger_,
-                                           saveManager_->takePendingSave(), saveManager_,
-                                           preferences_);
-    case SceneId::Settings:
-        return std::make_unique<SettingsScene>(background_, preferences_, runtimeConfig_,
-                                               window_, font, logger_);
-    case SceneId::Console:
-        return std::make_unique<ConsoleScene>(background_, preferences_, saveManager_,
-                                              font, logger_);
-    default:
-        return nullptr;
+        case SceneId::MainMenu:
+            return std::make_unique<MainMenuScene>(background_, font, logger_);
+        case SceneId::SaveSelect:
+            return std::make_unique<SaveSelectScene>(
+                background_, saveManager_, font, logger_);
+        case SceneId::Game:
+            return std::make_unique<GameScene>(
+                background_, font, logger_,
+                saveManager_->takePendingSave(),
+                saveManager_,
+                preferences_);
+        case SceneId::Settings:
+            return std::make_unique<SettingsScene>(
+                background_, preferences_, runtimeConfig_,
+                window_, font, logger_);
+        case SceneId::Console:
+            return std::make_unique<ConsoleScene>(
+                background_, preferences_, saveManager_, font, logger_);
+        default:
+            return nullptr;
     }
 }
 
-void Game::handleTransition(SceneId next) {
-    flushConfigs();
-    if (next == SceneId::Exit) {
-        window_->close();
-        return;
+void Game::switchScene(SceneId next) {
+    if (next == SceneId::None) return;
+
+    // ⭐ 不直接切换，先进入过渡，等淡出完成后再真正切
+    pendingScene_ = next;
+    transitionPhase_ = TransitionPhase::FadingOut;
+}
+
+void Game::updateTransition(float dt) {
+    if (transitionPhase_ == TransitionPhase::None) return;
+
+    if (transitionPhase_ == TransitionPhase::FadingOut) {
+        transitionAlpha_ += transitionSpeed_ * dt;
+        if (transitionAlpha_ >= 1.f) {
+            transitionAlpha_ = 1.f;
+
+            // 真正切换场景
+            flushConfigs();
+            if (pendingScene_ == SceneId::Exit) {
+                window_->close();
+                transitionPhase_ = TransitionPhase::None;
+                return;
+            } else if (pendingScene_ == SceneId::Back) {
+                sceneManager_->pop();
+            } else {
+                sceneManager_->push(pendingScene_);
+            }
+            pendingScene_ = SceneId::None;
+            transitionPhase_ = TransitionPhase::FadingIn;
+        }
+    } else if (transitionPhase_ == TransitionPhase::FadingIn) {
+        transitionAlpha_ -= transitionSpeed_ * dt;
+        if (transitionAlpha_ <= 0.f) {
+            transitionAlpha_ = 0.f;
+            transitionPhase_ = TransitionPhase::None;
+        }
     }
-    if (next == SceneId::Back) {
-        sceneManager_->pop();
-        return;
-    }
-    sceneManager_->push(next);
 }
 
 void Game::saveWindowState() {
-    if (!window_->isOpen())
-        return;
-    if (!preferences_->getBool("remember_window_size", true))
-        return;
+    if (!window_->isOpen()) return;
+    if (!preferences_->getBool("remember_window_size", true)) return;
     auto size = window_->native().getSize();
-    runtimeConfig_->setInt("last_window_width", static_cast<int>(size.x));
+    runtimeConfig_->setInt("last_window_width",  static_cast<int>(size.x));
     runtimeConfig_->setInt("last_window_height", static_cast<int>(size.y));
 }
 
@@ -82,7 +116,6 @@ void Game::renderOverlays() {
     float winW = static_cast<float>(winSize.x);
     float winH = static_cast<float>(winSize.y);
 
-    // ⭐ 构造屏幕空间 view（尺寸 = 当前窗口尺寸）
     sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
     rt.setView(screenView);
 
@@ -90,25 +123,29 @@ void Game::renderOverlays() {
 
     // FPS
     if (preferences_->getBool("show_fps", false)) {
-        fpsText_.setString("FPS: " + std::to_string(static_cast<int>(fpsDisplayed_)));
+        int fmt = preferences_->getInt("fps_format", 1);
+        std::string s;
+        switch (fmt) {
+            case 0: s = std::to_string(static_cast<int>(fpsDisplayed_)); break;
+            case 1: s = std::to_string(static_cast<int>(fpsDisplayed_)) + " FPS"; break;
+            case 2: {
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%.1f FPS", fpsDisplayed_);
+                s = buf;
+                break;
+            }
+            default: s = std::to_string(static_cast<int>(fpsDisplayed_)) + " FPS";
+        }
+        fpsText_.setString(s);
         auto b = fpsText_.getLocalBounds();
         int pos = preferences_->getInt("fps_position", 1);
         sf::Vector2f p;
         switch (pos) {
-        case 0:
-            p = {margin, margin};
-            break;
-        case 1:
-            p = {winW - b.size.x - margin, margin};
-            break;
-        case 2:
-            p = {margin, winH - b.size.y - margin};
-            break;
-        case 3:
-            p = {winW - b.size.x - margin, winH - b.size.y - margin};
-            break;
-        default:
-            p = {winW - b.size.x - margin, margin};
+            case 0: p = {margin, margin}; break;
+            case 1: p = {winW - b.size.x - margin, margin}; break;
+            case 2: p = {margin, winH - b.size.y - margin}; break;
+            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
+            default: p = {winW - b.size.x - margin, margin};
         }
         fpsText_.setPosition(p);
         rt.draw(fpsText_);
@@ -132,27 +169,27 @@ void Game::renderOverlays() {
         int pos = preferences_->getInt("clock_position", 0);
         sf::Vector2f p;
         switch (pos) {
-        case 0:
-            p = {margin, margin};
-            break;
-        case 1:
-            p = {winW - b.size.x - margin, margin};
-            break;
-        case 2:
-            p = {margin, winH - b.size.y - margin};
-            break;
-        case 3:
-            p = {winW - b.size.x - margin, winH - b.size.y - margin};
-            break;
-        default:
-            p = {margin, margin};
+            case 0: p = {margin, margin}; break;
+            case 1: p = {winW - b.size.x - margin, margin}; break;
+            case 2: p = {margin, winH - b.size.y - margin}; break;
+            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
+            default: p = {margin, margin};
         }
         clockText_.setPosition(p);
         rt.draw(clockText_);
     }
 
-    // 通知系统
+    // 通知
     NotificationSystem::instance().render(rt);
+
+    // ===== 场景过渡遮罩 =====
+    if (transitionPhase_ != TransitionPhase::None && transitionAlpha_ > 0.f) {
+        auto a = static_cast<std::uint8_t>(
+            std::clamp(transitionAlpha_, 0.f, 1.f) * 255.f);
+        transitionOverlay_.setSize({winW, winH});
+        transitionOverlay_.setFillColor(sf::Color(0, 0, 0, a));
+        rt.draw(transitionOverlay_);
+    }
 }
 
 void Game::flushConfigs() {
@@ -162,16 +199,40 @@ void Game::flushConfigs() {
 
 void Game::run() {
     logger_->info("游戏启动");
-    NotificationSystem::instance().push("游戏已启动", NotificationType::Info);
     if (!sceneManager_->start(SceneId::MainMenu)) {
         logger_->error("无法创建主菜单场景");
         return;
     }
 
+    // 主菜单 BGM
+    SoundManager::instance().playBGM();
+
     sf::Clock clock;
     while (window_->isOpen()) {
         float dt = clock.restart().asSeconds();
+        // 防止第一帧或长暂停后 dt 太大
+        if (dt > 0.1f) dt = 0.1f;
 
+        // 自动暂停
+        if (preferences_->getBool("auto_pause_on_blur", true)) {
+            bool focused = window_->isFocused();
+            if (!focused && !autoPaused_) {
+                autoPaused_ = true;
+                SoundManager::instance().pauseBGM();
+            } else if (focused && autoPaused_) {
+                autoPaused_ = false;
+                SoundManager::instance().resumeBGM();
+            }
+            if (autoPaused_) {
+                window_->pollEvents();
+                sceneManager_->current().render(*window_);
+                renderOverlays();
+                window_->display();
+                continue;
+            }
+        }
+
+        // FPS 统计
         fpsFrameCount_++;
         fpsElapsed_ += dt;
         if (fpsElapsed_ >= 0.5f) {
@@ -180,31 +241,41 @@ void Game::run() {
             fpsElapsed_ = 0.f;
         }
 
+        // 定时 flush
         flushTimer_ += dt;
-        NotificationSystem::instance().update(dt);
-        if (flushTimer_ >= 5.f) {
-            flushConfigs();
-            flushTimer_ = 0.f;
-        }
+        if (flushTimer_ >= 5.f) { flushConfigs(); flushTimer_ = 0.f; }
 
-        // 时钟每 0.2 秒刷新一次
-        clockTimer_ += dt;
-        if (clockTimer_ >= 0.2f)
-            clockTimer_ = 0.f;
+        // 过渡时冻结游戏更新
+        bool transitioning = (transitionPhase_ != TransitionPhase::None);
 
         Scene& scene = sceneManager_->current();
-        window_->pollEvents([&](const sf::Event& e) { scene.handleEvent(e); });
-        scene.update(dt);
+
+        window_->pollEvents([&](const sf::Event& e) {
+            if (!transitioning) scene.handleEvent(e);
+        });
+
+        if (!transitioning) {
+            scene.update(dt);
+        }
+
         scene.render(*window_);
+
+        // 过渡
+        updateTransition(dt);
+
         renderOverlays();
         window_->display();
 
-        SceneId next = scene.nextScene();
-        if (next != SceneId::None && next != sceneManager_->currentId()) {
-            handleTransition(next);
+        // 场景切换请求
+        if (!transitioning) {
+            SceneId next = scene.nextScene();
+            if (next != SceneId::None && next != sceneManager_->currentId()) {
+                switchScene(next);
+            }
         }
     }
 
+    SoundManager::instance().stopBGM();
     saveWindowState();
     flushConfigs();
     logger_->info("游戏结束");

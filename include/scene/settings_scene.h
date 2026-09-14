@@ -1,25 +1,26 @@
 #pragma once
+#include "scene.h"
 #include "background.h"
 #include "button.h"
-#include "confirm_dialog.h"
-#include "preferences.h"
-#include "resolution.h"
-#include "runtime_config.h"
-#include "scene.h"
 #include "slider.h"
 #include "text_input.h"
-#include "theme.h"
+#include "preferences.h"
+#include "runtime_config.h"
 #include "window.h"
+#include "resolution.h"
+#include "confirm_dialog.h"
+#include "theme.h"
 #include <memory>
 #include <vector>
 
 class SettingsScene : public Scene {
 public:
-    SettingsScene(std::shared_ptr<Background> background,
-                  std::shared_ptr<Preferences> preferences,
+    SettingsScene(std::shared_ptr<Background>    background,
+                  std::shared_ptr<Preferences>   preferences,
                   std::shared_ptr<RuntimeConfig> runtimeConfig,
-                  std::shared_ptr<Window> window, const sf::Font& font,
-                  std::shared_ptr<Logger> logger);
+                  std::shared_ptr<Window>        window,
+                  const sf::Font&                font,
+                  std::shared_ptr<Logger>        logger);
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
@@ -44,26 +45,33 @@ private:
     void applyLogRotation();
     void applyAnimation();
     void applyNotification();
+    void applySound();
+    void applyAutoPause();
+    void applyFpsFormat();
+    void applyConsolePrompt();
+    void applyShowColliders();
+    void applyScreenShake();
+    void applyParticles();
     void resetAllPreferences();
 
-    void renderTabs(Window& window);
-    void renderDisplayTab(Window& window, float contentX, float ctrlX, float y);
+    void renderTabs        (Window& window);
+    void renderDisplayTab  (Window& window, float contentX, float ctrlX, float y);
     void renderInterfaceTab(Window& window, float contentX, float ctrlX, float y);
-    void renderOtherTab(Window& window, float contentX, float ctrlX, float y);
-    void renderBackButton(Window& window);
+    void renderOtherTab    (Window& window, float contentX, float ctrlX, float y);
+    void renderBackButton  (Window& window);
 
-    std::shared_ptr<Background> background_;
-    std::shared_ptr<Preferences> preferences_;
+    std::shared_ptr<Background>    background_;
+    std::shared_ptr<Preferences>   preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
-    std::shared_ptr<Window> window_;
-    std::shared_ptr<Logger> logger_;
-    const sf::Font& font_;
+    std::shared_ptr<Window>        window_;
+    std::shared_ptr<Logger>        logger_;
+    const sf::Font&                font_;
 
     Tab currentTab_ = Tab::Display;
 
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
-    // Display
+    // ===== Display =====
     std::vector<std::unique_ptr<Button>> resolutionButtons_;
     std::unique_ptr<Button> fullscreenOn_, fullscreenOff_;
     std::unique_ptr<Button> vsyncOn_, vsyncOff_;
@@ -75,9 +83,10 @@ private:
     std::unique_ptr<Button> notificationOn_, notificationOff_;
     std::vector<std::unique_ptr<Button>> notificationPosButtons_;
 
-    // Interface
+    // ===== Interface =====
     std::unique_ptr<Button> fpsOn_, fpsOff_;
     std::vector<std::unique_ptr<Button>> fpsPosButtons_;
+    std::vector<std::unique_ptr<Button>> fpsFormatButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
@@ -86,17 +95,24 @@ private:
     std::vector<std::unique_ptr<Button>> consoleLineHeightButtons_;
     std::unique_ptr<Button> consoleAutoScrollOn_, consoleAutoScrollOff_;
     std::unique_ptr<Button> consoleBlinkOn_, consoleBlinkOff_;
+    std::vector<std::unique_ptr<Button>> consolePromptButtons_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
     std::unique_ptr<Button> wallpaperButton_;
     std::unique_ptr<Button> clockOn_, clockOff_;
     std::vector<std::unique_ptr<Button>> clockPosButtons_;
 
-    // Other
+    // ===== Other =====
     std::unique_ptr<Button> rememberOn_, rememberOff_;
     std::vector<std::unique_ptr<Button>> logRotateButtons_;
     std::vector<std::unique_ptr<Button>> logKeepButtons_;
     std::vector<std::unique_ptr<Button>> buttonCornerButtons_;
     std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
+    std::unique_ptr<Button> soundOn_, soundOff_;
+    std::unique_ptr<Slider> soundVolumeSlider_;
+    std::unique_ptr<Button> autoPauseOn_, autoPauseOff_;
+    std::unique_ptr<Button> showCollidersOn_, showCollidersOff_;
+    std::unique_ptr<Button> screenShakeOn_, screenShakeOff_;
+    std::unique_ptr<Button> particlesOn_, particlesOff_;
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
 
@@ -106,52 +122,63 @@ private:
 
     std::unique_ptr<TextInput> playerNameInput_;
 
-    // 标签
+    // ===== 标签 =====
     sf::Text headingDisplay_, headingInterface_, headingOther_;
     sf::Text labelResolution_, labelFullscreen_, labelVsync_;
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
     sf::Text labelAnimation_, labelAnimationSpeed_;
     sf::Text labelNotification_, labelNotificationPos_;
-    sf::Text labelFps_, labelFpsPos_, labelUiScale_;
+    sf::Text labelFps_, labelFpsPos_, labelFpsFormat_, labelUiScale_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelConsoleFont_, labelConsoleHistory_;
     sf::Text labelConsoleLineHeight_, labelConsoleAutoScroll_;
-    sf::Text labelConsoleBlink_, labelTheme_, labelWallpaper_;
+    sf::Text labelConsoleBlink_, labelConsolePrompt_;
+    sf::Text labelTheme_, labelWallpaper_;
     sf::Text labelClock_, labelClockPos_;
     sf::Text labelRememberSize_, labelLogRotate_, labelLogKeep_;
     sf::Text labelButtonCorner_, labelButtonOutline_;
+    sf::Text labelSound_, labelSoundVolume_, labelAutoPause_;
+    sf::Text labelShowColliders_, labelScreenShake_, labelParticles_;
     sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
 
-    // 状态
-    int selectedResolution_;
-    bool fullscreen_;
-    bool vsync_;
-    int antiAliasingLevel_;
-    int logLevel_;
-    int fpsLimit_;
-    bool animationEnabled_;
-    int animationSpeedIndex_;
-    bool notificationEnabled_;
-    int notificationPosition_;
-    bool showFps_;
-    int fpsPosition_;
-    float uiScale_;
-    int consoleMask_;
-    int consolePanelAlpha_;
-    int consoleFontSize_;
-    int consoleHistoryLines_;
-    int consoleLineHeight_;
-    bool consoleAutoScroll_;
-    bool consoleBlinkCursor_;
+    // ===== 状态 =====
+    int     selectedResolution_;
+    bool    fullscreen_;
+    bool    vsync_;
+    int     antiAliasingLevel_;
+    int     logLevel_;
+    int     fpsLimit_;
+    bool    animationEnabled_;
+    int     animationSpeedIndex_;
+    bool    notificationEnabled_;
+    int     notificationPosition_;
+    bool    showFps_;
+    int     fpsPosition_;
+    int     fpsFormat_;
+    float   uiScale_;
+    int     consoleMask_;
+    int     consolePanelAlpha_;
+    int     consoleFontSize_;
+    int     consoleHistoryLines_;
+    int     consoleLineHeight_;
+    bool    consoleAutoScroll_;
+    bool    consoleBlinkCursor_;
+    int     consolePrompt_;
     ThemeId themeId_;
-    float buttonCorner_;
-    float buttonOutline_;
-    bool showClock_;
-    int clockPosition_;
-    bool rememberSize_;
-    int logRotateIndex_;
-    int logKeepIndex_;
+    float   buttonCorner_;
+    float   buttonOutline_;
+    bool    showClock_;
+    int     clockPosition_;
+    bool    rememberSize_;
+    int     logRotateIndex_;
+    int     logKeepIndex_;
+    bool    soundEnabled_;
+    float   soundVolume_;
+    bool    autoPauseOnBlur_;
+    bool    showColliders_;
+    bool    screenShake_;
+    bool    particlesEnabled_;
 
     SceneId nextScene_ = SceneId::None;
 };

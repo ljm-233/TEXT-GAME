@@ -16,6 +16,7 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "window.h"
+#include "platform.h"
 
 #include <algorithm>
 
@@ -173,9 +174,12 @@ void Application::run() {
     auto paths = container_.resolve<Paths>();
 
     logger->info("程序启动");
+    logger->info("平台: " + std::string(Platform::name));
     logger->info("配置目录: " + paths->configDir().string());
     logger->info("存档目录: " + paths->savesDir().string());
     logger->info("资源目录: " + paths->assetsDir().string());
+    logger->info("系统配置目录: " + Platform::userConfigDir().string());
+    logger->info("系统缓存目录: " + Platform::userCacheDir().string());
 
     auto game = container_.resolve<Game>();
     game->run();

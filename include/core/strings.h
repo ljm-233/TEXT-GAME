@@ -113,4 +113,15 @@ constexpr const char* AnimSpeedFast = "快";
 constexpr const char* LabelNotification = "屏幕通知";
 constexpr const char* LabelNotificationPos = "通知位置";
 
+// ===== 新设置项 =====
+constexpr const char* LabelSound          = "音效";
+constexpr const char* LabelSoundVolume    = "音效音量";
+constexpr const char* LabelAutoPause      = "失焦自动暂停";
+constexpr const char* LabelFpsFormat      = "FPS 格式";
+constexpr const char* LabelConsolePrompt  = "控制台提示符";
+
+constexpr const char* LabelShowColliders = "显示碰撞盒";
+constexpr const char* LabelScreenShake   = "屏幕震动";
+constexpr const char* LabelParticles     = "粒子效果";
+
 } // namespace Str

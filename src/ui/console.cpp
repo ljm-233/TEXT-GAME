@@ -156,7 +156,7 @@ void Console::submitCurrentInput() {
             if (history_.size() > 100)
                 history_.erase(history_.begin());
         }
-        lines_.push_back(Str::ConsolePrompt + line);
+        lines_.push_back(prompt_ + line);
         if (lines_.size() > maxLines_)
             lines_.pop_front();
         currentInput_.clear();
@@ -274,7 +274,7 @@ void Console::render(sf::RenderTarget& target) {
         flushOutputBuffer();
         tail = outputBuffer_;
         display = lines_;
-        inputDisplay = std::string(Str::ConsolePrompt) + currentInput_;
+        inputDisplay = prompt_ + currentInput_;
         offset = scrollOffset_;
     }
 

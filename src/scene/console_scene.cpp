@@ -2,6 +2,7 @@
 #include "calculator.h"
 #include "strings.h"
 #include "theme.h"
+#include "sound_manager.h"
 #include "utf8.h"
 #include <algorithm>
 #include <iostream>
@@ -30,6 +31,11 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
                                          static_cast<unsigned>(lineHeight),
                                          static_cast<unsigned>(historyLines), autoScroll,
                                          blinkCursor, sf::Vector2u{1280, 720});
+        // 提示符
+    int promptIdx = preferences_->getInt("console_prompt", 0);
+    static const char* prompts[] = {"> ", "$ ", "λ ", "❯ "};
+    if (promptIdx < 0 || promptIdx > 3) promptIdx = 0;
+    console_->setPrompt(prompts[promptIdx]);
 
     consoleBuf_ = makeConsoleStreamBuf(console_.get());
     oldCin_ = std::cin.rdbuf(consoleBuf_.get());
@@ -240,7 +246,13 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
     // ===== 未知命令 =====
     else {
         std::cout << "未知命令: " << cmd << "。输入 help 查看帮助。\n";
+        SoundManager::instance().playHurt();
+        return;
     }
+
+    // 命令执行成功音效
+    if (cmd != "help" && cmd != "clear" && cmd != "echo" && cmd != "save")
+        SoundManager::instance().playCoin();
 }
 
 // ============================================================

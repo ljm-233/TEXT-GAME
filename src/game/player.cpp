@@ -3,6 +3,7 @@
 #include "level.h"
 #include <algorithm>
 #include <cmath>
+#include "animation.h"
 
 Player::Player(Vec2 spawn)
       : pos_(spawn),
@@ -132,6 +133,20 @@ void Player::update(float dt, const Level& level) {
     if (onGround_ && !prevOnGround_)
         justLanded_ = true;
     prevOnGround_ = onGround_;
+
+        // ===== 弹性动画 =====
+    // 根据状态设目标缩放
+    if (justJumped_) {
+        targetScale_ = {0.85f, 1.15f};   // 跳起：拉长
+    } else if (justLanded_) {
+        targetScale_ = {1.15f, 0.85f};   // 落地：压扁
+    } else {
+        targetScale_ = {1.f, 1.f};       // 默认
+    }
+
+    // 平滑逼近
+    currentScale_.x = Anim::approachF(currentScale_.x, targetScale_.x, dt * 6.f);
+    currentScale_.y = Anim::approachF(currentScale_.y, targetScale_.y, dt * 6.f);
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
@@ -195,13 +210,20 @@ void Player::moveVertical(float dy, const Level& level) {
 void Player::render(sf::RenderTarget& target) const {
     if (invincibleTimer_ > 0.f) {
         auto ms = static_cast<int>(invincibleTimer_ * 1000.f);
-        if ((ms / 100) % 2 == 0)
-            return;
+        if ((ms / 100) % 2 == 0) return;
     }
 
-    body_.setPosition({pos_.x, pos_.y});
+    // 弹性：围绕底部中心缩放
+    body_.setOrigin({size_.x * 0.5f, size_.y});
+    body_.setScale(currentScale_);
+    body_.setPosition({pos_.x + size_.x * 0.5f, pos_.y + size_.y});
     target.draw(body_);
 
-    eye_.setPosition({pos_.x + size_.x - 12.f, pos_.y + 8.f});
+    // 眼睛跟着缩放
+    eye_.setScale(currentScale_);
+    eye_.setPosition({
+        pos_.x + size_.x * 0.5f + (size_.x * 0.5f - 12.f) * currentScale_.x,
+        pos_.y + size_.y + (-size_.y + 8.f) * currentScale_.y
+    });
     target.draw(eye_);
 }

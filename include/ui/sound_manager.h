@@ -4,7 +4,6 @@
 #include <vector>
 #include <cstddef>
 
-// 全局音效管理器：音效用代码生成，不依赖外部文件
 class SoundManager {
 public:
     static SoundManager& instance();
@@ -17,6 +16,7 @@ public:
     void setVolume(float v);
     float volume() const { return volume_; }
 
+    // ===== 音效 =====
     void playJump();
     void playLand();
     void playCoin();
@@ -26,10 +26,19 @@ public:
     void playGameOver();
     void playCheckpoint();
 
+    // ===== BGM =====
+    void playBGM();
+    void stopBGM();
+    void pauseBGM();
+    void resumeBGM();
+    void setBGMEnabled(bool e);
+    bool isBGMEnabled() const { return bgmEnabled_; }
+
 private:
     SoundManager() = default;
 
     void play(const sf::SoundBuffer& buf);
+    void rebuildBGM();
 
     sf::SoundBuffer bufJump_;
     sf::SoundBuffer bufLand_;
@@ -39,6 +48,11 @@ private:
     sf::SoundBuffer bufComplete_;
     sf::SoundBuffer bufGameOver_;
     sf::SoundBuffer bufCheckpoint_;
+
+    sf::SoundBuffer bufBGM_;
+    std::unique_ptr<sf::Sound> bgm_;
+    bool  bgmEnabled_ = true;
+    bool  bgmPlaying_ = false;
 
     std::vector<std::unique_ptr<sf::Sound>> pool_;
     std::size_t nextIndex_ = 0;

@@ -67,12 +67,25 @@ void GameWorld::update(float dt) {
         ++iterations;
     }
 
-    if (player_->consumeJustJumped()) SoundManager::instance().playJump();
-    if (player_->consumeJustLanded()) SoundManager::instance().playLand();
+    // 玩家跳跃/落地音效 + 粒子
+    if (player_) {
+        Vec2 pb = player_->bounds().center();
+        float footX = pb.x;
+        float footY = player_->bounds().bottom();
+        if (player_->consumeJustJumped()) {
+            SoundManager::instance().playJump();
+            if (particlesEnabled_) particles_.emitJump({footX, footY});
+        }
+        if (player_->consumeJustLanded()) {
+            SoundManager::instance().playLand();
+            if (particlesEnabled_) particles_.emitLand({footX, footY});
+        }
+    }
 
     if (player_ && player_->consumeFellOut()) {
         --lives_;
         SoundManager::instance().playHurt();
+        if (screenShake_) camera_.shake(8.f, 0.3f);
         if (lives_ <= 0) {
             state_ = State::GameOver;
             return;
@@ -92,6 +105,9 @@ void GameWorld::update(float dt) {
         objects_.end());
 
     if (player_) camera_.follow(player_->bounds().center(), dt);
+    camera_.updateShake(dt);
+    if (particlesEnabled_) particles_.update(dt);
+    else                    particles_.clear();
 }
 
 void GameWorld::checkCollisionsSafe() {
@@ -109,6 +125,7 @@ void GameWorld::checkCollisionsSafe() {
                     c->collect();
                     ++coins_;
                     SoundManager::instance().playCoin();
+                    if (particlesEnabled_) particles_.emitCoin(c->bounds().center());
                 }
                 break;
             }
@@ -124,10 +141,14 @@ void GameWorld::checkCollisionsSafe() {
                     e->kill();
                     player_->bounce();
                     SoundManager::instance().playStomp();
+                    if (particlesEnabled_) particles_.emitStomp(e->bounds().center());
+                    if (screenShake_) camera_.shake(4.f, 0.15f);
                 } else if (!player_->isInvincible()) {
                     player_->takeDamage();
                     --lives_;
                     SoundManager::instance().playHurt();
+                    if (particlesEnabled_) particles_.emitHurt(pb.center());
+                    if (screenShake_) camera_.shake(8.f, 0.3f);
                     if (lives_ <= 0) {
                         state_ = State::GameOver;
                         return;
@@ -136,10 +157,10 @@ void GameWorld::checkCollisionsSafe() {
                 break;
             }
             case GameObject::Type::JumpPad: {
-                // 只有从上方落下才触发
                 if (player_->velocity().y >= 0.f) {
                     player_->setVelocityY(JumpPad::kLaunchSpeed);
                     SoundManager::instance().playJump();
+                    if (particlesEnabled_) particles_.emitJump(pb.center());
                 }
                 break;
             }
@@ -149,6 +170,7 @@ void GameWorld::checkCollisionsSafe() {
                     cp->activate();
                     player_->setSpawn(cp->respawnPos());
                     SoundManager::instance().playCheckpoint();
+                    if (particlesEnabled_) particles_.emitCoin(cp->bounds().center());
                 }
                 break;
             }
@@ -166,8 +188,32 @@ bool GameWorld::checkGoalReached() const {
     return player_->bounds().intersects(goal);
 }
 
+void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
+    sf::RectangleShape rect;
+    rect.setFillColor(sf::Color::Transparent);
+    rect.setOutlineThickness(1.f);
+
+    for (const auto& obj : objects_) {
+        AABB b = obj->bounds();
+        rect.setSize({b.w, b.h});
+        rect.setPosition({b.x, b.y});
+
+        sf::Color color;
+        switch (obj->type()) {
+            case GameObject::Type::Player:     color = sf::Color(0, 255, 0);   break;
+            case GameObject::Type::Enemy:      color = sf::Color(255, 0, 0);   break;
+            case GameObject::Type::Coin:       color = sf::Color(255, 255, 0); break;
+            case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
+            case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
+            default:                            color = sf::Color(200, 200, 200); break;
+        }
+        rect.setOutlineColor(color);
+        target.draw(rect);
+    }
+}
+
 void GameWorld::render(sf::RenderTarget& target) {
-    Vec2 camTL = camera_.position();
+    Vec2 camTL = camera_.effectivePosition();
     level_->render(target,
                    camTL.x, camTL.y,
                    camera_.viewWidth(), camera_.viewHeight());
@@ -175,6 +221,10 @@ void GameWorld::render(sf::RenderTarget& target) {
     for (const auto& obj : objects_) {
         obj->render(target);
     }
+
+    if (particlesEnabled_) particles_.render(target);
+
+    if (showColliders_) renderDebugColliders(target);
 }
 
 void GameWorld::reset() {
@@ -182,6 +232,7 @@ void GameWorld::reset() {
     coins_ = 0;
     state_ = State::Playing;
     accumulator_ = 0.f;
+    particles_.clear();
 
     objects_.clear();
     player_ = nullptr;

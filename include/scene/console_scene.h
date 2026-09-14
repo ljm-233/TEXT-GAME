@@ -47,4 +47,5 @@ private:
     std::thread worker_;
     std::atomic<bool> workerDone_{false};
     std::atomic<int> pendingScene_{static_cast<int>(SceneId::None)};
+    void playConsoleSound();
 };

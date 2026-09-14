@@ -67,6 +67,9 @@ private:
     bool jumpConsumed_ = false;
 
     float invincibleTimer_ = 0.f;
+        // 弹性动画
+    sf::Vector2f currentScale_{1.f, 1.f};
+    sf::Vector2f targetScale_{1.f, 1.f};
 
     mutable sf::RectangleShape body_;
     mutable sf::RectangleShape eye_;
