@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(SFML 3 COMPONENTS Graphics Window System REQUIRED)
+find_package(SFML 3 COMPONENTS Graphics Window System Audio REQUIRED)
 
 add_compile_options(
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall>
@@ -48,6 +48,7 @@ add_executable(text_game
     src/game/coin.cpp
     src/game/enemy.cpp
     src/ui/pause_menu.cpp
+    src/ui/sound_manager.cpp
 )
 
 target_include_directories(text_game PRIVATE
@@ -67,4 +68,4 @@ target_compile_definitions(text_game PRIVATE
     BUILD_DATE="${BUILD_DATE}"
 )
 
-target_link_libraries(text_game PRIVATE SFML::Graphics)
+target_link_libraries(text_game PRIVATE SFML::Graphics SFML::Audio)

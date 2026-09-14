@@ -60,15 +60,17 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
                         : customName;
     info.createdAt  = now;
     info.lastPlayed = now;
-    info.progress   = 0;
+    info.progress     = 0;
+    info.currentLevel = 1;
 
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
     if (out) {
-        out << "name="        << info.name       << '\n';
-        out << "created_at="  << info.createdAt  << '\n';
-        out << "last_played=" << info.lastPlayed << '\n';
-        out << "progress="    << info.progress   << '\n';
+        out << "name="          << info.name         << '\n';
+        out << "created_at="    << info.createdAt    << '\n';
+        out << "last_played="   << info.lastPlayed   << '\n';
+        out << "progress="      << info.progress     << '\n';
+        out << "current_level=" << info.currentLevel << '\n';
     }
 
     logger_->info("创建存档: " + path.string());
@@ -84,7 +86,8 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.name       = Str::UnnamedSave;
     out.createdAt  = "";
     out.lastPlayed = "";
-    out.progress   = 0;
+    out.progress     = 0;
+    out.currentLevel = 1;
 
     std::string line;
     while (std::getline(in, line)) {
@@ -98,6 +101,9 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
         else if (k == "last_played") out.lastPlayed = v;
         else if (k == "progress") {
             try { out.progress = std::stoi(v); } catch (...) { out.progress = 0; }
+        }
+        else if (k == "current_level") {
+            try { out.currentLevel = std::stoi(v); } catch (...) { out.currentLevel = 1; }
         }
     }
     return true;
@@ -116,21 +122,26 @@ bool SaveManager::deleteSave(const std::string& filename) {
     return true;
 }
 
-bool SaveManager::updateProgress(const std::string& filename, int progress) {
+bool SaveManager::updateProgress(const std::string& filename,
+                                 int progress,
+                                 int currentLevel) {
     SaveInfo info;
     if (!loadSave(filename, info)) return false;
-    info.progress = std::max(info.progress, progress);   // 只增不减
-    info.lastPlayed = currentTimestamp();
+    info.progress     = std::max(info.progress, progress);
+    info.currentLevel = std::max(info.currentLevel, currentLevel);
+    info.lastPlayed   = currentTimestamp();
 
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
     if (!out) return false;
-    out << "name="        << info.name       << '\n';
-    out << "created_at="  << info.createdAt  << '\n';
-    out << "last_played=" << info.lastPlayed << '\n';
-    out << "progress="    << info.progress   << '\n';
+    out << "name="          << info.name         << '\n';
+    out << "created_at="    << info.createdAt    << '\n';
+    out << "last_played="   << info.lastPlayed   << '\n';
+    out << "progress="      << info.progress     << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
 
     logger_->info("存档进度更新: " + filename +
-                  " progress=" + std::to_string(info.progress));
+                  " progress=" + std::to_string(info.progress) +
+                  " level=" + std::to_string(info.currentLevel));
     return true;
 }

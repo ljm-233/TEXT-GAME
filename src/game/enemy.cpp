@@ -8,7 +8,6 @@ constexpr float kSpeed = 90.f;
 
 Enemy::Enemy(Vec2 pos, int tileSize)
     : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize) {
-    // 对齐到瓦片中心：pos 是瓦片左上角，敌人比瓦片小一点
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
@@ -29,7 +28,6 @@ bool Enemy::wallAhead(const Level& level) const {
     int ts = level.tileSize();
     AABB box = bounds();
 
-    // 前方一格的位置
     float probeX = (vel_.x > 0.f) ? box.right() + 1.f : box.left() - 1.f;
     int tx = static_cast<int>(std::floor(probeX / ts));
     int tyTop = static_cast<int>(std::floor(box.top() / ts));
@@ -46,24 +44,23 @@ bool Enemy::cliffAhead(const Level& level) const {
     int tx = static_cast<int>(std::floor(probeX / ts));
     int ty = static_cast<int>(std::floor((box.bottom() + 2.f) / ts));
 
-    // 前方脚下没地 → 悬崖
     return !level.isSolid(tx, ty);
 }
 
 void Enemy::update(float dt, const Level& level) {
-    // 撞墙或到悬崖边缘就掉头
+    if (killed_) return;
     if (wallAhead(level) || cliffAhead(level)) {
         vel_.x = -vel_.x;
     }
-
     pos_.x += vel_.x * dt;
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
+    if (killed_) return;
+
     body_.setPosition({pos_.x, pos_.y});
     target.draw(body_);
 
-    // 眼睛朝向移动方向
     float eyeX = (vel_.x > 0.f)
         ? pos_.x + size_.x - 9.f
         : pos_.x + 4.f;

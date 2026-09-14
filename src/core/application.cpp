@@ -15,6 +15,8 @@
 #include "button_style.h"
 #include "animation.h"
 #include "notification.h"
+#include "sound_manager.h"
+
 #include <algorithm>
 
 using namespace std;
@@ -30,12 +32,10 @@ Application::Application() {
 
 void Application::registerDependencies() {
 
-    // ===== Paths =====
     container_.registerType<Paths>([]() {
         return make_shared<Paths>();
     });
 
-    // ===== 三种配置 =====
     container_.registerType<BootstrapConfig>([this]() {
         auto paths = container_.resolve<Paths>();
         return make_shared<BootstrapConfig>(*paths);
@@ -51,7 +51,7 @@ void Application::registerDependencies() {
         return make_shared<Preferences>(*paths);
     });
 
-    // ===== 应用 UI 缩放 / 主题 / 按钮样式 / 动画 =====
+    // ===== 应用 UI 缩放 / 主题 / 按钮样式 / 动画 / 通知 / 音效 =====
     {
         auto prefs = container_.resolve<Preferences>();
 
@@ -63,28 +63,32 @@ void Application::registerDependencies() {
         bs.outlineThickness = static_cast<float>(prefs->getDouble("button_outline", 2.0));
         setButtonStyle(bs);
 
-        // 动画
         Anim::setEnabled(prefs->getBool("animation_enabled", true));
         static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
         int idx = std::clamp(prefs->getInt("animation_speed_index", 1), 0, 2);
         Anim::setSpeed(kSpeeds[idx]);
 
-        // 通知
         NotificationSystem::instance().setEnabled(
             prefs->getBool("notification_enabled", true));
         NotificationSystem::instance().setPosition(
             static_cast<NotificationPos>(
                 std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
+
+        // 音效
+        SoundManager::instance().init();
+        SoundManager::instance().setEnabled(
+            prefs->getBool("sound_enabled", true));
+        SoundManager::instance().setVolume(
+            static_cast<float>(prefs->getDouble("sound_volume", 0.6)));
     }
 
     // ===== Logger =====
-        container_.registerType<Logger>([this]() {
+    container_.registerType<Logger>([this]() {
         auto cfg   = container_.resolve<BootstrapConfig>();
         auto prefs = container_.resolve<Preferences>();
         auto logPath = cfg->configFile("app.log");
         int lvl = prefs->getInt("log_level", static_cast<int>(LogLevel::Info));
 
-        // 日志轮转配置
         static const size_t sizes[] = {0, 1*1024*1024, 5*1024*1024, 10*1024*1024};
         static const int    keeps[] = {1, 3, 5, 10};
         int rotIdx  = std::clamp(prefs->getInt("log_rotate", 0), 0, 3);

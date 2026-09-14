@@ -8,7 +8,6 @@ class Player : public GameObject {
 public:
     explicit Player(Vec2 spawn);
 
-    // ===== GameObject 接口 =====
     void update(float dt, const Level& level) override;
     void render(sf::RenderTarget& target) const override;
     AABB bounds() const override {
@@ -16,7 +15,6 @@ public:
     }
     Type type() const override { return Type::Player; }
 
-    // ===== Player 独有 =====
     void handleEvent(const sf::Event& event);
     Vec2 position() const { return pos_; }
     Vec2 velocity() const { return vel_; }
@@ -25,11 +23,13 @@ public:
     void respawn(Vec2 spawn);
     void setKillY(float y) { killY_ = y; }
 
-    bool consumeFellOut() { bool f = fellOut_; fellOut_ = false; return f; }
-
-        // ===== 受伤 / 无敌 =====
-    void takeDamage() { invincibleTimer_ = kInvincibleDuration; }
+    void takeDamage();
     bool isInvincible() const { return invincibleTimer_ > 0.f; }
+    void bounce();
+
+    bool consumeFellOut() { bool f = fellOut_; fellOut_ = false; return f; }
+    bool consumeJustJumped() { bool j = justJumped_; justJumped_ = false; return j; }
+    bool consumeJustLanded() { bool l = justLanded_; justLanded_ = false; return l; }
 
 private:
     void moveHorizontal(float dx, const Level& level);
@@ -45,6 +45,9 @@ private:
     bool keyRight_ = false;
     bool keyJump_  = false;
     bool fellOut_  = false;
+    bool justJumped_  = false;
+    bool justLanded_  = false;
+    bool prevOnGround_ = false;
 
     float killY_ = 10000.f;
     float coyoteTimer_    = 0.f;

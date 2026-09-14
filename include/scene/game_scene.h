@@ -23,22 +23,30 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
+    bool loadLevel(int index);
+    void renderStateOverlay(sf::RenderTarget& rt, float winW, float winH);
+
     std::shared_ptr<Background>  background_;
     std::shared_ptr<Logger>      logger_;
     std::shared_ptr<SaveManager> saveManager_;
     std::shared_ptr<Preferences> preferences_;
     SaveInfo                     save_;
-
     const sf::Font*              font_ = nullptr;
 
-    std::unique_ptr<GameWorld> world_;
+    int levelIndex_ = 1;
 
-    bool paused_ = false;
+    std::unique_ptr<GameWorld> world_;
     std::unique_ptr<PauseMenu> pauseMenu_;
+    bool paused_ = false;
 
     sf::Text  hudText_;
+    sf::Text  overlayTitle_;
+    sf::Text  overlayHint_;
+    sf::RectangleShape overlayBg_;
+
     SceneId   nextScene_ = SceneId::None;
 
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;
+    static constexpr int   kMaxLevels = 9;
 };

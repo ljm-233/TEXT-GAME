@@ -1,17 +1,24 @@
 #include "game_world.h"
 #include "coin.h"
 #include "enemy.h"
+#include "sound_manager.h"
 #include <algorithm>
+#include <cmath>
 
-GameWorld::GameWorld(std::unique_ptr<Level> level)
-    : level_(std::move(level)) {
+namespace {
+constexpr float kFixedStep = 1.f / 120.f;
+constexpr float kStompTolerance = 12.f;
+}
+
+GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
+    : level_(std::move(level)),
+      levelIndex_(levelIndex) {
 
     camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
                            static_cast<float>(level_->pixelHeight()));
 
     spawnPlayer(level_->playerSpawn());
     player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
-
     spawnLevelObjects();
 
     camera_.snapTo(player_->bounds().center());
@@ -24,13 +31,11 @@ void GameWorld::spawnPlayer(Vec2 spawn) {
 }
 
 void GameWorld::spawnLevelObjects() {
-    // 金币
     for (const auto& pos : level_->coinSpawns()) {
         objects_.push_back(std::make_unique<Coin>(pos));
     }
     totalCoins_ = static_cast<int>(level_->coinSpawns().size());
 
-    // 敌人
     for (const auto& pos : level_->enemySpawns()) {
         objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize()));
     }
@@ -41,35 +46,43 @@ void GameWorld::setViewSize(float w, float h) {
 }
 
 void GameWorld::handleEvent(const sf::Event& event) {
+    if (state_ != State::Playing) return;
     if (player_) player_->handleEvent(event);
 }
 
 void GameWorld::update(float dt) {
-    constexpr float kFixedStep = 1.f / 120.f;
-    static float accumulator = 0.f;
+    if (state_ != State::Playing) return;
 
-    accumulator += dt;
+    accumulator_ += dt;
     int iterations = 0;
-    while (accumulator >= kFixedStep && iterations < 8) {
+    while (accumulator_ >= kFixedStep && iterations < 8) {
         for (auto& obj : objects_) {
             obj->update(kFixedStep, *level_);
         }
-        checkCollisions();
-        accumulator -= kFixedStep;
+        checkCollisionsSafe();
+        if (state_ != State::Playing) return;
+        accumulator_ -= kFixedStep;
         ++iterations;
     }
 
+    // 玩家跳跃/落地音效
+    if (player_->consumeJustJumped()) SoundManager::instance().playJump();
+    if (player_->consumeJustLanded()) SoundManager::instance().playLand();
+
     if (player_ && player_->consumeFellOut()) {
         --lives_;
-        ++deaths_;
-        if (lives_ <= 0) levelDone_ = true;
+        SoundManager::instance().playHurt();
+        if (lives_ <= 0) {
+            state_ = State::GameOver;
+            return;
+        }
     }
 
-    if (!levelDone_ && checkGoalReached()) {
-        levelDone_ = true;
+    if (checkGoalReached()) {
+        state_ = State::LevelComplete;
+        return;
     }
 
-    // 移除已收集的金币等
     objects_.erase(
         std::remove_if(objects_.begin(), objects_.end(),
             [](const std::unique_ptr<GameObject>& o) {
@@ -80,7 +93,7 @@ void GameWorld::update(float dt) {
     if (player_) camera_.follow(player_->bounds().center(), dt);
 }
 
-void GameWorld::checkCollisions() {
+void GameWorld::checkCollisionsSafe() {
     if (!player_) return;
     AABB pb = player_->bounds();
 
@@ -94,15 +107,30 @@ void GameWorld::checkCollisions() {
                 if (!c->collected()) {
                     c->collect();
                     ++coins_;
+                    SoundManager::instance().playCoin();
                 }
                 break;
             }
             case GameObject::Type::Enemy: {
-                if (!player_->isInvincible()) {
+                auto* e = static_cast<Enemy*>(obj.get());
+                if (e->killed()) break;
+
+                bool falling = player_->velocity().y > 0.f;
+                float overlap = pb.bottom() - e->bounds().top();
+                bool fromAbove = overlap < kStompTolerance;
+
+                if (falling && fromAbove) {
+                    e->kill();
+                    player_->bounce();
+                    SoundManager::instance().playStomp();
+                } else if (!player_->isInvincible()) {
                     player_->takeDamage();
                     --lives_;
-                    ++deaths_;
-                    if (lives_ <= 0) levelDone_ = true;
+                    SoundManager::instance().playHurt();
+                    if (lives_ <= 0) {
+                        state_ = State::GameOver;
+                        return;
+                    }
                 }
                 break;
             }
@@ -122,7 +150,6 @@ bool GameWorld::checkGoalReached() const {
 
 void GameWorld::render(sf::RenderTarget& target) {
     Vec2 camTL = camera_.position();
-
     level_->render(target,
                    camTL.x, camTL.y,
                    camera_.viewWidth(), camera_.viewHeight());
@@ -134,9 +161,9 @@ void GameWorld::render(sf::RenderTarget& target) {
 
 void GameWorld::reset() {
     lives_ = 3;
-    deaths_ = 0;
     coins_ = 0;
-    levelDone_ = false;
+    state_ = State::Playing;
+    accumulator_ = 0.f;
 
     objects_.clear();
     player_ = nullptr;

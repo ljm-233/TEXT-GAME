@@ -32,6 +32,20 @@ void Player::respawn(Vec2 spawn) {
     jumpBufferTimer_ = 0.f;
     jumpConsumed_ = false;
     fellOut_ = false;
+    invincibleTimer_ = 0.f;
+    justJumped_ = false;
+    justLanded_ = false;
+    prevOnGround_ = false;
+}
+
+void Player::takeDamage() {
+    invincibleTimer_ = kInvincibleDuration;
+}
+
+void Player::bounce() {
+    vel_.y = -500.f;
+    onGround_ = false;
+    jumpConsumed_ = true;
 }
 
 void Player::handleEvent(const sf::Event& event) {
@@ -65,8 +79,8 @@ void Player::handleEvent(const sf::Event& event) {
 }
 
 void Player::update(float dt, const Level& level) {
-        // 无敌时间倒计时
     if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
+
     float dir = 0.f;
     if (keyLeft_)  dir -= 1.f;
     if (keyRight_) dir += 1.f;
@@ -82,6 +96,7 @@ void Player::update(float dt, const Level& level) {
         coyoteTimer_ = 0.f;
         jumpConsumed_ = true;
         onGround_ = false;
+        justJumped_ = true;
     }
     if (!keyJump_) jumpConsumed_ = false;
 
@@ -99,6 +114,10 @@ void Player::update(float dt, const Level& level) {
         pos_ = spawn_;
         vel_ = {0.f, 0.f};
     }
+
+    // 落地检测
+    if (onGround_ && !prevOnGround_) justLanded_ = true;
+    prevOnGround_ = onGround_;
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
@@ -154,10 +173,9 @@ void Player::moveVertical(float dy, const Level& level) {
 }
 
 void Player::render(sf::RenderTarget& target) const {
-    // 无敌闪烁：每 100ms 跳过一帧渲染
     if (invincibleTimer_ > 0.f) {
         auto ms = static_cast<int>(invincibleTimer_ * 1000.f);
-        if ((ms / 100) % 2 == 0) return;   // 这帧不画
+        if ((ms / 100) % 2 == 0) return;
     }
 
     body_.setPosition({pos_.x, pos_.y});

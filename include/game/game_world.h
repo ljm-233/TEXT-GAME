@@ -6,10 +6,17 @@
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <vector>
+#include <string>
 
 class GameWorld {
 public:
-    GameWorld(std::unique_ptr<Level> level);
+    enum class State {
+        Playing,
+        LevelComplete,
+        GameOver
+    };
+
+    GameWorld(std::unique_ptr<Level> level, int levelIndex);
 
     void handleEvent(const sf::Event& event);
     void update(float dt);
@@ -26,29 +33,30 @@ public:
 
     void reset();
 
-    int  consumeDeaths()   { int d = deaths_; deaths_ = 0; return d; }
-    bool consumeLevelDone(){ bool d = levelDone_; levelDone_ = false; return d; }
-
-    int lives() const { return lives_; }
-    int coins() const { return coins_; }
-    int totalCoins() const { return totalCoins_; }
+    int  lives() const { return lives_; }
+    int  coins() const { return coins_; }
+    int  totalCoins() const { return totalCoins_; }
+    State state() const { return state_; }
+    int  levelIndex() const { return levelIndex_; }
 
 private:
     bool checkGoalReached() const;
     void spawnPlayer(Vec2 spawn);
     void spawnLevelObjects();
-    void checkCollisions();
+    void checkCollisionsSafe();
 
     std::unique_ptr<Level> level_;
+    int levelIndex_ = 1;
 
     std::vector<std::unique_ptr<GameObject>> objects_;
     Player* player_ = nullptr;
 
     Camera camera_;
 
-    int  lives_      = 3;
-    int  deaths_     = 0;
-    int  coins_      = 0;
-    int  totalCoins_ = 0;
-    bool levelDone_  = false;
+    int   lives_      = 3;
+    int   coins_      = 0;
+    int   totalCoins_ = 0;
+    State state_      = State::Playing;
+
+    float accumulator_ = 0.f;
 };
