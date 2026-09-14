@@ -5,14 +5,15 @@
 namespace {
 // 把目标位置夹到合法范围。如果关卡比视口小，就居中显示。
 float clampAxis(float desired, float view, float level) {
-    if (level <= 0.f) return desired;
+    if (level <= 0.f)
+        return desired;
     if (level <= view) {
         // 关卡比视口小：居中
         return (level - view) * 0.5f;
     }
     return std::clamp(desired, 0.f, level - view);
 }
-}
+} // namespace
 
 void Camera::snapTo(Vec2 target) {
     float desiredX = target.x - viewW_ * 0.5f;

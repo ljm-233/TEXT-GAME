@@ -1,18 +1,16 @@
 #pragma once
+#include "button.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <string>
-#include "button.h"
 
 class ConfirmDialog {
 public:
     enum class Mode { YesNo, Info };
     enum class Result { None, Yes, No, Ok };
 
-    ConfirmDialog(const sf::Font& font,
-                  const std::string& message,
-                  sf::Vector2f windowSize,
-                  Mode mode = Mode::YesNo);
+    ConfirmDialog(const sf::Font& font, const std::string& message,
+                  sf::Vector2f windowSize, Mode mode = Mode::YesNo);
 
     void handleEvent(const sf::Event& event);
     void render(sf::RenderTarget& target);

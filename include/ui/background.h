@@ -1,15 +1,14 @@
 #pragma once
+#include "logging.h"
 #include <SFML/Graphics.hpp>
 #include <filesystem>
 #include <memory>
-#include <vector>
 #include <string>
-#include "logging.h"
+#include <vector>
 
 class Background {
 public:
-    Background(const std::filesystem::path& dir,
-               const std::string& initialFile,
+    Background(const std::filesystem::path& dir, const std::string& initialFile,
                unsigned windowWidth, unsigned windowHeight,
                std::shared_ptr<Logger> logger);
 
@@ -17,8 +16,8 @@ public:
 
     bool isLoaded() const { return loaded_; }
     std::string currentFile() const { return currentFile_; }
-    int  currentIndex() const { return currentIndex_; }
-    int  totalWallpapers() const { return static_cast<int>(files_.size()); }
+    int currentIndex() const { return currentIndex_; }
+    int totalWallpapers() const { return static_cast<int>(files_.size()); }
 
     // 加载指定文件名（不含路径）
     bool loadByName(const std::string& filename);

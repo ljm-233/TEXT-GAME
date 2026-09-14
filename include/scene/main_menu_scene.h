@@ -1,13 +1,12 @@
 #pragma once
-#include "scene.h"
 #include "background.h"
 #include "button.h"
+#include "scene.h"
 #include <memory>
 
 class MainMenuScene : public Scene {
 public:
-    MainMenuScene(std::shared_ptr<Background> background,
-                  const sf::Font& font,
+    MainMenuScene(std::shared_ptr<Background> background, const sf::Font& font,
                   std::shared_ptr<Logger> logger);
 
     void handleEvent(const sf::Event& event) override;

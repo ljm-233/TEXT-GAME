@@ -1,13 +1,16 @@
 #include "enemy.h"
+#include "game_constants.h"
 #include "level.h"
 #include <cmath>
 
 namespace {
-constexpr float kSpeed = 90.f;
+constexpr float kSpeed = GameConst::kEnemySpeed;
 }
 
 Enemy::Enemy(Vec2 pos, int tileSize)
-    : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize) {
+      : pos_(pos),
+        vel_(-kSpeed, 0.f),
+        tileSize_(tileSize) {
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
@@ -48,7 +51,8 @@ bool Enemy::cliffAhead(const Level& level) const {
 }
 
 void Enemy::update(float dt, const Level& level) {
-    if (killed_) return;
+    if (killed_)
+        return;
     if (wallAhead(level) || cliffAhead(level)) {
         vel_.x = -vel_.x;
     }
@@ -56,14 +60,13 @@ void Enemy::update(float dt, const Level& level) {
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
-    if (killed_) return;
+    if (killed_)
+        return;
 
     body_.setPosition({pos_.x, pos_.y});
     target.draw(body_);
 
-    float eyeX = (vel_.x > 0.f)
-        ? pos_.x + size_.x - 9.f
-        : pos_.x + 4.f;
+    float eyeX = (vel_.x > 0.f) ? pos_.x + size_.x - 9.f : pos_.x + 4.f;
     eye_.setPosition({eyeX, pos_.y + 8.f});
     target.draw(eye_);
 }

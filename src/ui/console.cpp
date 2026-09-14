@@ -2,10 +2,10 @@
 #include "strings.h"
 #include "ui_scale.h"
 #include <algorithm>
-#include <streambuf>
-#include <ostream>
 #include <iostream>
 #include <memory>
+#include <ostream>
+#include <streambuf>
 
 namespace {
 
@@ -30,11 +30,13 @@ std::string utf8Encode(char32_t cp) {
 }
 
 void popUtf8Char(std::string& s) {
-    if (s.empty()) return;
+    if (s.empty())
+        return;
     size_t i = s.size();
     while (i > 0) {
         --i;
-        if ((s[i] & 0xC0) != 0x80) break;
+        if ((s[i] & 0xC0) != 0x80)
+            break;
     }
     s.erase(i);
 }
@@ -43,7 +45,8 @@ void popUtf8Char(std::string& s) {
 
 class ConsoleStreamBuf : public std::streambuf {
 public:
-    explicit ConsoleStreamBuf(Console* c) : console_(c) {}
+    explicit ConsoleStreamBuf(Console* c)
+          : console_(c) {}
 
 protected:
     int_type overflow(int_type c) override {
@@ -62,10 +65,13 @@ protected:
     int sync() override { return 0; }
 
     int_type underflow() override {
-        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
-        if (console_->isShutdown()) return traits_type::eof();
+        if (gptr() < egptr())
+            return traits_type::to_int_type(*gptr());
+        if (console_->isShutdown())
+            return traits_type::eof();
         std::string line = console_->waitForLine();
-        if (console_->isShutdown()) return traits_type::eof();
+        if (console_->isShutdown())
+            return traits_type::eof();
         line += '\n';
         lineBuffer_ = std::move(line);
         char* base = lineBuffer_.data();
@@ -82,19 +88,15 @@ std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c) {
     return std::make_unique<ConsoleStreamBuf>(c);
 }
 
-Console::Console(const sf::Font& font,
-                 unsigned fontSize,
-                 unsigned lineHeight,
-                 unsigned maxLines,
-                 bool autoScroll,
-                 bool blinkCursor,
+Console::Console(const sf::Font& font, unsigned fontSize, unsigned lineHeight,
+                 unsigned maxLines, bool autoScroll, bool blinkCursor,
                  sf::Vector2u /*size*/)
-    : font_(font),
-      maxLines_(maxLines),
-      lineHeight_(lineHeight),
-      autoScroll_(autoScroll),
-      blinkCursor_(blinkCursor),
-      text_(font, sf::String(), scaledFontSize(fontSize)) {
+      : font_(font),
+        maxLines_(maxLines),
+        lineHeight_(lineHeight),
+        autoScroll_(autoScroll),
+        blinkCursor_(blinkCursor),
+        text_(font, sf::String(), scaledFontSize(fontSize)) {
     text_.setFillColor(sf::Color(220, 220, 220));
     inputLine_.setFillColor(sf::Color(20, 20, 30, 220));
     inputLine_.setOutlineThickness(1.f);
@@ -114,7 +116,10 @@ void Console::appendText(const std::string& text) {
             i += 2;
             while (i < text.size()) {
                 char e = text[i];
-                if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) { ++i; break; }
+                if ((e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z')) {
+                    ++i;
+                    break;
+                }
                 ++i;
             }
         } else {
@@ -128,13 +133,16 @@ void Console::flushOutputBuffer() {
     size_t pos;
     while ((pos = outputBuffer_.find('\n')) != std::string::npos) {
         std::string line = outputBuffer_.substr(0, pos);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         lines_.push_back(line);
-        if (lines_.size() > maxLines_) lines_.pop_front();
+        if (lines_.size() > maxLines_)
+            lines_.pop_front();
         outputBuffer_.erase(0, pos + 1);
     }
     // 新内容到达时，如果处于自动滚动模式，把偏移归零
-    if (autoScroll_) scrollOffset_ = 0;
+    if (autoScroll_)
+        scrollOffset_ = 0;
 }
 
 void Console::submitCurrentInput() {
@@ -145,10 +153,12 @@ void Console::submitCurrentInput() {
         line = currentInput_;
         if (!line.empty()) {
             history_.push_back(line);
-            if (history_.size() > 100) history_.erase(history_.begin());
+            if (history_.size() > 100)
+                history_.erase(history_.begin());
         }
         lines_.push_back(Str::ConsolePrompt + line);
-        if (lines_.size() > maxLines_) lines_.pop_front();
+        if (lines_.size() > maxLines_)
+            lines_.pop_front();
         currentInput_.clear();
         pendingLine_ = line;
         lineReady_ = true;
@@ -159,7 +169,8 @@ void Console::submitCurrentInput() {
 }
 
 void Console::handleTextEntered(char32_t unicode) {
-    if (unicode < 32 || unicode == 127) return;
+    if (unicode < 32 || unicode == 127)
+        return;
     std::lock_guard<std::mutex> lock(mtx_);
     currentInput_ += utf8Encode(unicode);
 }
@@ -172,7 +183,8 @@ void Console::handleKeyPressed(sf::Keyboard::Key key) {
         submitCurrentInput();
     } else if (key == sf::Keyboard::Key::Up) {
         std::lock_guard<std::mutex> lock(mtx_);
-        if (history_.empty()) return;
+        if (history_.empty())
+            return;
         if (historyIndex_ == -1)
             historyIndex_ = static_cast<int>(history_.size()) - 1;
         else if (historyIndex_ > 0)
@@ -180,7 +192,8 @@ void Console::handleKeyPressed(sf::Keyboard::Key key) {
         currentInput_ = history_[historyIndex_];
     } else if (key == sf::Keyboard::Key::Down) {
         std::lock_guard<std::mutex> lock(mtx_);
-        if (historyIndex_ == -1) return;
+        if (historyIndex_ == -1)
+            return;
         if (historyIndex_ + 1 < static_cast<int>(history_.size())) {
             ++historyIndex_;
             currentInput_ = history_[historyIndex_];
@@ -211,7 +224,8 @@ void Console::handleMouseWheel(float delta) {
 std::string Console::waitForLine() {
     std::unique_lock<std::mutex> lock(mtx_);
     cv_.wait(lock, [this] { return lineReady_ || shutdown_; });
-    if (shutdown_) return "";
+    if (shutdown_)
+        return "";
     std::string line = pendingLine_;
     pendingLine_.clear();
     lineReady_ = false;
@@ -243,12 +257,12 @@ void Console::render(sf::RenderTarget& target) {
     float w = static_cast<float>(size.x);
     float h = static_cast<float>(size.y);
 
-    const float margin  = 24.f;
+    const float margin = 24.f;
     const float lineH = static_cast<float>(lineHeight_);
-    const float padX    = 12.f;
-    const float inputH  = 40.f;
+    const float padX = 12.f;
+    const float inputH = 40.f;
 
-    float outputTop    = margin;
+    float outputTop = margin;
     float outputBottom = h - inputH - margin - 12.f;
 
     std::deque<std::string> display;
@@ -265,22 +279,25 @@ void Console::render(sf::RenderTarget& target) {
     }
 
     int maxLines = static_cast<int>((outputBottom - outputTop) / lineH);
-    if (maxLines < 1) maxLines = 1;
+    if (maxLines < 1)
+        maxLines = 1;
 
     // 显示窗口：末尾往前 offset 行
     int total = static_cast<int>(display.size());
-    int endIdx   = std::max(0, total - offset);
+    int endIdx = std::max(0, total - offset);
     int startIdx = std::max(0, endIdx - maxLines);
-    for (int i = 0; i < startIdx; ++i) display.pop_front();
-    while (static_cast<int>(display.size()) > endIdx - startIdx &&
-           !display.empty()) {
+    for (int i = 0; i < startIdx; ++i)
+        display.pop_front();
+    while (static_cast<int>(display.size()) > endIdx - startIdx && !display.empty()) {
         display.pop_back();
     }
 
     // 未换行的尾部：只在 offset==0 时并入最后一行
     if (!tail.empty() && offset == 0) {
-        if (display.empty()) display.push_back(tail);
-        else display.back() += tail;
+        if (display.empty())
+            display.push_back(tail);
+        else
+            display.back() += tail;
     }
 
     text_.setFillColor(sf::Color(220, 220, 220));

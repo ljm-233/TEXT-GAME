@@ -1,11 +1,12 @@
 #include "calculator.h"
 #include "strings.h"
+#include <cmath>
 #include <iostream>
 #include <limits>
-#include <cmath>
 using namespace std;
 
-Calculator::Calculator(shared_ptr<Logger> logger) : logger_(logger) {}
+Calculator::Calculator(shared_ptr<Logger> logger)
+      : logger_(logger) {}
 
 void Calculator::run() {
     double a, b;
@@ -35,27 +36,33 @@ void Calculator::run() {
         cin >> c;
 
         switch (c) {
-            case '1': result = a + b; break;
-            case '2': result = a - b; break;
-            case '3': result = a * b; break;
-            case '4':
-                if (fabs(b) < 1e-12) {
-                    logger_->warn(Str::CalcDivZero);
-                    return;
-                }
-                result = a / b;
-                break;
-            case '5':
-                result = pow(a, b);
-                if (isinf(result)) {
-                    logger_->warn(Str::CalcOverflow);
-                    return;
-                }
-                break;
-            default:
-                logger_->error(Str::CalcFail);
-                logger_->normal(Str::CalcRetry);
-                continue;
+        case '1':
+            result = a + b;
+            break;
+        case '2':
+            result = a - b;
+            break;
+        case '3':
+            result = a * b;
+            break;
+        case '4':
+            if (fabs(b) < 1e-12) {
+                logger_->warn(Str::CalcDivZero);
+                return;
+            }
+            result = a / b;
+            break;
+        case '5':
+            result = pow(a, b);
+            if (isinf(result)) {
+                logger_->warn(Str::CalcOverflow);
+                return;
+            }
+            break;
+        default:
+            logger_->error(Str::CalcFail);
+            logger_->normal(Str::CalcRetry);
+            continue;
         }
 
         logger_->normal(std::string(Str::CalcResult) + to_string(result));

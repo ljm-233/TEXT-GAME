@@ -1,19 +1,18 @@
 #pragma once
-#include "scene.h"
 #include "background.h"
 #include "button.h"
-#include "save_manager.h"
 #include "confirm_dialog.h"
 #include "new_save_dialog.h"
+#include "save_manager.h"
+#include "scene.h"
 #include <memory>
 #include <vector>
 
 class SaveSelectScene : public Scene {
 public:
-    SaveSelectScene(std::shared_ptr<Background>    background,
-                    std::shared_ptr<SaveManager>   saveManager,
-                    const sf::Font&                font,
-                    std::shared_ptr<Logger>        logger);
+    SaveSelectScene(std::shared_ptr<Background> background,
+                    std::shared_ptr<SaveManager> saveManager, const sf::Font& font,
+                    std::shared_ptr<Logger> logger);
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
@@ -24,10 +23,10 @@ public:
 private:
     void rebuildButtons();
 
-    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Background> background_;
     std::shared_ptr<SaveManager> saveManager_;
-    std::shared_ptr<Logger>      logger_;
-    const sf::Font&              font_;
+    std::shared_ptr<Logger> logger_;
+    const sf::Font& font_;
 
     std::vector<SaveInfo> saves_;
     std::vector<std::unique_ptr<Button>> saveButtons_;

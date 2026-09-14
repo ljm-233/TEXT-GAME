@@ -1,6 +1,6 @@
 #pragma once
-#include "vec2.h"
 #include "aabb.h"
+#include "vec2.h"
 #include <SFML/Graphics.hpp>
 
 class Level;

@@ -1,76 +1,6 @@
-# TEXT-GAME 文本由AI生成
+# TEXT-GAME
 
-一个基于 C++20 和 SFML 3 的跨平台 2D 平台跳跃游戏项目。包含完整引擎层（场景系统、依赖注入、配置管理、日志、UI 组件、动画、通知）和游戏本体（物理、关卡、摄像机、玩家控制）。
-
-## 📁 项目结构
-
-```text
-TEXT-GAME/
-├── assets/                 # 资源（字体等）
-│   └── font.otf
-├── cache/                  # 可重建缓存（不提交内容）
-├── config/                 # 运行时配置（不提交内容）
-│   ├── app.log
-│   ├── bootstrap.conf
-│   ├── preferences.conf
-│   └── runtime.conf
-├── include/
-│   ├── config/             # 配置类
-│   │   ├── bootstrap_config.h
-│   │   ├── config.h
-│   │   ├── preferences.h
-│   │   └── runtime_config.h
-│   ├── core/               # 核心
-│   │   ├── application.h
-│   │   ├── game.h
-│   │   ├── logging.h
-│   │   ├── paths.h
-│   │   ├── scene.h
-│   │   ├── scene_id.h
-│   │   ├── scene_manager.h
-│   │   └── strings.h
-│   ├── game/               # 游戏本体
-│   │   ├── aabb.h
-│   │   ├── camera.h
-│   │   ├── calculator.h
-│   │   ├── game_world.h
-│   │   ├── level.h
-│   │   ├── player.h
-│   │   ├── resolution.h
-│   │   ├── save_manager.h
-│   │   ├── time_utils.h
-│   │   └── vec2.h
-│   ├── scene/              # 场景
-│   │   ├── console_scene.h
-│   │   ├── game_scene.h
-│   │   ├── main_menu_scene.h
-│   │   ├── save_select_scene.h
-│   │   └── settings_scene.h
-│   └── ui/                 # UI 组件
-│       ├── animation.h
-│       ├── background.h
-│       ├── button.h
-│       ├── button_style.h
-│       ├── confirm_dialog.h
-│       ├── console.h
-│       ├── font_holder.h
-│       ├── new_save_dialog.h
-│       ├── notification.h
-│       ├── slider.h
-│       ├── text_input.h
-│       ├── theme.h
-│       ├── ui_scale.h
-│       ├── utf8.h
-│       └── window.h
-├── saves/                  # 存档（不提交内容）
-├── src/                    # 对应源文件
-├── temp/                   # 临时文件
-├── wallpaper/              # 壁纸
-│   └── wallpaper.png
-├── .gitignore
-├── CMakeLists.txt
-└── README.md
-```
+一个用 C++20 和 SFML 3 从零构建的 **2D 平台跳跃游戏**。包含自研的引擎层（DI 容器、场景系统、配置管理、日志、UI 组件、动画、通知、音效）和完整的游戏本体（物理、关卡、玩家控制、敌人、金币、多关卡）。
 
 ## 🎮 游戏玩法
 
@@ -81,8 +11,15 @@ TEXT-GAME/
 | **A / ←** | 向左移动 |
 | **D / →** | 向右移动 |
 | **Space / W / ↑** | 跳跃（长按跳更高） |
-| **R** | 重生（回到出生点） |
-| **ESC** | 返回存档选择 |
+| **R** | 重生（回到关卡起点） |
+| **ESC** | 暂停 / 返回 |
+
+### 目标
+
+- 收集金币
+- 踩敌人头顶消灭它们（从上方落下）
+- 到达关底的 **G** 位置通关
+- 有 **3 条命**，掉出地图或撞到敌人扣 1 条
 
 ### 平台跳跃特性
 
@@ -90,57 +27,97 @@ TEXT-GAME/
 - **跳跃缓冲**：落地前 0.12 秒按跳，落地瞬间自动起跳
 - **长按跳更高**：松手立刻给上升速度减半
 - **固定时间步长物理**：1/120 秒为单位更新，任何 FPS 下手感一致
-- **摄像机跟随**：玩家走到边缘时镜头自动跟随，边界锁定
 
-### 关卡格式
+## 🗺 关卡
 
-ASCII 文本地图，可直接用文本编辑器画：
-
-```
-################################################
-#                                              #
-#    P                                         #
-#          #####                               #
-#                         ########             #
-#      ####                                    #
-#                ##########                    #
-#       ####               ###                 #
-#                 #####                        #
-################################################
-```
+关卡使用 **ASCII 文本地图**，可直接用文本编辑器设计。
 
 | 字符 | 含义 |
 | :--- | :--- |
 | `#` | 地面 / 平台 |
 | `P` | 玩家出生点 |
-| `E` | 敌人（暂未实现） |
-| `C` | 金币（暂未实现） |
-| `G` | 终点（暂未实现） |
+| `E` | 敌人（左右巡逻） |
+| `C` | 金币 |
+| `G` | 终点 |
 | ` ` | 空气 |
+
+示例：
+
+```
+################################################
+#                                              #
+#    P                    C     C              #
+#   ####                #########              #
+#            E                                 #
+#         ######                               #
+#                       G                      #
+################################################
+```
+
+**多关卡**：`assets/levels/level1.txt` / `level2.txt` / `level3.txt`，通关后按 Enter 进下一关。
+
+## 📁 项目结构
+
+```text
+TEXT-GAME/
+├── assets/
+│   ├── font.otf              # 字体（需自己提取）
+│   └── levels/               # ASCII 关卡文件
+│       ├── level1.txt
+│       ├── level2.txt
+│       └── level3.txt
+├── cache/                    # 运行时缓存（不提交）
+├── config/                   # 运行时配置（不提交）
+├── include/
+│   ├── config/               # 配置类
+│   ├── core/                 # 核心（Application、Game、SceneManager、Logger）
+│   ├── game/                 # 游戏本体
+│   │   ├── aabb.h            # 碰撞盒
+│   │   ├── vec2.h            # 二维向量
+│   │   ├── game_constants.h  # 物理常量
+│   │   ├── game_object.h     # 对象基类
+│   │   ├── level.h           # ASCII 关卡
+│   │   ├── camera.h          # 摄像机
+│   │   ├── player.h          # 玩家
+│   │   ├── enemy.h           # 敌人
+│   │   ├── coin.h            # 金币
+│   │   └── game_world.h      # 游戏世界
+│   ├── scene/                # 场景
+│   └── ui/                   # UI 组件
+├── saves/                    # 存档（不提交）
+├── src/                      # 对应源文件
+├── temp/                     # 临时文件
+├── wallpaper/                # 壁纸
+├── .clang-format
+├── .editorconfig
+├── .gitignore
+├── CMakeLists.txt
+└── README.md
+```
 
 ## 🧩 核心架构
 
 | 模块 | 职责 |
 | :--- | :--- |
 | **DI 容器**（`application.h`） | 统一注册/解析所有依赖 |
-| **场景系统**（`scene.h` / `scene_manager.h`） | 主菜单 / 存档 / 游戏 / 设置 / 控制台，支持 ESC 返回上一场景 |
+| **场景系统**（`scene.h` / `scene_manager.h`） | 主菜单 / 存档 / 游戏 / 设置 / 控制台，支持返回栈 |
 | **配置分层** | `BootstrapConfig` / `RuntimeConfig` / `Preferences` |
-| **日志**（`logging.h`） | 彩色终端输出 + 文件记录 + 多级别过滤 + 日志轮转 |
-| **虚拟终端**（`console.h`） | 用 `streambuf` 重定向 `cin`/`cout`，支持命令系统 |
-| **UI 组件** | `Button` / `Slider` / `TextInput` / `ConfirmDialog` / `NewSaveDialog` |
-| **主题**（`theme.h`） | 深色 / 蓝色 / 浅色三套配色 |
-| **UI 缩放**（`ui_scale.h`） | 0.8x ~ 1.5x 全局字号系数 |
-| **动画**（`animation.h`） | 颜色平滑过渡，支持开关和速度 |
-| **通知**（`notification.h`） | 屏幕角落消息提示，4 种类型 × 4 个位置 |
-| **游戏世界**（`game_world.h`） | 关卡 + 玩家 + 摄像机 |
-| **玩家物理**（`player.h`） | 自写 AABB 碰撞 + 平台跳跃手感 |
-| **关卡**（`level.h`） | ASCII 加载 + 瓦片查询 + 可见性裁剪渲染 |
+| **日志**（`logging.h`） | 彩色终端 + 文件 + 多级别 + 轮转 |
+| **虚拟终端**（`console.h`） | 用 `streambuf` 重定向 `cin`/`cout` |
+| **UI 组件** | `Button` / `Slider` / `TextInput` / `ConfirmDialog` / `PauseMenu` |
+| **主题** | 深色 / 蓝色 / 浅色三套配色 |
+| **动画** | 颜色平滑过渡，开关 + 速度 |
+| **通知** | 屏幕角落消息，4 类型 × 4 位置 |
+| **音效**（`sound_manager.h`） | 代码生成的音效，无外部文件 |
+| **物理** | 自写 AABB 碰撞 + 固定时间步长 |
+| **关卡** | ASCII 加载 + 视锥裁剪渲染 |
+| **对象系统**（`game_object.h`） | `GameObject` 基类，所有实体统一 update/render |
 
 ## 🛠 技术栈
 
 - **语言**：C++20
 - **构建**：CMake ≥ 3.20 + Ninja
-- **图形/窗口**：SFML 3
+- **图形/音频**：SFML 3
 - **依赖注入**：自研简易 `Container`
 - **物理**：自写简化 AABB（不依赖 Box2D）
 - **跨平台**：Linux / Windows / macOS
@@ -162,9 +139,7 @@ ASCII 文本地图，可直接用文本编辑器画：
   vcpkg install sfml:x64-windows
   ```
 
-### 准备资源
-
-字体文件（必需，用于显示中文）：
+### 准备字体
 
 ```bash
 python3 -c "
@@ -172,12 +147,6 @@ from fontTools.ttLib import TTCollection
 ttc = TTCollection('/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc')
 ttc.fonts[2].save('assets/font.otf')
 "
-```
-
-壁纸（可选）：
-
-```bash
-cp ~/Pictures/你的图.jpg wallpaper/wallpaper.jpg
 ```
 
 ### 编译运行
@@ -199,10 +168,15 @@ cmake --build . -j
 ## 🎛 功能一览
 
 ### 主菜单
-- 启动游戏（选择/创建/删除存档）
+- 启动游戏（选择 / 创建 / 删除存档）
 - 计算器（在虚拟终端里跑）
 - 设置
 - 退出游戏
+
+### 暂停菜单（游戏中按 ESC）
+- 回到游戏
+- 设置（主题 / 动画 / 通知）
+- 保存并退出游戏
 
 ### 设置（左侧 Tab 分页）
 
@@ -240,6 +214,28 @@ log <level>       设置日志级别 (trace/debug/info/warn/error)
 theme <name>      切换主题 (dark/blue/light)
 save list         列出所有存档
 exit              关闭控制台
+```
+
+## 🧭 开发约定
+
+1. **新增 `.cpp` 文件后，记得加进 `CMakeLists.txt` 的 `add_executable` 列表**。
+2. **头文件用 `#pragma once`，`.cpp` 开头 `#include` 对应的 `.h`**。
+3. **新增类通过 DI 容器注册**，在 `Application::registerDependencies()` 里加一行。
+4. **中文要经过 `toSf()` 转换**（`#include "utf8.h"`），否则 SFML 3 会按 Latin-1 解释。
+5. **字号用 `scaledFontSize()`**（`#include "ui_scale.h"`），跟随全局 UI 缩放。
+6. **颜色从 `getTheme()` 取**（`#include "theme.h"`），不要硬编码。
+7. **配置读写走 `Config::set*` / `get*`**，写盘由 `flush()` 统一处理。
+8. **物理常量放 `game_constants.h`**，不要散落在各 `.cpp`。
+9. **渲染用世界坐标**，平移交给 SFML 的 `sf::View`，不要自己减摄像机偏移。
+10. **每帧渲染用 `screenView`**（尺寸 = 当前窗口尺寸），不要用 `getDefaultView()`，否则窗口拉伸后内容会变形。
+
+### 代码格式化
+
+```bash
+# 格式化所有源码
+clang-format -i src/**/*.cpp include/**/*.h
+
+# 或只格式化当前文件（VS Code 按 Shift+Alt+F）
 ```
 
 ## 📥 克隆（下载）
@@ -280,18 +276,6 @@ git add .
 git rebase --continue
 git push
 ```
-
-## 🧭 开发约定
-
-1. **新增 `.cpp` 文件后，记得加进 `CMakeLists.txt` 的 `add_executable` 列表**。
-2. **头文件用 `#pragma once`，`.cpp` 开头 `#include` 对应的 `.h`**。
-3. **新增类通过 DI 容器注册**，在 `Application::registerDependencies()` 里加一行。
-4. **中文要经过 `toSf()` 转换**（`#include "utf8.h"`），否则 SFML 3 会按 Latin-1 解释。
-5. **字号用 `scaledFontSize()`**（`#include "ui_scale.h"`），跟随全局 UI 缩放。
-6. **颜色从 `getTheme()` 取**（`#include "theme.h"`），不要硬编码。
-7. **配置读写走 `Config::set*` / `get*`**，写盘由 `flush()` 统一处理。
-8. **物理更新用固定时间步长**（见 `GameWorld::update`），不要直接用帧 dt。
-9. **渲染用世界坐标**，平移交给 SFML 的 `sf::View`，不要自己减摄像机偏移。
 
 ---
 

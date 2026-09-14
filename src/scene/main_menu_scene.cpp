@@ -1,15 +1,14 @@
 #include "main_menu_scene.h"
 #include "strings.h"
 
-MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
-                             const sf::Font& font,
+MainMenuScene::MainMenuScene(std::shared_ptr<Background> background, const sf::Font& font,
                              std::shared_ptr<Logger> logger)
-    : background_(std::move(background)),
-      logger_(std::move(logger)),
-      startButton_     (Str::StartGame,  font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      calculatorButton_(Str::Calculator, font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      settingsButton_  (Str::Settings,   font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      exitButton_      (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 70.f}, 30) {}
+      : background_(std::move(background)),
+        logger_(std::move(logger)),
+        startButton_(Str::StartGame, font, {0.f, 0.f}, {280.f, 70.f}, 30),
+        calculatorButton_(Str::Calculator, font, {0.f, 0.f}, {280.f, 70.f}, 30),
+        settingsButton_(Str::Settings, font, {0.f, 0.f}, {280.f, 70.f}, 30),
+        exitButton_(Str::ExitGame, font, {0.f, 0.f}, {280.f, 70.f}, 30) {}
 
 void MainMenuScene::handleEvent(const sf::Event& event) {
     startButton_.handleEvent(event);
@@ -39,7 +38,8 @@ void MainMenuScene::update(float /*dt*/) {
 
 void MainMenuScene::render(Window& window) {
     window.clear();
-    if (background_) background_->render(window.native());
+    if (background_)
+        background_->render(window.native());
 
     auto size = window.native().getSize();
     float cx = static_cast<float>(size.x) / 2.f;
@@ -49,10 +49,10 @@ void MainMenuScene::render(Window& window) {
     float totalH = btnH * 4 + gap * 3;
     float startY = cy - totalH / 2.f;
 
-    startButton_.setPosition     ({cx - btnW / 2.f, startY});
+    startButton_.setPosition({cx - btnW / 2.f, startY});
     calculatorButton_.setPosition({cx - btnW / 2.f, startY + (btnH + gap)});
-    settingsButton_.setPosition  ({cx - btnW / 2.f, startY + 2 * (btnH + gap)});
-    exitButton_.setPosition      ({cx - btnW / 2.f, startY + 3 * (btnH + gap)});
+    settingsButton_.setPosition({cx - btnW / 2.f, startY + 2 * (btnH + gap)});
+    exitButton_.setPosition({cx - btnW / 2.f, startY + 3 * (btnH + gap)});
 
     startButton_.render(window.native());
     calculatorButton_.render(window.native());

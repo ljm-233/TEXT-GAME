@@ -5,7 +5,9 @@ namespace {
 float g_scale = 1.0f;
 }
 
-float getUiScale() { return g_scale; }
+float getUiScale() {
+    return g_scale;
+}
 
 void setUiScale(float s) {
     g_scale = std::clamp(s, 0.5f, 2.0f);

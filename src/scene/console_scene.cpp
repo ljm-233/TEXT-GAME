@@ -12,33 +12,27 @@
 // ConsoleScene
 // ============================================================
 
-ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
+ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
                            std::shared_ptr<Preferences> preferences,
-                           std::shared_ptr<SaveManager> saveManager,
-                           const sf::Font&              font,
-                           std::shared_ptr<Logger>      logger)
-    : background_(std::move(background)),
-      preferences_(std::move(preferences)),
-      saveManager_(std::move(saveManager)),
-      logger_(std::move(logger)) {
-
-    int fontSize     = preferences_->getInt("console_font_size", 18);
+                           std::shared_ptr<SaveManager> saveManager, const sf::Font& font,
+                           std::shared_ptr<Logger> logger)
+      : background_(std::move(background)),
+        preferences_(std::move(preferences)),
+        saveManager_(std::move(saveManager)),
+        logger_(std::move(logger)) {
+    int fontSize = preferences_->getInt("console_font_size", 18);
     int historyLines = preferences_->getInt("console_history_lines", 200);
-    int lineHeight   = preferences_->getInt("console_line_height", 26);
-    bool autoScroll  = preferences_->getBool("console_auto_scroll", true);
+    int lineHeight = preferences_->getInt("console_line_height", 26);
+    bool autoScroll = preferences_->getBool("console_auto_scroll", true);
     bool blinkCursor = preferences_->getBool("console_blink_cursor", true);
 
-    console_ = std::make_unique<Console>(
-        font,
-        static_cast<unsigned>(fontSize),
-        static_cast<unsigned>(lineHeight),
-        static_cast<unsigned>(historyLines),
-        autoScroll,
-        blinkCursor,
-        sf::Vector2u{1280, 720});
+    console_ = std::make_unique<Console>(font, static_cast<unsigned>(fontSize),
+                                         static_cast<unsigned>(lineHeight),
+                                         static_cast<unsigned>(historyLines), autoScroll,
+                                         blinkCursor, sf::Vector2u{1280, 720});
 
     consoleBuf_ = makeConsoleStreamBuf(console_.get());
-    oldCin_  = std::cin.rdbuf(consoleBuf_.get());
+    oldCin_ = std::cin.rdbuf(consoleBuf_.get());
     oldCout_ = std::cout.rdbuf(consoleBuf_.get());
     oldCerr_ = std::cerr.rdbuf(consoleBuf_.get());
 
@@ -49,9 +43,12 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background>  background,
 
 ConsoleScene::~ConsoleScene() {
     stopWorker();
-    if (oldCin_)  std::cin.rdbuf(oldCin_);
-    if (oldCout_) std::cout.rdbuf(oldCout_);
-    if (oldCerr_) std::cerr.rdbuf(oldCerr_);
+    if (oldCin_)
+        std::cin.rdbuf(oldCin_);
+    if (oldCout_)
+        std::cout.rdbuf(oldCout_);
+    if (oldCerr_)
+        std::cerr.rdbuf(oldCerr_);
 }
 
 void ConsoleScene::printWelcome() {
@@ -64,7 +61,8 @@ void ConsoleScene::startCommandLoop() {
     worker_ = std::thread([this]() {
         while (true) {
             std::string line = console_->waitForLine();
-            if (console_->isShutdown()) break;
+            if (console_->isShutdown())
+                break;
             if (!line.empty()) {
                 dispatchCommand(line);
             }
@@ -74,8 +72,10 @@ void ConsoleScene::startCommandLoop() {
 }
 
 void ConsoleScene::stopWorker() {
-    if (console_) console_->shutdown();
-    if (worker_.joinable()) worker_.join();
+    if (console_)
+        console_->shutdown();
+    if (worker_.joinable())
+        worker_.join();
 }
 
 SceneId ConsoleScene::nextScene() const {
@@ -91,8 +91,10 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
     std::istringstream iss(line);
     std::vector<std::string> tokens;
     std::string t;
-    while (iss >> t) tokens.push_back(t);
-    if (tokens.empty()) return;
+    while (iss >> t)
+        tokens.push_back(t);
+    if (tokens.empty())
+        return;
 
     const std::string& cmd = tokens[0];
 
@@ -121,7 +123,8 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
     else if (cmd == "echo") {
         std::string text;
         for (size_t i = 1; i < tokens.size(); ++i) {
-            if (i > 1) text += ' ';
+            if (i > 1)
+                text += ' ';
             text += tokens[i];
         }
         std::cout << text << '\n';
@@ -129,8 +132,8 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
 
     // ===== version =====
     else if (cmd == "version") {
-        std::cout << Str::AboutTitle << " "
-                  << PROJECT_VERSION << " (" << BUILD_DATE << ")\n";
+        std::cout << Str::AboutTitle << " " << PROJECT_VERSION << " (" << BUILD_DATE
+                  << ")\n";
     }
 
     // ===== calc =====
@@ -148,10 +151,14 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
             return;
         }
         const std::string& name = tokens[1];
-        if      (name == "main")     pendingScene_ = static_cast<int>(SceneId::MainMenu);
-        else if (name == "save")     pendingScene_ = static_cast<int>(SceneId::SaveSelect);
-        else if (name == "settings") pendingScene_ = static_cast<int>(SceneId::Settings);
-        else if (name == "quit")     pendingScene_ = static_cast<int>(SceneId::Exit);
+        if (name == "main")
+            pendingScene_ = static_cast<int>(SceneId::MainMenu);
+        else if (name == "save")
+            pendingScene_ = static_cast<int>(SceneId::SaveSelect);
+        else if (name == "settings")
+            pendingScene_ = static_cast<int>(SceneId::Settings);
+        else if (name == "quit")
+            pendingScene_ = static_cast<int>(SceneId::Exit);
         else {
             std::cout << "未知场景: " << name << '\n';
         }
@@ -165,11 +172,16 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         }
         const std::string& level = tokens[1];
         LogLevel lv;
-        if      (level == "trace") lv = LogLevel::Trace;
-        else if (level == "debug") lv = LogLevel::Debug;
-        else if (level == "info")  lv = LogLevel::Info;
-        else if (level == "warn")  lv = LogLevel::Warn;
-        else if (level == "error") lv = LogLevel::Error;
+        if (level == "trace")
+            lv = LogLevel::Trace;
+        else if (level == "debug")
+            lv = LogLevel::Debug;
+        else if (level == "info")
+            lv = LogLevel::Info;
+        else if (level == "warn")
+            lv = LogLevel::Warn;
+        else if (level == "error")
+            lv = LogLevel::Error;
         else {
             std::cout << "未知级别: " << level << '\n';
             return;
@@ -187,9 +199,12 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         }
         const std::string& name = tokens[1];
         ThemeId id;
-        if      (name == "dark")  id = ThemeId::Dark;
-        else if (name == "blue")  id = ThemeId::Blue;
-        else if (name == "light") id = ThemeId::Light;
+        if (name == "dark")
+            id = ThemeId::Dark;
+        else if (name == "blue")
+            id = ThemeId::Blue;
+        else if (name == "light")
+            id = ThemeId::Light;
         else {
             std::cout << "未知主题: " << name << '\n';
             return;
@@ -208,9 +223,8 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
             } else {
                 std::cout << "共 " << saves.size() << " 个存档:\n";
                 for (size_t i = 0; i < saves.size(); ++i) {
-                    std::cout << "  " << (i + 1) << ". "
-                              << saves[i].name
-                              << "  (" << saves[i].filename << ")\n";
+                    std::cout << "  " << (i + 1) << ". " << saves[i].name << "  ("
+                              << saves[i].filename << ")\n";
                 }
             }
         } else {
@@ -258,7 +272,8 @@ void ConsoleScene::render(Window& window) {
     float h = static_cast<float>(size.y);
 
     rt.clear(sf::Color::Black);
-    if (background_) background_->render(rt);
+    if (background_)
+        background_->render(rt);
 
     int mask = preferences_->getInt("console_mask", 160);
     mask = std::max(0, std::min(255, mask));

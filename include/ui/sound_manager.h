@@ -1,8 +1,8 @@
 #pragma once
 #include <SFML/Audio.hpp>
+#include <cstddef>
 #include <memory>
 #include <vector>
-#include <cstddef>
 
 // 全局音效管理器：音效用代码生成，不依赖外部文件
 class SoundManager {
@@ -12,7 +12,7 @@ public:
     void init();
 
     void setEnabled(bool e) { enabled_ = e; }
-    bool isEnabled() const  { return enabled_; }
+    bool isEnabled() const { return enabled_; }
 
     void setVolume(float v);
     float volume() const { return volume_; }
@@ -41,7 +41,7 @@ private:
     std::vector<std::unique_ptr<sf::Sound>> pool_;
     std::size_t nextIndex_ = 0;
 
-    bool  enabled_ = true;
-    float volume_  = 0.6f;
-    bool  initialized_ = false;
+    bool enabled_ = true;
+    float volume_ = 0.6f;
+    bool initialized_ = false;
 };

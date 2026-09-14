@@ -1,60 +1,55 @@
 #include "game.h"
-#include "main_menu_scene.h"
-#include "save_select_scene.h"
-#include "game_scene.h"
-#include "settings_scene.h"
 #include "console_scene.h"
+#include "game_scene.h"
+#include "main_menu_scene.h"
 #include "notification.h"
+#include "save_select_scene.h"
+#include "settings_scene.h"
 #include <SFML/System/Clock.hpp>
-#include <ctime>
 #include <cstdio>
+#include <ctime>
 
-Game::Game(std::shared_ptr<Window>        window,
-           std::shared_ptr<Logger>        logger,
-           std::shared_ptr<Background>    background,
-           std::shared_ptr<FontHolder>    fontHolder,
-           std::shared_ptr<SaveManager>   saveManager,
-           std::shared_ptr<Preferences>   preferences,
+Game::Game(std::shared_ptr<Window> window, std::shared_ptr<Logger> logger,
+           std::shared_ptr<Background> background, std::shared_ptr<FontHolder> fontHolder,
+           std::shared_ptr<SaveManager> saveManager,
+           std::shared_ptr<Preferences> preferences,
            std::shared_ptr<RuntimeConfig> runtimeConfig)
-    : window_(std::move(window)),
-      logger_(std::move(logger)),
-      background_(std::move(background)),
-      fontHolder_(std::move(fontHolder)),
-      saveManager_(std::move(saveManager)),
-      preferences_(std::move(preferences)),
-      runtimeConfig_(std::move(runtimeConfig)),
-      fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
-      clockText_(fontHolder_->get(), sf::String(""), 20) {
+      : window_(std::move(window)),
+        logger_(std::move(logger)),
+        background_(std::move(background)),
+        fontHolder_(std::move(fontHolder)),
+        saveManager_(std::move(saveManager)),
+        preferences_(std::move(preferences)),
+        runtimeConfig_(std::move(runtimeConfig)),
+        fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
+        clockText_(fontHolder_->get(), sf::String(""), 20) {
     NotificationSystem::instance().setFont(fontHolder_->get());
     fpsText_.setFillColor(sf::Color(255, 255, 100));
     clockText_.setFillColor(sf::Color(220, 220, 240));
-    sceneManager_ = std::make_unique<SceneManager>(
-        [this](SceneId id) { return createScene(id); });
+    sceneManager_ =
+        std::make_unique<SceneManager>([this](SceneId id) { return createScene(id); });
 }
 
 std::unique_ptr<Scene> Game::createScene(SceneId id) {
     const sf::Font& font = fontHolder_->get();
     switch (id) {
-        case SceneId::MainMenu:
-            return std::make_unique<MainMenuScene>(background_, font, logger_);
-        case SceneId::SaveSelect:
-            return std::make_unique<SaveSelectScene>(
-                background_, saveManager_, font, logger_);
-        case SceneId::Game:
-            return std::make_unique<GameScene>(
-                background_, font, logger_,
-                saveManager_->takePendingSave(),
-                saveManager_,
-                preferences_);
-        case SceneId::Settings:
-            return std::make_unique<SettingsScene>(
-                background_, preferences_, runtimeConfig_,
-                window_, font, logger_);
-        case SceneId::Console:
-            return std::make_unique<ConsoleScene>(
-                background_, preferences_, saveManager_, font, logger_);
-        default:
-            return nullptr;
+    case SceneId::MainMenu:
+        return std::make_unique<MainMenuScene>(background_, font, logger_);
+    case SceneId::SaveSelect:
+        return std::make_unique<SaveSelectScene>(background_, saveManager_, font,
+                                                 logger_);
+    case SceneId::Game:
+        return std::make_unique<GameScene>(background_, font, logger_,
+                                           saveManager_->takePendingSave(), saveManager_,
+                                           preferences_);
+    case SceneId::Settings:
+        return std::make_unique<SettingsScene>(background_, preferences_, runtimeConfig_,
+                                               window_, font, logger_);
+    case SceneId::Console:
+        return std::make_unique<ConsoleScene>(background_, preferences_, saveManager_,
+                                              font, logger_);
+    default:
+        return nullptr;
     }
 }
 
@@ -72,10 +67,12 @@ void Game::handleTransition(SceneId next) {
 }
 
 void Game::saveWindowState() {
-    if (!window_->isOpen()) return;
-    if (!preferences_->getBool("remember_window_size", true)) return;
+    if (!window_->isOpen())
+        return;
+    if (!preferences_->getBool("remember_window_size", true))
+        return;
     auto size = window_->native().getSize();
-    runtimeConfig_->setInt("last_window_width",  static_cast<int>(size.x));
+    runtimeConfig_->setInt("last_window_width", static_cast<int>(size.x));
     runtimeConfig_->setInt("last_window_height", static_cast<int>(size.y));
 }
 
@@ -98,11 +95,20 @@ void Game::renderOverlays() {
         int pos = preferences_->getInt("fps_position", 1);
         sf::Vector2f p;
         switch (pos) {
-            case 0: p = {margin, margin}; break;
-            case 1: p = {winW - b.size.x - margin, margin}; break;
-            case 2: p = {margin, winH - b.size.y - margin}; break;
-            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
-            default: p = {winW - b.size.x - margin, margin};
+        case 0:
+            p = {margin, margin};
+            break;
+        case 1:
+            p = {winW - b.size.x - margin, margin};
+            break;
+        case 2:
+            p = {margin, winH - b.size.y - margin};
+            break;
+        case 3:
+            p = {winW - b.size.x - margin, winH - b.size.y - margin};
+            break;
+        default:
+            p = {winW - b.size.x - margin, margin};
         }
         fpsText_.setPosition(p);
         rt.draw(fpsText_);
@@ -126,11 +132,20 @@ void Game::renderOverlays() {
         int pos = preferences_->getInt("clock_position", 0);
         sf::Vector2f p;
         switch (pos) {
-            case 0: p = {margin, margin}; break;
-            case 1: p = {winW - b.size.x - margin, margin}; break;
-            case 2: p = {margin, winH - b.size.y - margin}; break;
-            case 3: p = {winW - b.size.x - margin, winH - b.size.y - margin}; break;
-            default: p = {margin, margin};
+        case 0:
+            p = {margin, margin};
+            break;
+        case 1:
+            p = {winW - b.size.x - margin, margin};
+            break;
+        case 2:
+            p = {margin, winH - b.size.y - margin};
+            break;
+        case 3:
+            p = {winW - b.size.x - margin, winH - b.size.y - margin};
+            break;
+        default:
+            p = {margin, margin};
         }
         clockText_.setPosition(p);
         rt.draw(clockText_);
@@ -147,7 +162,7 @@ void Game::flushConfigs() {
 
 void Game::run() {
     logger_->info("游戏启动");
-    NotificationSystem::instance().push("游戏已启动",NotificationType::Info);
+    NotificationSystem::instance().push("游戏已启动", NotificationType::Info);
     if (!sceneManager_->start(SceneId::MainMenu)) {
         logger_->error("无法创建主菜单场景");
         return;
@@ -167,11 +182,15 @@ void Game::run() {
 
         flushTimer_ += dt;
         NotificationSystem::instance().update(dt);
-        if (flushTimer_ >= 5.f) { flushConfigs(); flushTimer_ = 0.f; }
+        if (flushTimer_ >= 5.f) {
+            flushConfigs();
+            flushTimer_ = 0.f;
+        }
 
         // 时钟每 0.2 秒刷新一次
         clockTimer_ += dt;
-        if (clockTimer_ >= 0.2f) clockTimer_ = 0.f;
+        if (clockTimer_ >= 0.2f)
+            clockTimer_ = 0.f;
 
         Scene& scene = sceneManager_->current();
         window_->pollEvents([&](const sf::Event& e) { scene.handleEvent(e); });

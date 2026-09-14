@@ -1,17 +1,14 @@
 #include "window.h"
 
-Window::Window(unsigned width, unsigned height,
-               const std::string& title,
-               bool fullscreen, unsigned antiAliasing)
-    : title_(title), antiAliasing_(antiAliasing) {
+Window::Window(unsigned width, unsigned height, const std::string& title, bool fullscreen,
+               unsigned antiAliasing)
+      : title_(title),
+        antiAliasing_(antiAliasing) {
     sf::ContextSettings settings;
     settings.antiAliasingLevel = antiAliasing_;
 
-    window_.create(
-        sf::VideoMode({width, height}),
-        title_,
-        fullscreen ? sf::State::Fullscreen : sf::State::Windowed,
-        settings);
+    window_.create(sf::VideoMode({width, height}), title_,
+                   fullscreen ? sf::State::Fullscreen : sf::State::Windowed, settings);
 
     window_.setVerticalSyncEnabled(vsync_);
     applyView();
@@ -20,21 +17,29 @@ Window::Window(unsigned width, unsigned height,
 void Window::applyView() {
     auto size = window_.getSize();
     window_.setView(sf::View(sf::FloatRect(
-        {0.f, 0.f},
-        {static_cast<float>(size.x), static_cast<float>(size.y)})));
+        {0.f, 0.f}, {static_cast<float>(size.x), static_cast<float>(size.y)})));
 }
 
-bool Window::isOpen() const { return window_.isOpen(); }
-void Window::close()        { window_.close(); }
-void Window::clear()        { window_.clear(sf::Color::Black); }
-void Window::display()      { window_.display(); }
+bool Window::isOpen() const {
+    return window_.isOpen();
+}
+void Window::close() {
+    window_.close();
+}
+void Window::clear() {
+    window_.clear(sf::Color::Black);
+}
+void Window::display() {
+    window_.display();
+}
 
 void Window::pollEvents(const std::function<void(const sf::Event&)>& handler) {
     while (const auto event = window_.pollEvent()) {
         if (event->is<sf::Event::Closed>()) {
             window_.close();
         }
-        if (handler) handler(*event);
+        if (handler)
+            handler(*event);
     }
 }
 
@@ -50,11 +55,8 @@ void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
     sf::ContextSettings settings;
     settings.antiAliasingLevel = antiAliasing_;
 
-    window_.create(
-        sf::VideoMode({width, height}),
-        title_,
-        fullscreen ? sf::State::Fullscreen : sf::State::Windowed,
-        settings);
+    window_.create(sf::VideoMode({width, height}), title_,
+                   fullscreen ? sf::State::Fullscreen : sf::State::Windowed, settings);
 
     window_.setVerticalSyncEnabled(vsync_);
     window_.setFramerateLimit(framerateLimit_);
@@ -71,4 +73,6 @@ void Window::setFramerateLimit(unsigned limit) {
     window_.setFramerateLimit(framerateLimit_);
 }
 
-sf::RenderWindow& Window::native() { return window_; }
+sf::RenderWindow& Window::native() {
+    return window_;
+}

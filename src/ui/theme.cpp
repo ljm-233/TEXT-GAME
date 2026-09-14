@@ -42,17 +42,26 @@ const Theme kThemes[kThemeCount] = {
 };
 
 ThemeId g_current = ThemeId::Dark;
-}
+} // namespace
 
-const Theme& getTheme() { return kThemes[static_cast<int>(g_current)]; }
-ThemeId      getThemeId() { return g_current; }
-void         setTheme(ThemeId id) { g_current = id; }
+const Theme& getTheme() {
+    return kThemes[static_cast<int>(g_current)];
+}
+ThemeId getThemeId() {
+    return g_current;
+}
+void setTheme(ThemeId id) {
+    g_current = id;
+}
 
 const char* themeName(ThemeId id) {
     switch (id) {
-        case ThemeId::Dark:  return Str::ThemeDark;
-        case ThemeId::Blue:  return Str::ThemeBlue;
-        case ThemeId::Light: return Str::ThemeLight;
+    case ThemeId::Dark:
+        return Str::ThemeDark;
+    case ThemeId::Blue:
+        return Str::ThemeBlue;
+    case ThemeId::Light:
+        return Str::ThemeLight;
     }
     return "?";
 }

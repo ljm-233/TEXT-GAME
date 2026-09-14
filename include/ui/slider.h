@@ -3,8 +3,7 @@
 
 class Slider {
 public:
-    Slider(const sf::Font& font,
-           float minValue, float maxValue, float initialValue,
+    Slider(const sf::Font& font, float minValue, float maxValue, float initialValue,
            sf::Vector2f position, sf::Vector2f size);
 
     void handleEvent(const sf::Event& event);
@@ -22,11 +21,11 @@ private:
     sf::RectangleShape track_;
     sf::RectangleShape fill_;
     sf::RectangleShape handle_;
-    sf::Text           valueText_;
+    sf::Text valueText_;
 
     sf::Vector2f position_;
     sf::Vector2f size_;
     float min_, max_, value_;
     bool dragging_ = false;
-    bool changed_  = false;
+    bool changed_ = false;
 };

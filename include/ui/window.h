@@ -5,10 +5,8 @@
 
 class Window {
 public:
-    Window(unsigned width, unsigned height,
-           const std::string& title,
-           bool fullscreen = false,
-           unsigned antiAliasing = 8);
+    Window(unsigned width, unsigned height, const std::string& title,
+           bool fullscreen = false, unsigned antiAliasing = 8);
 
     bool isOpen() const;
     void close();
@@ -39,8 +37,8 @@ private:
     void applyView();
 
     sf::RenderWindow window_;
-    std::string      title_;
-    bool             vsync_ = true;
-    unsigned         antiAliasing_ = 8;
-    unsigned         framerateLimit_ = 0;
+    std::string title_;
+    bool vsync_ = true;
+    unsigned antiAliasing_ = 8;
+    unsigned framerateLimit_ = 0;
 };

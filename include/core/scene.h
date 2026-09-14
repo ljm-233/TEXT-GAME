@@ -1,7 +1,7 @@
 #pragma once
-#include <SFML/Window/Event.hpp>
-#include "window.h"
 #include "scene_id.h"
+#include "window.h"
+#include <SFML/Window/Event.hpp>
 
 class Scene {
 public:

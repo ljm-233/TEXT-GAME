@@ -1,20 +1,16 @@
 #pragma once
+#include "camera.h"
+#include "game_object.h"
 #include "level.h"
 #include "player.h"
-#include "game_object.h"
-#include "camera.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
-#include <vector>
 #include <string>
+#include <vector>
 
 class GameWorld {
 public:
-    enum class State {
-        Playing,
-        LevelComplete,
-        GameOver
-    };
+    enum class State { Playing, LevelComplete, GameOver };
 
     GameWorld(std::unique_ptr<Level> level, int levelIndex);
 
@@ -33,11 +29,11 @@ public:
 
     void reset();
 
-    int  lives() const { return lives_; }
-    int  coins() const { return coins_; }
-    int  totalCoins() const { return totalCoins_; }
+    int lives() const { return lives_; }
+    int coins() const { return coins_; }
+    int totalCoins() const { return totalCoins_; }
     State state() const { return state_; }
-    int  levelIndex() const { return levelIndex_; }
+    int levelIndex() const { return levelIndex_; }
 
 private:
     bool checkGoalReached() const;
@@ -53,10 +49,10 @@ private:
 
     Camera camera_;
 
-    int   lives_      = 3;
-    int   coins_      = 0;
-    int   totalCoins_ = 0;
-    State state_      = State::Playing;
+    int lives_ = 3;
+    int coins_ = 0;
+    int totalCoins_ = 0;
+    State state_ = State::Playing;
 
     float accumulator_ = 0.f;
 };

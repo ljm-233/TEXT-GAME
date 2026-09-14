@@ -1,21 +1,21 @@
 #include "application.h"
-#include "logging.h"
-#include "paths.h"
+#include "animation.h"
+#include "background.h"
 #include "bootstrap_config.h"
-#include "runtime_config.h"
+#include "button_style.h"
+#include "font_holder.h"
+#include "game.h"
+#include "logging.h"
+#include "notification.h"
+#include "paths.h"
 #include "preferences.h"
 #include "resolution.h"
-#include "window.h"
-#include "background.h"
-#include "font_holder.h"
+#include "runtime_config.h"
 #include "save_manager.h"
-#include "game.h"
-#include "ui_scale.h"
-#include "theme.h"
-#include "button_style.h"
-#include "animation.h"
-#include "notification.h"
 #include "sound_manager.h"
+#include "theme.h"
+#include "ui_scale.h"
+#include "window.h"
 
 #include <algorithm>
 
@@ -31,10 +31,7 @@ Application::Application() {
 }
 
 void Application::registerDependencies() {
-
-    container_.registerType<Paths>([]() {
-        return make_shared<Paths>();
-    });
+    container_.registerType<Paths>([]() { return make_shared<Paths>(); });
 
     container_.registerType<BootstrapConfig>([this]() {
         auto paths = container_.resolve<Paths>();
@@ -59,7 +56,7 @@ void Application::registerDependencies() {
         setTheme(static_cast<ThemeId>(prefs->getInt("theme", 0)));
 
         ButtonStyle bs;
-        bs.cornerRadius     = static_cast<float>(prefs->getDouble("button_corner", 6.0));
+        bs.cornerRadius = static_cast<float>(prefs->getDouble("button_corner", 6.0));
         bs.outlineThickness = static_cast<float>(prefs->getDouble("button_outline", 2.0));
         setButtonStyle(bs);
 
@@ -70,46 +67,42 @@ void Application::registerDependencies() {
 
         NotificationSystem::instance().setEnabled(
             prefs->getBool("notification_enabled", true));
-        NotificationSystem::instance().setPosition(
-            static_cast<NotificationPos>(
-                std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
+        NotificationSystem::instance().setPosition(static_cast<NotificationPos>(
+            std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
 
         // 音效
         SoundManager::instance().init();
-        SoundManager::instance().setEnabled(
-            prefs->getBool("sound_enabled", true));
+        SoundManager::instance().setEnabled(prefs->getBool("sound_enabled", true));
         SoundManager::instance().setVolume(
             static_cast<float>(prefs->getDouble("sound_volume", 0.6)));
     }
 
     // ===== Logger =====
     container_.registerType<Logger>([this]() {
-        auto cfg   = container_.resolve<BootstrapConfig>();
+        auto cfg = container_.resolve<BootstrapConfig>();
         auto prefs = container_.resolve<Preferences>();
         auto logPath = cfg->configFile("app.log");
         int lvl = prefs->getInt("log_level", static_cast<int>(LogLevel::Info));
 
-        static const size_t sizes[] = {0, 1*1024*1024, 5*1024*1024, 10*1024*1024};
-        static const int    keeps[] = {1, 3, 5, 10};
-        int rotIdx  = std::clamp(prefs->getInt("log_rotate", 0), 0, 3);
-        int keepIdx = std::clamp(prefs->getInt("log_keep", 1),   0, 3);
+        static const size_t sizes[] = {0, 1 * 1024 * 1024, 5 * 1024 * 1024,
+                                       10 * 1024 * 1024};
+        static const int keeps[] = {1, 3, 5, 10};
+        int rotIdx = std::clamp(prefs->getInt("log_rotate", 0), 0, 3);
+        int keepIdx = std::clamp(prefs->getInt("log_keep", 1), 0, 3);
 
-        return make_shared<Logger>(
-            logPath.string(),
-            static_cast<LogLevel>(lvl),
-            sizes[rotIdx],
-            keeps[keepIdx]);
+        return make_shared<Logger>(logPath.string(), static_cast<LogLevel>(lvl),
+                                   sizes[rotIdx], keeps[keepIdx]);
     });
 
     // ===== Window =====
     container_.registerType<Window>([this]() {
-        auto prefs   = container_.resolve<Preferences>();
+        auto prefs = container_.resolve<Preferences>();
         auto runtime = container_.resolve<RuntimeConfig>();
 
         unsigned w = 0, h = 0;
         bool rememberSize = prefs->getBool("remember_window_size", true);
         if (rememberSize) {
-            int lastW = runtime->getInt("last_window_width",  -1);
+            int lastW = runtime->getInt("last_window_width", -1);
             int lastH = runtime->getInt("last_window_height", -1);
             if (lastW > 0 && lastH > 0) {
                 w = static_cast<unsigned>(lastW);
@@ -122,13 +115,13 @@ void Application::registerDependencies() {
             h = kResolutions[idx].height;
         }
 
-        bool fs       = prefs->getBool("fullscreen", false);
-        bool vsync    = prefs->getBool("vsync", true);
-        int  aa       = prefs->getInt("anti_aliasing", 8);
-        int  fpsLimit = prefs->getInt("fps_limit", 60);
+        bool fs = prefs->getBool("fullscreen", false);
+        bool vsync = prefs->getBool("vsync", true);
+        int aa = prefs->getInt("anti_aliasing", 8);
+        int fpsLimit = prefs->getInt("fps_limit", 60);
 
-        auto win = std::make_shared<Window>(
-            w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
+        auto win =
+            std::make_shared<Window>(w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
         win->setVsync(vsync);
         win->setFramerateLimit(static_cast<unsigned>(fpsLimit));
         return win;
@@ -136,19 +129,19 @@ void Application::registerDependencies() {
 
     // ===== Background =====
     container_.registerType<Background>([this]() {
-        auto paths  = container_.resolve<Paths>();
-        auto prefs  = container_.resolve<Preferences>();
+        auto paths = container_.resolve<Paths>();
+        auto prefs = container_.resolve<Preferences>();
         auto window = container_.resolve<Window>();
         auto logger = container_.resolve<Logger>();
-        auto size   = window->native().getSize();
+        auto size = window->native().getSize();
         std::string initial = prefs->get("current_wallpaper", "");
-        return std::make_shared<Background>(
-            paths->wallpaperDir(), initial, size.x, size.y, logger);
+        return std::make_shared<Background>(paths->wallpaperDir(), initial, size.x,
+                                            size.y, logger);
     });
 
     // ===== FontHolder =====
     container_.registerType<FontHolder>([this]() {
-        auto cfg    = container_.resolve<BootstrapConfig>();
+        auto cfg = container_.resolve<BootstrapConfig>();
         auto logger = container_.resolve<Logger>();
         auto fontPath = cfg->assetFile("font.ttf");
         return std::make_shared<FontHolder>(fontPath, logger);
@@ -156,29 +149,28 @@ void Application::registerDependencies() {
 
     // ===== SaveManager =====
     container_.registerType<SaveManager>([this]() {
-        auto cfg    = container_.resolve<RuntimeConfig>();
+        auto cfg = container_.resolve<RuntimeConfig>();
         auto logger = container_.resolve<Logger>();
         return std::make_shared<SaveManager>(cfg, logger);
     });
 
     // ===== Game =====
     container_.registerType<Game>([this]() {
-        auto window      = container_.resolve<Window>();
-        auto logger      = container_.resolve<Logger>();
-        auto background  = container_.resolve<Background>();
-        auto fontHolder  = container_.resolve<FontHolder>();
+        auto window = container_.resolve<Window>();
+        auto logger = container_.resolve<Logger>();
+        auto background = container_.resolve<Background>();
+        auto fontHolder = container_.resolve<FontHolder>();
         auto saveManager = container_.resolve<SaveManager>();
-        auto prefs       = container_.resolve<Preferences>();
-        auto runtime     = container_.resolve<RuntimeConfig>();
-        return std::make_shared<Game>(
-            window, logger, background, fontHolder,
-            saveManager, prefs, runtime);
+        auto prefs = container_.resolve<Preferences>();
+        auto runtime = container_.resolve<RuntimeConfig>();
+        return std::make_shared<Game>(window, logger, background, fontHolder, saveManager,
+                                      prefs, runtime);
     });
 }
 
 void Application::run() {
     auto logger = container_.resolve<Logger>();
-    auto paths  = container_.resolve<Paths>();
+    auto paths = container_.resolve<Paths>();
 
     logger->info("程序启动");
     logger->info("配置目录: " + paths->configDir().string());

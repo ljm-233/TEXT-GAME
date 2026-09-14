@@ -23,7 +23,7 @@ private:
     Vec2 pos_;
     Vec2 vel_;
     Vec2 size_{28.f, 28.f};
-    int  tileSize_;
+    int tileSize_;
     bool killed_ = false;
 
     mutable sf::RectangleShape body_;

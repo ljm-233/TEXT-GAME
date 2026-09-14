@@ -1,22 +1,19 @@
 #pragma once
-#include <unordered_map>
 #include <functional>
 #include <memory>
 #include <stdexcept>
 #include <typeindex>
+#include <unordered_map>
 
 class Container {
 public:
-    template <typename T>
-    void registerType(std::function<std::shared_ptr<T>()> factory) {
-        factories_[std::type_index(typeid(T))] =
-            [factory]() -> std::shared_ptr<void> {
-                return std::static_pointer_cast<void>(factory());
-            };
+    template <typename T> void registerType(std::function<std::shared_ptr<T>()> factory) {
+        factories_[std::type_index(typeid(T))] = [factory]() -> std::shared_ptr<void> {
+            return std::static_pointer_cast<void>(factory());
+        };
     }
 
-    template <typename T>
-    std::shared_ptr<T> resolve() {
+    template <typename T> std::shared_ptr<T> resolve() {
         auto it = instances_.find(std::type_index(typeid(T)));
         if (it != instances_.end())
             return std::static_pointer_cast<T>(it->second);
@@ -31,7 +28,8 @@ public:
     }
 
 private:
-    std::unordered_map<std::type_index, std::function<std::shared_ptr<void>()>> factories_;
+    std::unordered_map<std::type_index, std::function<std::shared_ptr<void>()>>
+        factories_;
     std::unordered_map<std::type_index, std::shared_ptr<void>> instances_;
 };
 

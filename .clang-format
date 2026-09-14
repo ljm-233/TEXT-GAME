@@ -1,0 +1,58 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+
+# 大括号
+BreakBeforeBraces: Attach
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Never
+
+# 行宽
+ColumnLimit: 90
+
+# 空格
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpacesInAngles: false
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpacesBeforeTrailingComments: 1
+
+# 指针对齐：类型侧（sf::Font* font_）
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+# 换行
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+
+# 构造函数初始化列表
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 6
+PackConstructorInitializers: Never
+
+# 空行
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+
+# 头文件排序
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# 其他
+ReflowComments: true
+Standard: c++20

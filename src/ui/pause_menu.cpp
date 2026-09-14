@@ -1,29 +1,27 @@
 #include "pause_menu.h"
-#include "strings.h"
-#include "utf8.h"
-#include "ui_scale.h"
-#include "theme.h"
 #include "animation.h"
 #include "notification.h"
+#include "strings.h"
+#include "theme.h"
+#include "ui_scale.h"
+#include "utf8.h"
 #include <algorithm>
 
 namespace {
 const char* kThemeNames[] = {"深色", "蓝色", "浅色"};
 }
 
-PauseMenu::PauseMenu(const sf::Font& font,
-                     std::shared_ptr<Preferences> prefs,
+PauseMenu::PauseMenu(const sf::Font& font, std::shared_ptr<Preferences> prefs,
                      sf::Vector2f windowSize)
-    : font_(font),
-      prefs_(std::move(prefs)),
-      windowSize_(windowSize),
-      title_(font, toSf("已暂停"), scaledFontSize(32)),
-      settingsTitle_(font, toSf("设置"), scaledFontSize(28)),
-      labelTheme_(font, toSf("主题"), scaledFontSize(20)),
-      labelAnim_(font, toSf("动画效果"), scaledFontSize(20)),
-      labelNotif_(font, toSf("屏幕通知"), scaledFontSize(20)),
-      hintText_(font, toSf("* 部分设置返回主菜单后完全生效"), scaledFontSize(14)) {
-
+      : font_(font),
+        prefs_(std::move(prefs)),
+        windowSize_(windowSize),
+        title_(font, toSf("已暂停"), scaledFontSize(32)),
+        settingsTitle_(font, toSf("设置"), scaledFontSize(28)),
+        labelTheme_(font, toSf("主题"), scaledFontSize(20)),
+        labelAnim_(font, toSf("动画效果"), scaledFontSize(20)),
+        labelNotif_(font, toSf("屏幕通知"), scaledFontSize(20)),
+        hintText_(font, toSf("* 部分设置返回主菜单后完全生效"), scaledFontSize(14)) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 180));
     backdrop_.setSize(windowSize_);
 
@@ -41,8 +39,8 @@ PauseMenu::PauseMenu(const sf::Font& font,
     // ===== 主菜单按钮 =====
     mainButtons_.push_back(std::make_unique<Button>(
         "回到游戏", font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
-    mainButtons_.push_back(std::make_unique<Button>(
-        "设置", font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
+    mainButtons_.push_back(std::make_unique<Button>("设置", font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{280.f, 52.f}, 22));
     mainButtons_.push_back(std::make_unique<Button>(
         "保存并退出游戏", font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
 
@@ -51,16 +49,16 @@ PauseMenu::PauseMenu(const sf::Font& font,
         themeButtons_.push_back(std::make_unique<Button>(
             kThemeNames[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 40.f}, 18));
     }
-    animOn_  = std::make_unique<Button>("开", font_,
-                    sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
-    animOff_ = std::make_unique<Button>("关", font_,
-                    sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
-    notifOn_  = std::make_unique<Button>("开", font_,
-                    sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
-    notifOff_ = std::make_unique<Button>("关", font_,
-                    sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
-    backButton_ = std::make_unique<Button>("返回", font_,
-                    sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 44.f}, 20);
+    animOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+                                       sf::Vector2f{80.f, 40.f}, 18);
+    animOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+                                        sf::Vector2f{80.f, 40.f}, 18);
+    notifOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+                                        sf::Vector2f{80.f, 40.f}, 18);
+    notifOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+                                         sf::Vector2f{80.f, 40.f}, 18);
+    backButton_ = std::make_unique<Button>("返回", font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{160.f, 44.f}, 20);
 
     relayout(windowSize_);
     refreshSelection();
@@ -102,7 +100,7 @@ void PauseMenu::relayout(sf::Vector2f windowSize) {
         settingsTitle_.setPosition({windowSize.x / 2.f, py + 30.f});
 
         float labelX = px + 50.f;
-        float ctrlX  = px + 200.f;
+        float ctrlX = px + 200.f;
 
         float y = py + 110.f;
         labelTheme_.setPosition({labelX, y + 8.f});
@@ -112,12 +110,12 @@ void PauseMenu::relayout(sf::Vector2f windowSize) {
         y += 60.f;
 
         labelAnim_.setPosition({labelX, y + 8.f});
-        animOn_->setPosition ({ctrlX, y});
+        animOn_->setPosition({ctrlX, y});
         animOff_->setPosition({ctrlX + 90.f, y});
         y += 60.f;
 
         labelNotif_.setPosition({labelX, y + 8.f});
-        notifOn_->setPosition ({ctrlX, y});
+        notifOn_->setPosition({ctrlX, y});
         notifOff_->setPosition({ctrlX + 90.f, y});
         y += 70.f;
 
@@ -167,8 +165,7 @@ void PauseMenu::applyNotification(bool enabled) {
     NotificationSystem::instance().setEnabled(enabled);
     prefs_->setBool("notification_enabled", enabled);
     if (enabled)
-        NotificationSystem::instance().push("通知已开启",
-                                            NotificationType::Info);
+        NotificationSystem::instance().push("通知已开启", NotificationType::Info);
 }
 
 void PauseMenu::handleEvent(const sf::Event& event) {
@@ -184,9 +181,11 @@ void PauseMenu::handleEvent(const sf::Event& event) {
     }
 
     if (view_ == View::Main) {
-        for (auto& b : mainButtons_) b->handleEvent(event);
+        for (auto& b : mainButtons_)
+            b->handleEvent(event);
     } else {
-        for (auto& b : themeButtons_) b->handleEvent(event);
+        for (auto& b : themeButtons_)
+            b->handleEvent(event);
         animOn_->handleEvent(event);
         animOff_->handleEvent(event);
         notifOn_->handleEvent(event);
@@ -197,9 +196,14 @@ void PauseMenu::handleEvent(const sf::Event& event) {
 
 void PauseMenu::update(float /*dt*/) {
     if (view_ == View::Main) {
-        if (mainButtons_[0]->consumeClick()) pendingAction_ = Action::Resume;
-        if (mainButtons_[1]->consumeClick()) { switchToSettings(); return; }
-        if (mainButtons_[2]->consumeClick()) pendingAction_ = Action::SaveAndQuit;
+        if (mainButtons_[0]->consumeClick())
+            pendingAction_ = Action::Resume;
+        if (mainButtons_[1]->consumeClick()) {
+            switchToSettings();
+            return;
+        }
+        if (mainButtons_[2]->consumeClick())
+            pendingAction_ = Action::SaveAndQuit;
     } else {
         for (int i = 0; i < 3; ++i) {
             if (themeButtons_[i]->consumeClick()) {
@@ -256,14 +260,16 @@ void PauseMenu::render(sf::RenderTarget& target) {
 
     if (view_ == View::Main) {
         target.draw(title_);
-        for (auto& b : mainButtons_) b->render(target);
+        for (auto& b : mainButtons_)
+            b->render(target);
     } else {
         target.draw(settingsTitle_);
         target.draw(labelTheme_);
         target.draw(labelAnim_);
         target.draw(labelNotif_);
         target.draw(hintText_);
-        for (auto& b : themeButtons_) b->render(target);
+        for (auto& b : themeButtons_)
+            b->render(target);
         animOn_->render(target);
         animOff_->render(target);
         notifOn_->render(target);

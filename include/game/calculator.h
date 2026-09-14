@@ -1,6 +1,6 @@
 #pragma once
-#include <memory>
 #include "logging.h"
+#include <memory>
 
 class Calculator {
 public:

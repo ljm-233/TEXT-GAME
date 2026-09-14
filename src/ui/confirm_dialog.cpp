@@ -1,17 +1,14 @@
 #include "confirm_dialog.h"
+#include "strings.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
-#include "strings.h"
 
-ConfirmDialog::ConfirmDialog(const sf::Font& font,
-                             const std::string& message,
-                             sf::Vector2f windowSize,
-                             Mode mode)
-    : mode_(mode),
-      message_(font, toSf(message), scaledFontSize(24)),
-      windowSize_(windowSize) {
-
+ConfirmDialog::ConfirmDialog(const sf::Font& font, const std::string& message,
+                             sf::Vector2f windowSize, Mode mode)
+      : mode_(mode),
+        message_(font, toSf(message), scaledFontSize(24)),
+        windowSize_(windowSize) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 160));
     backdrop_.setSize(windowSize_);
 
@@ -21,13 +18,13 @@ ConfirmDialog::ConfirmDialog(const sf::Font& font,
     message_.setFillColor(getTheme().textPrimary);
 
     if (mode_ == Mode::Info) {
-        yesButton_ = std::make_unique<Button>("确定", font,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{140.f, 50.f}, 22);
+        yesButton_ = std::make_unique<Button>("确定", font, sf::Vector2f{0.f, 0.f},
+                                              sf::Vector2f{140.f, 50.f}, 22);
     } else {
-        yesButton_ = std::make_unique<Button>(Str::Yes, font,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{120.f, 50.f}, 22);
-        noButton_  = std::make_unique<Button>(Str::No, font,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{120.f, 50.f}, 22);
+        yesButton_ = std::make_unique<Button>(Str::Yes, font, sf::Vector2f{0.f, 0.f},
+                                              sf::Vector2f{120.f, 50.f}, 22);
+        noButton_ = std::make_unique<Button>(Str::No, font, sf::Vector2f{0.f, 0.f},
+                                             sf::Vector2f{120.f, 50.f}, 22);
     }
 
     relayout(windowSize_);
@@ -68,7 +65,8 @@ void ConfirmDialog::relayout(sf::Vector2f windowSize) {
 
 void ConfirmDialog::handleEvent(const sf::Event& event) {
     yesButton_->handleEvent(event);
-    if (noButton_) noButton_->handleEvent(event);
+    if (noButton_)
+        noButton_->handleEvent(event);
 
     if (yesButton_->consumeClick()) {
         result_ = (mode_ == Mode::Info) ? Result::Ok : Result::Yes;
@@ -93,5 +91,6 @@ void ConfirmDialog::render(sf::RenderTarget& target) {
     target.draw(panel_);
     target.draw(message_);
     yesButton_->render(target);
-    if (noButton_) noButton_->render(target);
+    if (noButton_)
+        noButton_->render(target);
 }

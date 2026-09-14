@@ -1,18 +1,16 @@
 #pragma once
-#include "scene.h"
 #include "background.h"
 #include "game_world.h"
-#include "save_manager.h"
-#include "preferences.h"
 #include "pause_menu.h"
+#include "preferences.h"
+#include "save_manager.h"
+#include "scene.h"
 #include <memory>
 
 class GameScene : public Scene {
 public:
-    GameScene(std::shared_ptr<Background>  background,
-              const sf::Font&              font,
-              std::shared_ptr<Logger>      logger,
-              SaveInfo                     save,
+    GameScene(std::shared_ptr<Background> background, const sf::Font& font,
+              std::shared_ptr<Logger> logger, SaveInfo save,
               std::shared_ptr<SaveManager> saveManager,
               std::shared_ptr<Preferences> preferences);
 
@@ -24,14 +22,16 @@ public:
 
 private:
     bool loadLevel(int index);
+    void refreshHud();
+    void refreshOverlayLayout(float winW, float winH);
     void renderStateOverlay(sf::RenderTarget& rt, float winW, float winH);
 
-    std::shared_ptr<Background>  background_;
-    std::shared_ptr<Logger>      logger_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<Logger> logger_;
     std::shared_ptr<SaveManager> saveManager_;
     std::shared_ptr<Preferences> preferences_;
-    SaveInfo                     save_;
-    const sf::Font*              font_ = nullptr;
+    SaveInfo save_;
+    const sf::Font* font_ = nullptr;
 
     int levelIndex_ = 1;
 
@@ -39,14 +39,32 @@ private:
     std::unique_ptr<PauseMenu> pauseMenu_;
     bool paused_ = false;
 
-    sf::Text  hudText_;
-    sf::Text  overlayTitle_;
-    sf::Text  overlayHint_;
-    sf::RectangleShape overlayBg_;
+    GameWorld::State lastState_ = GameWorld::State::Playing;
 
-    SceneId   nextScene_ = SceneId::None;
+    // ===== 渲染缓存 =====
+    // 世界 view：只在窗口尺寸变化时重建
+    sf::View worldView_;
+    float lastViewWinW_ = 0.f;
+    float lastViewWinH_ = 0.f;
+
+    // HUD：只在数值变化时刷新字符串
+    sf::Text hudText_;
+    int lastHudLives_ = -1;
+    int lastHudCoins_ = -1;
+    int lastHudLevel_ = -1;
+
+    // Overlay：布局只在窗口尺寸变化时重算
+    sf::Text overlayTitle_;
+    sf::Text overlayHint_;
+    sf::Text overlaySubHint_;
+    sf::RectangleShape overlayBg_;
+    float lastOverlayWinW_ = 0.f;
+    float lastOverlayWinH_ = 0.f;
+    GameWorld::State lastOverlayState_ = GameWorld::State::Playing;
+
+    SceneId nextScene_ = SceneId::None;
 
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;
-    static constexpr int   kMaxLevels = 9;
+    static constexpr int kMaxLevels = 9;
 };

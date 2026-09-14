@@ -1,16 +1,15 @@
 #pragma once
+#include "button.h"
+#include "preferences.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <vector>
-#include "button.h"
-#include "preferences.h"
 
 class PauseMenu {
 public:
     enum class Action { None, Resume, SaveAndQuit };
 
-    PauseMenu(const sf::Font& font,
-              std::shared_ptr<Preferences> prefs,
+    PauseMenu(const sf::Font& font, std::shared_ptr<Preferences> prefs,
               sf::Vector2f windowSize);
 
     void handleEvent(const sf::Event& event);
@@ -45,11 +44,11 @@ private:
     std::vector<std::unique_ptr<Button>> mainButtons_;
 
     // 设置面板
-    sf::Text  settingsTitle_;
-    sf::Text  labelTheme_;
-    sf::Text  labelAnim_;
-    sf::Text  labelNotif_;
-    sf::Text  hintText_;
+    sf::Text settingsTitle_;
+    sf::Text labelTheme_;
+    sf::Text labelAnim_;
+    sf::Text labelNotif_;
+    sf::Text hintText_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
     std::unique_ptr<Button> animOn_, animOff_;
     std::unique_ptr<Button> notifOn_, notifOff_;

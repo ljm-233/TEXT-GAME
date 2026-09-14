@@ -17,6 +17,6 @@ struct Theme {
 };
 
 const Theme& getTheme();
-ThemeId      getThemeId();
-void         setTheme(ThemeId id);
-const char*  themeName(ThemeId id);
+ThemeId getThemeId();
+void setTheme(ThemeId id);
+const char* themeName(ThemeId id);

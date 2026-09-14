@@ -5,7 +5,7 @@
 
 class Coin : public GameObject {
 public:
-    explicit Coin(Vec2 pos);
+    Coin(Vec2 pos, int tileSize);
 
     void update(float dt, const Level& level) override;
     void render(sf::RenderTarget& target) const override;
@@ -17,7 +17,8 @@ public:
     bool collected() const { return collected_; }
 
 private:
-    Vec2 pos_;
+    Vec2 pos_; // 瓦片左上角
+    int tileSize_;
     bool collected_ = false;
     float animTimer_ = 0.f;
 

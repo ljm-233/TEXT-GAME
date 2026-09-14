@@ -5,5 +5,6 @@
 // 存放上次打开的存档、上次窗口位置等
 class RuntimeConfig : public Config {
 public:
-    explicit RuntimeConfig(const Paths& p) : Config(p, "runtime.conf") {}
+    explicit RuntimeConfig(const Paths& p)
+          : Config(p, "runtime.conf") {}
 };

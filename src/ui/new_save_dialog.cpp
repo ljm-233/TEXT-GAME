@@ -1,16 +1,14 @@
 #include "new_save_dialog.h"
+#include "strings.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
-#include "strings.h"
 
-NewSaveDialog::NewSaveDialog(const sf::Font& font,
-                             const std::string& defaultName,
+NewSaveDialog::NewSaveDialog(const sf::Font& font, const std::string& defaultName,
                              sf::Vector2f windowSize)
-    : title_(font, toSf(Str::NewSaveTitle), scaledFontSize(26)),
-      hint_(font, toSf(Str::NewSaveHint), scaledFontSize(20)),
-      windowSize_(windowSize) {
-
+      : title_(font, toSf(Str::NewSaveTitle), scaledFontSize(26)),
+        hint_(font, toSf(Str::NewSaveHint), scaledFontSize(20)),
+        windowSize_(windowSize) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 160));
     backdrop_.setSize(windowSize_);
 
@@ -21,16 +19,16 @@ NewSaveDialog::NewSaveDialog(const sf::Font& font,
     title_.setFillColor(getTheme().textPrimary);
     hint_.setFillColor(getTheme().textSecondary);
 
-    input_ = std::make_unique<TextInput>(
-        font, sf::Vector2f{0.f, 0.f}, sf::Vector2f{380.f, 46.f},
-        Str::NewSavePlaceholder, 20, 24);
+    input_ = std::make_unique<TextInput>(font, sf::Vector2f{0.f, 0.f},
+                                         sf::Vector2f{380.f, 46.f},
+                                         Str::NewSavePlaceholder, 20, 24);
     input_->setText(defaultName);
-    input_->setFocused(true);   // 打开对话框即聚焦
+    input_->setFocused(true); // 打开对话框即聚焦
 
-    createButton_ = std::make_unique<Button>(Str::BtnCreate, font,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{140.f, 48.f}, 22);
-    cancelButton_ = std::make_unique<Button>(Str::BtnCancel, font,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{140.f, 48.f}, 22);
+    createButton_ = std::make_unique<Button>(Str::BtnCreate, font, sf::Vector2f{0.f, 0.f},
+                                             sf::Vector2f{140.f, 48.f}, 22);
+    cancelButton_ = std::make_unique<Button>(Str::BtnCancel, font, sf::Vector2f{0.f, 0.f},
+                                             sf::Vector2f{140.f, 48.f}, 22);
 
     relayout(windowSize_);
 }

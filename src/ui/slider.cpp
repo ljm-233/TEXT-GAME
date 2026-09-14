@@ -6,14 +6,14 @@
 #include <cmath>
 #include <string>
 
-Slider::Slider(const sf::Font& font,
-               float minValue, float maxValue, float initialValue,
+Slider::Slider(const sf::Font& font, float minValue, float maxValue, float initialValue,
                sf::Vector2f position, sf::Vector2f size)
-    : valueText_(font, sf::String(), scaledFontSize(20)),
-      position_(position), size_(size),
-      min_(minValue), max_(maxValue),
-      value_(std::clamp(initialValue, minValue, maxValue)) {
-
+      : valueText_(font, sf::String(), scaledFontSize(20)),
+        position_(position),
+        size_(size),
+        min_(minValue),
+        max_(maxValue),
+        value_(std::clamp(initialValue, minValue, maxValue)) {
     track_.setSize(size_);
     track_.setPosition(position_);
     track_.setFillColor(getTheme().buttonNormal);
@@ -57,10 +57,8 @@ void Slider::updateLayout() {
     std::string v = std::to_string(static_cast<int>(value_));
     valueText_.setString(toSf(v));
     auto b = valueText_.getLocalBounds();
-    valueText_.setPosition({
-        position_.x + w + 16.f,
-        position_.y + h / 2.f - b.size.y / 2.f - b.position.y
-    });
+    valueText_.setPosition(
+        {position_.x + w + 16.f, position_.y + h / 2.f - b.size.y / 2.f - b.position.y});
 }
 
 void Slider::setValueFromMouse(float mouseX) {

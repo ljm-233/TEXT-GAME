@@ -5,5 +5,6 @@
 // 存放日志级别、首次运行标记等
 class BootstrapConfig : public Config {
 public:
-    explicit BootstrapConfig(const Paths& p) : Config(p, "bootstrap.conf") {}
+    explicit BootstrapConfig(const Paths& p)
+          : Config(p, "bootstrap.conf") {}
 };
