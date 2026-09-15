@@ -12,17 +12,17 @@ public:
     AABB bounds() const override;
     Type type() const override { return Type::JumpPad; }
 
-    // 冷却：触发后一段时间内不再触发
     bool canTrigger() const { return cooldown_ <= 0.f; }
-    void trigger() { cooldown_ = kCooldown; }
+    void trigger();
 
     static constexpr float kLaunchSpeed = -1200.f;
 
 private:
     Vec2 pos_;
-    int tileSize_;
+    int  tileSize_;
     float animTimer_ = 0.f;
-    float cooldown_ = 0.f;
+    float cooldown_  = 0.f;
+    float compressRatio_ = 0.f;   // 1.0 = 完全压缩，0 = 正常
 
     static constexpr float kCooldown = 0.3f;
 

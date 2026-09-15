@@ -115,6 +115,8 @@ add_executable(text_game
     src/game/key.cpp
     src/game/door.cpp
     src/game/spike.cpp
+    src/game/coin_sprite_factory.cpp
+    src/game/enemy_sprite_factory.cpp
     src/scene/main_menu_scene.cpp
     src/scene/save_select_scene.cpp
     src/scene/level_select_scene.cpp

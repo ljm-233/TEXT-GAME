@@ -1,7 +1,9 @@
 #pragma once
 #include "game_object.h"
 #include "vec2.h"
+#include "animator.h"
 #include <SFML/Graphics.hpp>
+#include <memory>
 
 class Coin : public GameObject {
 public:
@@ -17,10 +19,12 @@ public:
     bool collected() const { return collected_; }
 
 private:
-    Vec2 pos_; // 瓦片左上角
-    int tileSize_;
+    Vec2 pos_;
+    int  tileSize_;
     bool collected_ = false;
     float animTimer_ = 0.f;
 
-    mutable sf::CircleShape shape_;
+    std::shared_ptr<sf::Texture>       sheet_;
+    Animator                           animator_;
+    mutable std::unique_ptr<sf::Sprite> sprite_;
 };

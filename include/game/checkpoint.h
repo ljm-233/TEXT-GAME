@@ -18,10 +18,11 @@ public:
 
 private:
     Vec2 pos_;
-    int tileSize_;
+    int  tileSize_;
     bool active_ = false;
     float animTimer_ = 0.f;
 
+    mutable sf::RectangleShape poleShadow_;
     mutable sf::RectangleShape pole_;
     mutable sf::RectangleShape flag_;
 };

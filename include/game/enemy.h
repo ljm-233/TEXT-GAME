@@ -1,7 +1,9 @@
 #pragma once
 #include "game_object.h"
 #include "vec2.h"
+#include "animator.h"
 #include <SFML/Graphics.hpp>
+#include <memory>
 
 class Enemy : public GameObject {
 public:
@@ -23,9 +25,10 @@ private:
     Vec2 pos_;
     Vec2 vel_;
     Vec2 size_{28.f, 28.f};
-    int tileSize_;
+    int  tileSize_;
     bool killed_ = false;
 
-    mutable sf::RectangleShape body_;
-    mutable sf::RectangleShape eye_;
+    std::shared_ptr<sf::Texture>       sheet_;
+    Animator                           animator_;
+    mutable std::unique_ptr<sf::Sprite> sprite_;
 };

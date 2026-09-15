@@ -1,26 +1,44 @@
 #include "enemy.h"
-#include "game_constants.h"
 #include "level.h"
+#include "enemy_sprite_factory.h"
+#include "game_constants.h"
 #include <cmath>
+#include <vector>
 
 namespace {
 constexpr float kSpeed = GameConst::kEnemySpeed;
 }
 
 Enemy::Enemy(Vec2 pos, int tileSize)
-      : pos_(pos),
-        vel_(-kSpeed, 0.f),
-        tileSize_(tileSize) {
+    : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize) {
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
-    body_.setSize({size_.x, size_.y});
-    body_.setFillColor(sf::Color(220, 80, 80));
-    body_.setOutlineThickness(2.f);
-    body_.setOutlineColor(sf::Color(140, 40, 40));
+    sheet_ = EnemySpriteFactory::getSheet();
+    sprite_ = std::make_unique<sf::Sprite>(*sheet_);
 
-    eye_.setSize({5.f, 5.f});
-    eye_.setFillColor(sf::Color(255, 255, 255));
+    // 原点在帧底部中心
+    sprite_->setOrigin({
+        EnemySpriteFactory::kFrameW * 0.5f,
+        static_cast<float>(EnemySpriteFactory::kFrameH)
+    });
+
+    // 缩放到 tileSize
+    float scale = static_cast<float>(tileSize_) / EnemySpriteFactory::kFrameW;
+    sprite_->setScale({scale, scale});
+
+    // 动画剪辑
+    const int fw = EnemySpriteFactory::kFrameW;
+    const int fh = EnemySpriteFactory::kFrameH;
+
+    std::vector<sf::IntRect> frames;
+    for (int i = 0; i < EnemySpriteFactory::kFrameCount; ++i) {
+        frames.push_back(sf::IntRect({i * fw, 0}, {fw, fh}));
+    }
+
+    animator_.addClip("walk", {frames, 8.f, true});
+    animator_.play("walk");
+    animator_.applyTo(*sprite_);
 }
 
 AABB Enemy::bounds() const {
@@ -51,22 +69,29 @@ bool Enemy::cliffAhead(const Level& level) const {
 }
 
 void Enemy::update(float dt, const Level& level) {
-    if (killed_)
-        return;
+    if (killed_) return;
+
     if (wallAhead(level) || cliffAhead(level)) {
         vel_.x = -vel_.x;
     }
     pos_.x += vel_.x * dt;
+
+    animator_.update(dt);
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
-    if (killed_)
-        return;
+    if (killed_) return;
 
-    body_.setPosition({pos_.x, pos_.y});
-    target.draw(body_);
+    animator_.applyTo(*sprite_);
 
-    float eyeX = (vel_.x > 0.f) ? pos_.x + size_.x - 9.f : pos_.x + 4.f;
-    eye_.setPosition({eyeX, pos_.y + 8.f});
-    target.draw(eye_);
+    // 朝向：向左移动时水平翻转
+    float scale = static_cast<float>(tileSize_) / EnemySpriteFactory::kFrameW;
+    float dir = (vel_.x > 0.f) ? 1.f : -1.f;
+
+    sprite_->setScale({scale * dir, scale});
+    sprite_->setPosition({
+        pos_.x + size_.x * 0.5f,
+        pos_.y + size_.y
+    });
+    target.draw(*sprite_);
 }

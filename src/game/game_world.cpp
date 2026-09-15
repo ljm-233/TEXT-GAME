@@ -4,6 +4,9 @@
 #include "jump_pad.h"
 #include "checkpoint.h"
 #include "moving_platform.h"
+#include "key.h"
+#include "door.h"
+#include "spike.h"
 #include "sound_manager.h"
 #include "game_constants.h"
 #include <algorithm>
@@ -52,23 +55,25 @@ void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->verticalPlatformSpawns())
         objects_.push_back(std::make_unique<MovingPlatform>(
             pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
-    
+
+    // ===== 钥匙 =====
     for (const auto& pos : level_->keySpawns())
         objects_.push_back(std::make_unique<Key>(pos, level_->tileSize()));
 
+    // ===== 门（关着时是实体）=====
     doors_.clear();
     for (const auto& pos : level_->doorSpawns()) {
         auto d = std::make_unique<Door>(pos, level_->tileSize());
         int tx = static_cast<int>(pos.x) / level_->tileSize();
         int ty = static_cast<int>(pos.y) / level_->tileSize();
 
-        // ⭐ 关着的门 = 实体
         level_->setDynamicSolid(tx, ty, true);
 
         doors_.push_back({d.get(), tx, ty});
         objects_.push_back(std::move(d));
     }
 
+    // ===== 尖刺 =====
     for (const auto& pos : level_->spikeSpawns())
         objects_.push_back(std::make_unique<Spike>(pos, level_->tileSize()));
 }
@@ -85,7 +90,6 @@ void GameWorld::handleEvent(const sf::Event& event) {
 void GameWorld::update(float dt) {
     if (state_ != State::Playing) return;
 
-    // ===== 手柄输入（每帧读一次）=====
     if (player_) player_->handleGamepad();
 
     accumulator_ += dt;
@@ -149,7 +153,13 @@ void GameWorld::update(float dt) {
         }
         if (player_->consumeJustLanded()) {
             SoundManager::instance().playLand();
-            if (particlesEnabled_) particles_.emitLand({footX, footY});
+            if (particlesEnabled_) {
+                // ⭐ 根据下落速度决定粒子强度
+                float vy = std::abs(player_->velocity().y);
+                // vy = 300 → 弱，vy = 1000 → 强
+                float intensity = std::clamp(vy / 700.f, 0.5f, 1.5f);
+                particles_.emitLand({footX, footY}, intensity);
+            }
         }
     }
 
@@ -255,7 +265,8 @@ void GameWorld::checkCollisionsSafe() {
                     player_->addKey();
                     SoundManager::instance().playCoin();
                     if (particlesEnabled_) particles_.emitCoin(k->bounds().center());
-                    // ⭐ 收集钥匙后自动解锁所有门 + 取消实体
+
+                    // 收集钥匙后解锁所有门 + 取消实体
                     for (auto& entry : doors_) {
                         entry.door->unlock();
                         level_->setDynamicSolid(entry.tx, entry.ty, false);
@@ -263,17 +274,11 @@ void GameWorld::checkCollisionsSafe() {
                 }
                 break;
             }
-            case GameObject::Type::Door: {
-                auto* d = static_cast<Door*>(obj.get());
-                if (!d->isUnlocked()) {
-                    // 门锁着：把玩家从碰撞盒里挤出去
-                    AABB db = d->bounds();
-                    // 简单处理：如果玩家从下方靠近，就卡住不动
-                    // 从上方落到门上时，也不该站上去（门不是实体）
-                    // 简化：门不是实体，玩家直接穿过
-                }
+            case GameObject::Type::Door:
+                // 门是动态瓦片（Level::dynamicSolid_），
+                // Player 的瓦片碰撞会自动挡住，这里不需要处理
                 break;
-            }
+
             case GameObject::Type::Spike: {
                 if (!player_->isInvincible()) {
                     player_->takeDamage();
@@ -407,11 +412,11 @@ void GameWorld::reset() {
     doors_.clear();
     if (player_) player_->resetKeys();
 
-    // ⭐ 清空所有动态实体（防止重开时门残留实体状态）
+    // 清空所有动态实体
     for (int ty = 0; ty < level_->height(); ++ty)
         for (int tx = 0; tx < level_->width(); ++tx)
             level_->setDynamicSolid(tx, ty, false);
-    player_ = nullptr;
+
     spawnPlayer(level_->playerSpawn());
     player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
     spawnLevelObjects();

@@ -5,7 +5,15 @@
 #include "sound_manager.h"
 #include "game_constants.h"
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <sstream>
+
+namespace {
+// ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
+constexpr float kBaseTime = 30.f;
+constexpr float kPerCoinTime = 3.f;
+}
 
 GameScene::GameScene(std::shared_ptr<Background>  background,
                      const sf::Font&              font,
@@ -22,12 +30,16 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
       hudText_(font, sf::String(), 20),
       overlayTitle_(font, sf::String(), 48),
       overlayHint_(font, sf::String(), 24),
-      overlaySubHint_(font, sf::String(), 20) {
+      overlaySubHint_(font, sf::String(), 20),
+      overlayTime_(font, sf::String(), 22),
+      overlayStars_(font, sf::String(), 56) {
 
     hudText_.setFillColor(sf::Color::White);
     overlayTitle_.setFillColor(sf::Color(255, 255, 255));
     overlayHint_.setFillColor(sf::Color(200, 200, 220));
     overlaySubHint_.setFillColor(sf::Color(180, 180, 200));
+    overlayTime_.setFillColor(sf::Color(220, 220, 240));
+    overlayStars_.setFillColor(sf::Color(255, 220, 80));
 
     levelIndex_ = std::max(1, save_.currentLevel);
 
@@ -68,6 +80,13 @@ bool GameScene::loadLevel(int index) {
     world_->setViewSize(kLogicalW, kLogicalH);
     levelIndex_ = index;
     lastState_ = GameWorld::State::Playing;
+    lastLives_ = 3;
+
+    // ⭐ 重置计时
+    levelTime_ = 0.f;
+    finalStars_ = 0;
+    finalCoins_ = 0;
+    finalTotalCoins_ = 0;
 
     if (preferences_->getBool("level_intro", true)) {
         intro_ = std::make_unique<LevelIntro>(
@@ -95,17 +114,48 @@ void GameScene::refreshHud() {
     lastHudCoins_ = coins;
     lastHudLevel_ = levelIndex_;
 
+    char timeBuf[32];
+    std::snprintf(timeBuf, sizeof(timeBuf), "%.1f", levelTime_);
+
     std::string hud =
         "存档: " + save_.name +
         "   关卡: " + std::to_string(levelIndex_) +
         "   生命: " + std::to_string(lives) +
         "   金币: " + std::to_string(coins) +
-        " / " + std::to_string(world_->totalCoins());
+        " / " + std::to_string(world_->totalCoins()) +
+        "   时间: " + timeBuf + "s";
+
     if (world_->player().keys() > 0) {
         hud += "   钥匙: " + std::to_string(world_->player().keys());
     }
     hud += "   WASD 移动，Space 跳跃，ESC 暂停";
     hudText_.setString(toSf(hud));
+}
+
+// ============================================================
+// 星级计算
+// ============================================================
+
+int GameScene::targetTime() const {
+    if (!world_) return 60;
+    int totalCoins = world_->totalCoins();
+    return static_cast<int>(kBaseTime + totalCoins * kPerCoinTime);
+}
+
+int GameScene::calcStars() const {
+    if (!world_) return 1;
+
+    bool allCoins = (world_->coins() == world_->totalCoins());
+    bool fastEnough = (levelTime_ <= static_cast<float>(targetTime()));
+
+    if (allCoins && fastEnough) return 3;
+    if (allCoins || fastEnough) return 2;
+    return 1;
+}
+
+void GameScene::applyStars() {
+    if (finalStars_ <= 0) return;
+    saveManager_->setLevelStar(save_.filename, levelIndex_, finalStars_);
 }
 
 void GameScene::refreshOverlayLayout(float winW, float winH) {
@@ -138,16 +188,46 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
     auto tb = overlayTitle_.getLocalBounds();
     overlayTitle_.setOrigin({tb.position.x + tb.size.x / 2.f,
                              tb.position.y + tb.size.y / 2.f});
-    overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 60.f});
+    overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
 
-    std::string stats = "金币: " + std::to_string(world_->coins()) +
-                        " / " + std::to_string(world_->totalCoins());
+    // 金币统计
+    std::string stats = "金币: " + std::to_string(finalCoins_) +
+                        " / " + std::to_string(finalTotalCoins_);
     overlayHint_.setString(toSf(stats));
+    overlayHint_.setFillColor(sf::Color(200, 200, 220));
     auto hb = overlayHint_.getLocalBounds();
     overlayHint_.setOrigin({hb.position.x + hb.size.x / 2.f,
                             hb.position.y + hb.size.y / 2.f});
-    overlayHint_.setPosition({winW / 2.f, winH / 2.f + 10.f});
+    overlayHint_.setPosition({winW / 2.f, winH / 2.f - 60.f});
 
+    // 时间统计
+    char timeBuf[64];
+    std::snprintf(timeBuf, sizeof(timeBuf),
+                  "时间: %.1f 秒  /  目标: %d 秒",
+                  levelTime_, targetTime());
+    overlayTime_.setString(toSf(timeBuf));
+    auto tb2 = overlayTime_.getLocalBounds();
+    overlayTime_.setOrigin({tb2.position.x + tb2.size.x / 2.f,
+                            tb2.position.y + tb2.size.y / 2.f});
+    overlayTime_.setPosition({winW / 2.f, winH / 2.f - 15.f});
+
+    // 星级
+    if (state == GameWorld::State::LevelComplete) {
+        std::string stars;
+        for (int i = 0; i < 3; ++i) {
+            stars += (i < finalStars_) ? "\u2605" : "\u2606";
+            if (i < 2) stars += "  ";
+        }
+        overlayStars_.setString(toSf(stars));
+        auto sb = overlayStars_.getLocalBounds();
+        overlayStars_.setOrigin({sb.position.x + sb.size.x / 2.f,
+                                 sb.position.y + sb.size.y / 2.f});
+        overlayStars_.setPosition({winW / 2.f, winH / 2.f + 60.f});
+    } else {
+        overlayStars_.setString("");
+    }
+
+    // 提示
     std::string hint;
     if (state == GameWorld::State::LevelComplete) {
         hint = "Enter 继续    R 重玩本关    ESC 返回";
@@ -155,10 +235,10 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
         hint = "R 重试    ESC 返回";
     }
     overlaySubHint_.setString(toSf(hint));
-    auto sb = overlaySubHint_.getLocalBounds();
-    overlaySubHint_.setOrigin({sb.position.x + sb.size.x / 2.f,
-                               sb.position.y + sb.size.y / 2.f});
-    overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 70.f});
+    auto sb2 = overlaySubHint_.getLocalBounds();
+    overlaySubHint_.setOrigin({sb2.position.x + sb2.size.x / 2.f,
+                               sb2.position.y + sb2.size.y / 2.f});
+    overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 140.f});
 }
 
 void GameScene::handleEvent(const sf::Event& event) {
@@ -187,6 +267,12 @@ void GameScene::handleEvent(const sf::Event& event) {
             if (kp->code == sf::Keyboard::Key::R) {
                 world_->reset();
                 lastState_ = GameWorld::State::Playing;
+                lastLives_ = 3;
+                levelTime_ = 0.f;
+                finalStars_ = 0;
+                finalCoins_ = 0;
+                finalTotalCoins_ = 0;
+                lastOverlayState_ = GameWorld::State::Playing;
                 return;
             }
             if (state == GameWorld::State::LevelComplete) {
@@ -219,6 +305,9 @@ void GameScene::handleEvent(const sf::Event& event) {
         if (kp->code == sf::Keyboard::Key::R) {
             world_->reset();
             lastState_ = GameWorld::State::Playing;
+            lastLives_ = 3;
+            levelTime_ = 0.f;
+            lastOverlayState_ = GameWorld::State::Playing;
             NotificationSystem::instance().push("已重生",
                                                 NotificationType::Info);
             return;
@@ -251,18 +340,36 @@ void GameScene::update(float dt) {
 
     if (world_->state() != GameWorld::State::Playing) return;
 
+    // ⭐ 累加计时
+    levelTime_ += dt;
+
     world_->update(dt);
     if (parallax_) parallax_->update(dt);
+
+    // 检测掉血
+    int curLives = world_->lives();
+    lastLives_ = curLives;
 
     GameWorld::State cur = world_->state();
     if (cur != lastState_) {
         if (cur == GameWorld::State::LevelComplete) {
+            // ⭐ 计算并写入星级
+            finalCoins_ = world_->coins();
+            finalTotalCoins_ = world_->totalCoins();
+            finalStars_ = calcStars();
+            applyStars();
+
             saveManager_->updateProgress(save_.filename, world_->coins(),
                                          levelIndex_);
             SoundManager::instance().playLevelComplete();
+
             NotificationSystem::instance().push(
-                "关卡完成！按 Enter 继续", NotificationType::Success, 5.f);
+                "关卡完成！获得 " + std::to_string(finalStars_) + " 星",
+                NotificationType::Success, 5.f);
         } else if (cur == GameWorld::State::GameOver) {
+            finalCoins_ = world_->coins();
+            finalTotalCoins_ = world_->totalCoins();
+            finalStars_ = 0;
             SoundManager::instance().playGameOver();
             NotificationSystem::instance().push(
                 "游戏失败，按 R 重试", NotificationType::Error, 5.f);
@@ -280,6 +387,10 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
     rt.draw(overlayBg_);
     rt.draw(overlayTitle_);
     rt.draw(overlayHint_);
+    if (state == GameWorld::State::LevelComplete) {
+        rt.draw(overlayTime_);
+        rt.draw(overlayStars_);
+    }
     rt.draw(overlaySubHint_);
 }
 
@@ -291,12 +402,10 @@ void GameScene::render(Window& window) {
 
     sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
 
-    // 阶段 1：全屏背景
     rt.setView(screenView);
     rt.clear(sf::Color::Black);
     if (background_) background_->render(rt);
 
-    // 阶段 2：游戏世界
     if (winW != lastViewWinW_ || winH != lastViewWinH_) {
         lastViewWinW_ = winW;
         lastViewWinH_ = winH;
@@ -310,7 +419,6 @@ void GameScene::render(Window& window) {
         worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
     }
 
-    // 从 Preferences 读开关
     world_->setShowColliders(preferences_->getBool("show_colliders", false));
     world_->setScreenShake(preferences_->getBool("screen_shake", true));
     world_->setParticles(preferences_->getBool("particles", true));
@@ -321,7 +429,6 @@ void GameScene::render(Window& window) {
     worldView_.setCenter({camCenter.x, camCenter.y});
     rt.setView(worldView_);
 
-    // 视差背景
     if (parallax_ && preferences_->getBool("parallax", true)) {
         float camLeft = camCenter.x - kLogicalW * 0.5f;
         float camTop  = camCenter.y - kLogicalH * 0.5f;
@@ -330,7 +437,6 @@ void GameScene::render(Window& window) {
 
     world_->render(rt);
 
-    // 阶段 3：HUD
     rt.setView(screenView);
 
     refreshHud();

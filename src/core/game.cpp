@@ -11,6 +11,7 @@
 #include "focus_group.h"
 #include <SFML/System/Clock.hpp>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 
@@ -37,7 +38,13 @@ Game::Game(std::shared_ptr<Window>        window,
     sceneManager_ = std::make_unique<SceneManager>(
         [this](SceneId id) { return createScene(id); });
 
-    transitionOverlay_.setFillColor(sf::Color(0, 0, 0, 0));
+    // ⭐ 初始化马赛克延迟
+    transitionVA_.setPrimitiveType(sf::PrimitiveType::Triangles);
+
+    cellDelays_.resize(kCellsX * kCellsY);
+    std::mt19937 rng(12345);   // 固定种子，每次启动图案一样
+    std::uniform_real_distribution<float> dist(0.f, 0.7f);
+    for (auto& d : cellDelays_) d = dist(rng);
 }
 
 std::unique_ptr<Scene> Game::createScene(SceneId id) {
@@ -73,16 +80,18 @@ void Game::switchScene(SceneId next) {
     if (next == SceneId::None) return;
     pendingScene_ = next;
     transitionPhase_ = TransitionPhase::FadingOut;
+    transitionProgress_ = 0.f;
 }
 
 void Game::updateTransition(float dt) {
     if (transitionPhase_ == TransitionPhase::None) return;
 
     if (transitionPhase_ == TransitionPhase::FadingOut) {
-        transitionAlpha_ += transitionSpeed_ * dt;
-        if (transitionAlpha_ >= 1.f) {
-            transitionAlpha_ = 1.f;
+        transitionProgress_ += transitionSpeed_ * dt;
+        if (transitionProgress_ >= 1.f) {
+            transitionProgress_ = 1.f;
 
+            // ⭐ 真正切换场景
             flushConfigs();
             if (pendingScene_ == SceneId::Exit) {
                 window_->close();
@@ -96,14 +105,49 @@ void Game::updateTransition(float dt) {
             pendingScene_ = SceneId::None;
             transitionPhase_ = TransitionPhase::FadingIn;
 
-            // 场景切换后清空焦点（新场景会重新注册）
             FocusGroup::instance().clear();
         }
     } else if (transitionPhase_ == TransitionPhase::FadingIn) {
-        transitionAlpha_ -= transitionSpeed_ * dt;
-        if (transitionAlpha_ <= 0.f) {
-            transitionAlpha_ = 0.f;
+        transitionProgress_ -= transitionSpeed_ * dt;
+        if (transitionProgress_ <= 0.f) {
+            transitionProgress_ = 0.f;
             transitionPhase_ = TransitionPhase::None;
+        }
+    }
+}
+
+// ⭐ 构建马赛克溶解几何
+void Game::buildTransitionGeometry(float winW, float winH) {
+    transitionVA_.clear();
+
+    float t = transitionProgress_;
+    float cellW = winW / static_cast<float>(kCellsX);
+    float cellH = winH / static_cast<float>(kCellsY);
+
+    for (int y = 0; y < kCellsY; ++y) {
+        for (int x = 0; x < kCellsX; ++x) {
+            float delay = cellDelays_[static_cast<size_t>(y * kCellsX + x)];
+
+            // 本地进度：delay 到 delay+0.3 之间完成
+            float local = (t - delay) / 0.3f;
+            local = std::clamp(local, 0.f, 1.f);
+            if (local <= 0.f) continue;
+
+            auto a = static_cast<std::uint8_t>(local * 255.f);
+            sf::Color c(0, 0, 0, a);
+
+            float x0 = static_cast<float>(x) * cellW;
+            float y0 = static_cast<float>(y) * cellH;
+            float x1 = x0 + cellW;
+            float y1 = y0 + cellH;
+
+            transitionVA_.append(sf::Vertex{{x0, y0}, c});
+            transitionVA_.append(sf::Vertex{{x1, y0}, c});
+            transitionVA_.append(sf::Vertex{{x1, y1}, c});
+
+            transitionVA_.append(sf::Vertex{{x0, y0}, c});
+            transitionVA_.append(sf::Vertex{{x1, y1}, c});
+            transitionVA_.append(sf::Vertex{{x0, y1}, c});
         }
     }
 }
@@ -185,12 +229,10 @@ void Game::renderOverlays() {
 
     NotificationSystem::instance().render(rt);
 
-    if (transitionPhase_ != TransitionPhase::None && transitionAlpha_ > 0.f) {
-        auto a = static_cast<std::uint8_t>(
-            std::clamp(transitionAlpha_, 0.f, 1.f) * 255.f);
-        transitionOverlay_.setSize({winW, winH});
-        transitionOverlay_.setFillColor(sf::Color(0, 0, 0, a));
-        rt.draw(transitionOverlay_);
+    // ⭐ 马赛克溶解过渡
+    if (transitionPhase_ != TransitionPhase::None && transitionProgress_ > 0.f) {
+        buildTransitionGeometry(winW, winH);
+        rt.draw(transitionVA_);
     }
 }
 
@@ -213,18 +255,13 @@ void Game::run() {
         float dt = clock.restart().asSeconds();
         if (dt > 0.1f) dt = 0.1f;
 
-        // ============================================================
-        // ⭐ 手柄与焦点
-        // ============================================================
         Gamepad::instance().update();
 
         FocusGroup::instance().setEnabled(
             preferences_->getBool("gamepad_enabled", true));
         FocusGroup::instance().update(dt);
 
-        // ============================================================
         // 自动暂停
-        // ============================================================
         if (preferences_->getBool("auto_pause_on_blur", true)) {
             bool focused = window_->isFocused();
             if (!focused && !autoPaused_) {
@@ -243,9 +280,6 @@ void Game::run() {
             }
         }
 
-        // ============================================================
-        // FPS / 定时 flush
-        // ============================================================
         fpsFrameCount_++;
         fpsElapsed_ += dt;
         if (fpsElapsed_ >= 0.5f) {
@@ -261,16 +295,10 @@ void Game::run() {
 
         Scene& scene = sceneManager_->current();
 
-        // ============================================================
-        // 真实事件（键盘 + 鼠标）
-        // ============================================================
         window_->pollEvents([&](const sf::Event& e) {
             if (!transitioning) scene.handleEvent(e);
         });
 
-        // ============================================================
-        // 合成事件（来自手柄的 B 键 / Start 键）
-        // ============================================================
         auto synth = FocusGroup::instance().takePendingEvents();
         if (!transitioning) {
             for (auto& e : synth) {
@@ -278,9 +306,6 @@ void Game::run() {
             }
         }
 
-        // ============================================================
-        // 更新 + 渲染
-        // ============================================================
         if (!transitioning) {
             scene.update(dt);
         }
@@ -292,9 +317,6 @@ void Game::run() {
         renderOverlays();
         window_->display();
 
-        // ============================================================
-        // 场景切换
-        // ============================================================
         if (!transitioning) {
             SceneId next = scene.nextScene();
             if (next != SceneId::None && next != sceneManager_->currentId()) {

@@ -22,6 +22,8 @@ private:
     bool collected_ = false;
     float animTimer_ = 0.f;
 
-    mutable sf::ConvexShape keyShape_;
-    mutable sf::RectangleShape barShape_;
+    mutable sf::ConvexShape headShape_;
+    mutable sf::RectangleShape shaftShape_;
+    mutable sf::RectangleShape toothShape1_;
+    mutable sf::RectangleShape toothShape2_;
 };
