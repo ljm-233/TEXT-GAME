@@ -3,6 +3,7 @@
 #include "enemy.h"
 #include "jump_pad.h"
 #include "checkpoint.h"
+#include "moving_platform.h"
 #include "sound_manager.h"
 #include "game_constants.h"
 #include <algorithm>
@@ -41,6 +42,16 @@ void GameWorld::spawnLevelObjects() {
 
     for (const auto& pos : level_->checkpointSpawns())
         objects_.push_back(std::make_unique<Checkpoint>(pos, level_->tileSize()));
+
+    // 水平移动平台：范围 4 格
+    for (const auto& pos : level_->movingPlatformSpawns())
+        objects_.push_back(std::make_unique<MovingPlatform>(
+            pos, level_->tileSize(), 4.f * level_->tileSize(), true, 80.f));
+
+    // 垂直移动平台：范围 3 格
+    for (const auto& pos : level_->verticalPlatformSpawns())
+        objects_.push_back(std::make_unique<MovingPlatform>(
+            pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
 }
 
 void GameWorld::setViewSize(float w, float h) {
@@ -58,12 +69,51 @@ void GameWorld::update(float dt) {
     accumulator_ += dt;
     int iterations = 0;
     while (accumulator_ >= GameConst::kFixedTimeStep && iterations < 8) {
+        float step = GameConst::kFixedTimeStep;
+
+        // ① 移动平台先更新
         for (auto& obj : objects_) {
-            obj->update(GameConst::kFixedTimeStep, *level_);
+            if (obj->type() == GameObject::Type::Platform) {
+                obj->update(step, *level_);
+            }
         }
+
+        // ② 玩家物理
+        if (player_) player_->update(step, *level_);
+
+        // ③ 玩家站台检测
+        if (player_) {
+            AABB pb = player_->bounds();
+            for (auto& obj : objects_) {
+                if (obj->type() != GameObject::Type::Platform) continue;
+                auto* mp = static_cast<MovingPlatform*>(obj.get());
+                AABB plat = mp->bounds();
+
+                bool overlapX = pb.right() > plat.left() + 1.f &&
+                                pb.left() < plat.right() - 1.f;
+                bool nearTop  = pb.bottom() >= plat.top() - 4.f &&
+                                pb.bottom() <= plat.top() + 10.f;
+
+                if (overlapX && nearTop && player_->velocity().y >= -1.f) {
+                    player_->landOnPlatform(plat.top());
+                    player_->moveBy(mp->lastDelta());
+                    break;
+                }
+            }
+        }
+
+        // ④ 其他对象（跳过平台和玩家——它们已经单独更新过了）
+        for (auto& obj : objects_) {
+            auto t = obj->type();
+            if (t != GameObject::Type::Platform &&
+                t != GameObject::Type::Player) {
+                obj->update(step, *level_);
+            }
+        }
+
         checkCollisionsSafe();
         if (state_ != State::Playing) return;
-        accumulator_ -= GameConst::kFixedTimeStep;
+        accumulator_ -= step;
         ++iterations;
     }
 
@@ -116,6 +166,7 @@ void GameWorld::checkCollisionsSafe() {
 
     for (auto& obj : objects_) {
         if (obj.get() == player_) continue;
+        if (obj->type() == GameObject::Type::Platform) continue;
         if (!obj->bounds().intersects(pb)) continue;
 
         switch (obj->type()) {
@@ -157,8 +208,10 @@ void GameWorld::checkCollisionsSafe() {
                 break;
             }
             case GameObject::Type::JumpPad: {
-                if (player_->velocity().y >= 0.f) {
+                auto* jp = static_cast<JumpPad*>(obj.get());
+                if (jp->canTrigger()) {
                     player_->setVelocityY(JumpPad::kLaunchSpeed);
+                    jp->trigger();
                     SoundManager::instance().playJump();
                     if (particlesEnabled_) particles_.emitJump(pb.center());
                 }
@@ -205,6 +258,7 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
             case GameObject::Type::Coin:       color = sf::Color(255, 255, 0); break;
             case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
             case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
+            case GameObject::Type::Platform:   color = sf::Color(160, 120, 80); break;
             default:                            color = sf::Color(200, 200, 200); break;
         }
         rect.setOutlineColor(color);

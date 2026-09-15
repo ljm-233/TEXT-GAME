@@ -1,6 +1,8 @@
 #include "level.h"
 #include "camera.h"
+#include "utf8.h"
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -18,6 +20,8 @@ bool Level::loadFromString(const std::string& text) {
     coinSpawns_.clear();
     jumpPadSpawns_.clear();
     checkpointSpawns_.clear();
+    movingPlatformSpawns_.clear();
+    verticalPlatformSpawns_.clear();
     hasGoal_ = false;
 
     std::istringstream iss(text);
@@ -47,6 +51,8 @@ bool Level::loadFromString(const std::string& text) {
                 case 'C': coinSpawns_.push_back({px, py}); c = ' '; break;
                 case 'J': jumpPadSpawns_.push_back({px, py}); c = ' '; break;
                 case 'S': checkpointSpawns_.push_back({px, py}); c = ' '; break;
+                case 'M': movingPlatformSpawns_.push_back({px, py}); c = ' '; break;
+                case 'V': verticalPlatformSpawns_.push_back({px, py}); c = ' '; break;
                 case 'G': goalPos_ = {px, py}; hasGoal_ = true; c = ' '; break;
                 default: break;
             }
@@ -69,13 +75,16 @@ void Level::render(sf::RenderTarget& target,
                    float camLeft, float camTop,
                    float camW,    float camH) const {
     int ts = tileSize_;
+    float tsF = static_cast<float>(ts);
+    float time = animClock_.getElapsedTime().asSeconds();
 
     int left   = std::max(0, static_cast<int>(camLeft / ts));
     int right  = std::min(width_,  static_cast<int>((camLeft + camW) / ts) + 1);
     int top    = std::max(0, static_cast<int>(camTop / ts));
     int bottom = std::min(height_, static_cast<int>((camTop + camH) / ts) + 1);
 
-    sf::RectangleShape rect({static_cast<float>(ts), static_cast<float>(ts)});
+    // ========== 瓦片 ==========
+    sf::RectangleShape rect({tsF, tsF});
     rect.setFillColor(sf::Color(80, 80, 100));
     rect.setOutlineThickness(1.f);
     rect.setOutlineColor(sf::Color(60, 60, 80));
@@ -83,9 +92,111 @@ void Level::render(sf::RenderTarget& target,
     for (int y = top; y < bottom; ++y) {
         for (int x = left; x < right; ++x) {
             if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
-            rect.setPosition({static_cast<float>(x * ts),
-                              static_cast<float>(y * ts)});
+            rect.setPosition({static_cast<float>(x) * tsF,
+                              static_cast<float>(y) * tsF});
             target.draw(rect);
+        }
+    }
+
+    // ========== 出生点图标（脉动蓝环 + 呼吸光点）==========
+    {
+        float cx = playerSpawn_.x + tsF * 0.5f;
+        float cy = playerSpawn_.y + tsF * 0.5f;
+
+        // 脉动系数 0.85 ~ 1.15
+        float pulse = 1.f + std::sin(time * 3.f) * 0.15f;
+
+        // 外圈（脉动）
+        float r1 = tsF * 0.45f * pulse;
+        sf::CircleShape ring(r1);
+        ring.setOrigin({r1, r1});
+        ring.setPosition({cx, cy});
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineThickness(2.5f);
+        ring.setOutlineColor(sf::Color(120, 200, 255, 220));
+        target.draw(ring);
+
+        // 内圈（反向脉动）
+        float pulse2 = 1.f + std::sin(time * 3.f + 1.5f) * 0.10f;
+        float r2 = tsF * 0.28f * pulse2;
+        sf::CircleShape ring2(r2);
+        ring2.setOrigin({r2, r2});
+        ring2.setPosition({cx, cy});
+        ring2.setFillColor(sf::Color::Transparent);
+        ring2.setOutlineThickness(1.5f);
+        ring2.setOutlineColor(sf::Color(160, 220, 255, 180));
+        target.draw(ring2);
+
+        // 中心光点（呼吸）
+        float dotAlpha = 180.f + std::sin(time * 4.f) * 60.f;
+        float r3 = tsF * 0.14f;
+        sf::CircleShape dot(r3);
+        dot.setOrigin({r3, r3});
+        dot.setPosition({cx, cy});
+        dot.setFillColor(sf::Color(200, 235, 255,
+            static_cast<std::uint8_t>(std::clamp(dotAlpha, 0.f, 255.f))));
+        target.draw(dot);
+    }
+
+    // ========== 终点图标（飘动旗帜 + 双层光晕 + GOAL 文字）==========
+    if (hasGoal_) {
+        float gx = goalPos_.x;
+        float gy = goalPos_.y;
+
+        // 光晕外层（呼吸）
+        float haloPulse = 1.f + std::sin(time * 2.2f) * 0.12f;
+        float rH1 = tsF * 0.9f * haloPulse;
+        sf::CircleShape halo(rH1);
+        halo.setOrigin({rH1, rH1});
+        halo.setPosition({gx + tsF * 0.5f, gy + tsF * 0.5f});
+        halo.setFillColor(sf::Color(255, 220, 80, 60));
+        target.draw(halo);
+
+        // 光晕内层（反向呼吸）
+        float haloPulse2 = 1.f + std::sin(time * 2.2f + 1.f) * 0.10f;
+        float rH2 = tsF * 0.6f * haloPulse2;
+        sf::CircleShape halo2(rH2);
+        halo2.setOrigin({rH2, rH2});
+        halo2.setPosition({gx + tsF * 0.5f, gy + tsF * 0.5f});
+        halo2.setFillColor(sf::Color(255, 240, 120, 110));
+        target.draw(halo2);
+
+        // 旗杆（不动）
+        sf::RectangleShape pole({3.f, tsF * 1.5f});
+        pole.setPosition({gx + tsF * 0.35f, gy - tsF * 0.3f});
+        pole.setFillColor(sf::Color(230, 230, 240));
+        pole.setOutlineThickness(1.f);
+        pole.setOutlineColor(sf::Color(120, 120, 140));
+        target.draw(pole);
+
+        // 三角旗（飘动：顶点随时间左右摇摆）
+        float flagWave = std::sin(time * 5.f) * 3.f;
+        float flagTop = gy - tsF * 0.25f + std::sin(time * 4.f) * 1.5f;
+
+        sf::ConvexShape flag;
+        flag.setPointCount(3);
+        flag.setPoint(0, {gx + tsF * 0.35f + 3.f, flagTop});
+        flag.setPoint(1, {gx + tsF * 0.35f + 3.f, flagTop + tsF * 0.7f});
+        flag.setPoint(2, {gx + tsF * 1.35f + flagWave, flagTop + tsF * 0.35f});
+        flag.setFillColor(sf::Color(230, 60, 60));
+        flag.setOutlineThickness(1.f);
+        flag.setOutlineColor(sf::Color(140, 20, 20));
+        target.draw(flag);
+
+        // 顶部大字 "GOAL"（浮动）
+        if (font_) {
+            float labelBob = std::sin(time * 2.f) * 4.f;
+
+            sf::Text label(*font_, sf::String("GOAL"), 20);
+            label.setFillColor(sf::Color(255, 240, 100));
+            label.setOutlineThickness(2.f);
+            label.setOutlineColor(sf::Color(80, 40, 0));
+
+            auto b = label.getLocalBounds();
+            label.setOrigin({b.position.x + b.size.x / 2.f,
+                             b.position.y + b.size.y / 2.f});
+            label.setPosition({gx + tsF * 0.5f, gy - tsF * 1.1f + labelBob});
+            target.draw(label);
         }
     }
 }

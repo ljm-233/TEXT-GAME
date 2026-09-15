@@ -58,6 +58,8 @@ bool GameScene::loadLevel(int index) {
         return false;
     }
 
+    level->setFont(font_);
+
     logger_->info("关卡已加载: level" + std::to_string(index) + " " +
         std::to_string(level->width()) + "x" +
         std::to_string(level->height()) + " 瓦片");

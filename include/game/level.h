@@ -23,8 +23,14 @@ public:
     const std::vector<Vec2>& coinSpawns()       const { return coinSpawns_; }
     const std::vector<Vec2>& jumpPadSpawns()    const { return jumpPadSpawns_; }
     const std::vector<Vec2>& checkpointSpawns() const { return checkpointSpawns_; }
+    const std::vector<Vec2>& movingPlatformSpawns() const { return movingPlatformSpawns_; }
+    const std::vector<Vec2>& verticalPlatformSpawns() const { return verticalPlatformSpawns_; }
+
     Vec2 goalPos() const { return goalPos_; }
     bool hasGoal() const { return hasGoal_; }
+
+    // 设字体（用于 START / GOAL 文字）
+    void setFont(const sf::Font* f) { font_ = f; }
 
     void render(sf::RenderTarget& target,
                 float camLeft, float camTop,
@@ -38,6 +44,12 @@ private:
     std::vector<Vec2> coinSpawns_;
     std::vector<Vec2> jumpPadSpawns_;
     std::vector<Vec2> checkpointSpawns_;
+    std::vector<Vec2> movingPlatformSpawns_;
+    std::vector<Vec2> verticalPlatformSpawns_;
     Vec2 goalPos_{0.f, 0.f};
     bool hasGoal_ = false;
+
+    // 动画时间（mutable：render 是 const，但需要推进时间）
+    mutable sf::Clock animClock_;
+    const sf::Font* font_ = nullptr;
 };

@@ -1,20 +1,40 @@
 #include "player.h"
-#include "game_constants.h"
 #include "level.h"
+#include "animation.h"
+#include "game_constants.h"
+#include "player_sprite_factory.h"
 #include <algorithm>
 #include <cmath>
-#include "animation.h"
 
 Player::Player(Vec2 spawn)
-      : pos_(spawn),
-        spawn_(spawn) {
-    body_.setSize({size_.x, size_.y});
-    body_.setFillColor(sf::Color(80, 200, 120));
-    body_.setOutlineThickness(2.f);
-    body_.setOutlineColor(sf::Color(40, 120, 70));
+    : pos_(spawn), spawn_(spawn) {
 
-    eye_.setSize({6.f, 6.f});
-    eye_.setFillColor(sf::Color(240, 240, 250));
+    // 图集
+    sheet_ = PlayerSpriteFactory::getSheet();
+
+    // ⭐ sf::Sprite 无默认构造，必须传 texture
+    sprite_ = std::make_unique<sf::Sprite>(*sheet_);
+
+    // 精灵原点：底部中心
+    sprite_->setOrigin({PlayerSpriteFactory::kFrameW * 0.5f,
+                        static_cast<float>(PlayerSpriteFactory::kFrameH)});
+
+    // ===== 动画剪辑 =====
+    const int fw = PlayerSpriteFactory::kFrameW;
+    const int fh = PlayerSpriteFactory::kFrameH;
+
+    auto makeFrame = [&](int index) {
+        return sf::IntRect({index * fw, 0}, {fw, fh});
+    };
+
+    animator_.addClip("idle", {{makeFrame(0), makeFrame(1)}, 4.f,  true});
+    animator_.addClip("run",  {{makeFrame(2), makeFrame(3),
+                               makeFrame(4), makeFrame(5)}, 12.f, true});
+    animator_.addClip("jump", {{makeFrame(6)}, 1.f, false});
+    animator_.addClip("fall", {{makeFrame(7)}, 1.f, false});
+
+    animator_.play("idle");
+    animator_.applyTo(*sprite_);
 }
 
 void Player::respawn(Vec2 spawn) {
@@ -30,6 +50,8 @@ void Player::respawn(Vec2 spawn) {
     justJumped_ = false;
     justLanded_ = false;
     prevOnGround_ = false;
+    currentScale_ = {1.f, 1.f};
+    targetScale_ = {1.f, 1.f};
 }
 
 void Player::takeDamage() {
@@ -45,61 +67,43 @@ void Player::bounce() {
 void Player::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         switch (kp->code) {
-        case sf::Keyboard::Key::A:
-        case sf::Keyboard::Key::Left:
-            keyLeft_ = true;
-            break;
-        case sf::Keyboard::Key::D:
-        case sf::Keyboard::Key::Right:
-            keyRight_ = true;
-            break;
-        case sf::Keyboard::Key::W:
-        case sf::Keyboard::Key::Up:
-        case sf::Keyboard::Key::Space:
-            if (!keyJump_)
-                jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
-            keyJump_ = true;
-            break;
-        default:
-            break;
+            case sf::Keyboard::Key::A:
+            case sf::Keyboard::Key::Left:  keyLeft_  = true; break;
+            case sf::Keyboard::Key::D:
+            case sf::Keyboard::Key::Right: keyRight_ = true; break;
+            case sf::Keyboard::Key::W:
+            case sf::Keyboard::Key::Up:
+            case sf::Keyboard::Key::Space:
+                if (!keyJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+                keyJump_ = true;
+                break;
+            default: break;
         }
     }
     if (const auto* kr = event.getIf<sf::Event::KeyReleased>()) {
         switch (kr->code) {
-        case sf::Keyboard::Key::A:
-        case sf::Keyboard::Key::Left:
-            keyLeft_ = false;
-            break;
-        case sf::Keyboard::Key::D:
-        case sf::Keyboard::Key::Right:
-            keyRight_ = false;
-            break;
-        case sf::Keyboard::Key::W:
-        case sf::Keyboard::Key::Up:
-        case sf::Keyboard::Key::Space:
-            keyJump_ = false;
-            break;
-        default:
-            break;
+            case sf::Keyboard::Key::A:
+            case sf::Keyboard::Key::Left:  keyLeft_  = false; break;
+            case sf::Keyboard::Key::D:
+            case sf::Keyboard::Key::Right: keyRight_ = false; break;
+            case sf::Keyboard::Key::W:
+            case sf::Keyboard::Key::Up:
+            case sf::Keyboard::Key::Space: keyJump_ = false; break;
+            default: break;
         }
     }
 }
 
 void Player::update(float dt, const Level& level) {
-    if (invincibleTimer_ > 0.f)
-        invincibleTimer_ -= dt;
+    if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
 
     float dir = 0.f;
-    if (keyLeft_)
-        dir -= 1.f;
-    if (keyRight_)
-        dir += 1.f;
+    if (keyLeft_)  dir -= 1.f;
+    if (keyRight_) dir += 1.f;
     vel_.x = dir * GameConst::kPlayerMoveSpeed;
 
-    if (onGround_)
-        coyoteTimer_ = GameConst::kPlayerCoyoteTime;
-    else
-        coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
+    if (onGround_) coyoteTimer_ = GameConst::kPlayerCoyoteTime;
+    else           coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
     jumpBufferTimer_ = std::max(0.f, jumpBufferTimer_ - dt);
 
     if (jumpBufferTimer_ > 0.f && coyoteTimer_ > 0.f && !jumpConsumed_) {
@@ -110,15 +114,12 @@ void Player::update(float dt, const Level& level) {
         onGround_ = false;
         justJumped_ = true;
     }
-    if (!keyJump_)
-        jumpConsumed_ = false;
+    if (!keyJump_) jumpConsumed_ = false;
 
-    if (!keyJump_ && vel_.y < 0.f)
-        vel_.y *= 0.5f;
+    if (!keyJump_ && vel_.y < 0.f) vel_.y *= 0.5f;
 
     vel_.y += GameConst::kPlayerGravity * dt;
-    if (vel_.y > GameConst::kPlayerMaxFall)
-        vel_.y = GameConst::kPlayerMaxFall;
+    if (vel_.y > GameConst::kPlayerMaxFall) vel_.y = GameConst::kPlayerMaxFall;
 
     onGround_ = false;
     moveHorizontal(vel_.x * dt, level);
@@ -130,28 +131,38 @@ void Player::update(float dt, const Level& level) {
         vel_ = {0.f, 0.f};
     }
 
-    if (onGround_ && !prevOnGround_)
-        justLanded_ = true;
+    if (onGround_ && !prevOnGround_) justLanded_ = true;
     prevOnGround_ = onGround_;
 
-        // ===== 弹性动画 =====
-    // 根据状态设目标缩放
+    // ===== 弹性动画 =====
     if (justJumped_) {
-        targetScale_ = {0.85f, 1.15f};   // 跳起：拉长
+        targetScale_ = {0.85f, 1.15f};
     } else if (justLanded_) {
-        targetScale_ = {1.15f, 0.85f};   // 落地：压扁
+        targetScale_ = {1.15f, 0.85f};
     } else {
-        targetScale_ = {1.f, 1.f};       // 默认
+        targetScale_ = {1.f, 1.f};
     }
-
-    // 平滑逼近
     currentScale_.x = Anim::approachF(currentScale_.x, targetScale_.x, dt * 6.f);
     currentScale_.y = Anim::approachF(currentScale_.y, targetScale_.y, dt * 6.f);
+
+    // ===== 精灵动画 =====
+    updateAnimation(dt);
+}
+
+void Player::updateAnimation(float dt) {
+    if (!onGround_) {
+        if (vel_.y < 0.f) animator_.play("jump");
+        else              animator_.play("fall");
+    } else if (std::abs(vel_.x) > 1.f) {
+        animator_.play("run");
+    } else {
+        animator_.play("idle");
+    }
+    animator_.update(dt);
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
-    if (dx == 0.f)
-        return;
+    if (dx == 0.f) return;
 
     float targetX = pos_.x + dx;
     AABB box{targetX, pos_.y, size_.x, size_.y};
@@ -164,12 +175,9 @@ void Player::moveHorizontal(float dx, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty))
-                continue;
-            if (dx > 0.f)
-                pos_.x = static_cast<float>(tx * ts) - size_.x;
-            else
-                pos_.x = static_cast<float>((tx + 1) * ts);
+            if (!level.isSolid(tx, ty)) continue;
+            if (dx > 0.f) pos_.x = static_cast<float>(tx * ts) - size_.x;
+            else          pos_.x = static_cast<float>((tx + 1) * ts);
             vel_.x = 0.f;
             return;
         }
@@ -178,8 +186,7 @@ void Player::moveHorizontal(float dx, const Level& level) {
 }
 
 void Player::moveVertical(float dy, const Level& level) {
-    if (dy == 0.f)
-        return;
+    if (dy == 0.f) return;
 
     float targetY = pos_.y + dy;
     AABB box{pos_.x, targetY, size_.x, size_.y};
@@ -192,8 +199,7 @@ void Player::moveVertical(float dy, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty))
-                continue;
+            if (!level.isSolid(tx, ty)) continue;
             if (dy > 0.f) {
                 pos_.y = static_cast<float>(ty * ts) - size_.y;
                 onGround_ = true;
@@ -213,17 +219,12 @@ void Player::render(sf::RenderTarget& target) const {
         if ((ms / 100) % 2 == 0) return;
     }
 
-    // 弹性：围绕底部中心缩放
-    body_.setOrigin({size_.x * 0.5f, size_.y});
-    body_.setScale(currentScale_);
-    body_.setPosition({pos_.x + size_.x * 0.5f, pos_.y + size_.y});
-    target.draw(body_);
+    animator_.applyTo(*sprite_);
 
-    // 眼睛跟着缩放
-    eye_.setScale(currentScale_);
-    eye_.setPosition({
-        pos_.x + size_.x * 0.5f + (size_.x * 0.5f - 12.f) * currentScale_.x,
-        pos_.y + size_.y + (-size_.y + 8.f) * currentScale_.y
+    sprite_->setScale(currentScale_);
+    sprite_->setPosition({
+        pos_.x + size_.x * 0.5f,
+        pos_.y + size_.y
     });
-    target.draw(eye_);
+    target.draw(*sprite_);
 }

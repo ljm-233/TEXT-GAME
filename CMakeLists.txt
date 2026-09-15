@@ -130,6 +130,9 @@ add_executable(text_game
     src/core/platform.cpp
     src/game/parallax.cpp
     src/game/level_intro.cpp
+    src/game/moving_platform.cpp
+    src/ui/animator.cpp
+    src/game/player_sprite_factory.cpp
 )
 
 target_include_directories(text_game PRIVATE
