@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'    # v0.1.0, v1.0.0 等
+  workflow_dispatch:
+
+jobs:
+  release-linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            base-devel cmake ninja sfml git
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Package
+        run: |
+          cd build
+          cpack
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TEXT-GAME-Linux
+          path: |
+            build/*.tar.gz
+            build/*.zip
+
+  release-macos:
+    name: macOS
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja sfml
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Package
+        run: |
+          cd build
+          cpack
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TEXT-GAME-macOS
+          path: build/*.tar.gz
+
+  create-release:
+    name: Create Release
+    needs: [release-linux, release-macos]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
