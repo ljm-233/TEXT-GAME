@@ -10,6 +10,23 @@
 #include <vector>
 
 // ============================================================
+// ConsoleStreamRedirect
+// ============================================================
+
+ConsoleStreamRedirect::ConsoleStreamRedirect(Console* console) {
+    consoleBuf_ = makeConsoleStreamBuf(console);
+    oldCin_  = std::cin.rdbuf(consoleBuf_.get());
+    oldCout_ = std::cout.rdbuf(consoleBuf_.get());
+    oldCerr_ = std::cerr.rdbuf(consoleBuf_.get());
+}
+
+ConsoleStreamRedirect::~ConsoleStreamRedirect() {
+    if (oldCin_)  std::cin.rdbuf(oldCin_);
+    if (oldCout_) std::cout.rdbuf(oldCout_);
+    if (oldCerr_) std::cerr.rdbuf(oldCerr_);
+}
+
+// ============================================================
 // ConsoleScene
 // ============================================================
 
@@ -38,10 +55,8 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
         promptIdx = 0;
     console_->setPrompt(prompts[promptIdx]);
 
-    consoleBuf_ = makeConsoleStreamBuf(console_.get());
-    oldCin_ = std::cin.rdbuf(consoleBuf_.get());
-    oldCout_ = std::cout.rdbuf(consoleBuf_.get());
-    oldCerr_ = std::cerr.rdbuf(consoleBuf_.get());
+    // RAII 重定向——构造失败也不会污染全局 iostream
+    redirect_ = std::make_unique<ConsoleStreamRedirect>(console_.get());
 
     printWelcome();
     startCommandLoop();
@@ -50,12 +65,7 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
 
 ConsoleScene::~ConsoleScene() {
     stopWorker();
-    if (oldCin_)
-        std::cin.rdbuf(oldCin_);
-    if (oldCout_)
-        std::cout.rdbuf(oldCout_);
-    if (oldCerr_)
-        std::cerr.rdbuf(oldCerr_);
+    // redirect_ 析构时自动恢复 cin/cout/cerr
 }
 
 void ConsoleScene::printWelcome() {

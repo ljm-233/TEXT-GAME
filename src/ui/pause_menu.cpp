@@ -60,6 +60,10 @@ PauseMenu::PauseMenu(const sf::Font& font,
                                         sf::Vector2f{80.f, 40.f}, 18);
     notifOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
                                          sf::Vector2f{80.f, 40.f}, 18);
+    gamepadOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+                                          sf::Vector2f{80.f, 40.f}, 18);
+    gamepadOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{80.f, 40.f}, 18);
     backButton_ = std::make_unique<Button>("返回", font_, sf::Vector2f{0.f, 0.f},
                                            sf::Vector2f{160.f, 44.f}, 20);
 
@@ -120,6 +124,11 @@ void PauseMenu::relayout(sf::Vector2f windowSize) {
         labelNotif_.setPosition({labelX, y + 8.f});
         notifOn_->setPosition({ctrlX, y});
         notifOff_->setPosition({ctrlX + 90.f, y});
+        y += 60.f;
+
+        labelGamepad_.setPosition({labelX, y + 8.f});
+        gamepadOn_->setPosition({ctrlX, y});
+        gamepadOff_->setPosition({ctrlX + 90.f, y});
         y += 70.f;
 
         hintText_.setPosition({labelX, y});
@@ -141,6 +150,10 @@ void PauseMenu::refreshSelection() {
     bool notifOn = prefs_->getBool("notification_enabled", true);
     notifOn_->setSelected(notifOn);
     notifOff_->setSelected(!notifOn);
+
+    bool gamepadOn = prefs_->getBool("gamepad_enabled", true);
+    gamepadOn_->setSelected(gamepadOn);
+    gamepadOff_->setSelected(!gamepadOn);
 }
 
 void PauseMenu::switchToSettings() {
@@ -171,6 +184,11 @@ void PauseMenu::applyNotification(bool enabled) {
         NotificationSystem::instance().push("通知已开启", NotificationType::Info);
 }
 
+void PauseMenu::applyGamepad(bool enabled) {
+    prefs_->setBool("gamepad_enabled", enabled);
+    FocusGroup::instance().setEnabled(enabled);
+}
+
 void PauseMenu::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
@@ -193,6 +211,8 @@ void PauseMenu::handleEvent(const sf::Event& event) {
         animOff_->handleEvent(event);
         notifOn_->handleEvent(event);
         notifOff_->handleEvent(event);
+        gamepadOn_->handleEvent(event);
+        gamepadOff_->handleEvent(event);
         backButton_->handleEvent(event);
     }
 }
@@ -245,6 +265,20 @@ void PauseMenu::update(float /*dt*/) {
             }
             return;
         }
+        if (gamepadOn_->consumeClick()) {
+            if (!prefs_->getBool("gamepad_enabled", true)) {
+                applyGamepad(true);
+                refreshSelection();
+            }
+            return;
+        }
+        if (gamepadOff_->consumeClick()) {
+            if (prefs_->getBool("gamepad_enabled", true)) {
+                applyGamepad(false);
+                refreshSelection();
+            }
+            return;
+        }
         if (backButton_->consumeClick()) {
             switchToMain();
         }
@@ -265,7 +299,6 @@ void PauseMenu::render(sf::RenderTarget& target) {
         target.draw(title_);
         for (auto& b : mainButtons_) b->render(target);
 
-        // ⭐ 主视图：注册三个按钮
         FocusGroup::instance().setItems({
             mainButtons_[0].get(),
             mainButtons_[1].get(),
@@ -287,7 +320,6 @@ void PauseMenu::render(sf::RenderTarget& target) {
         gamepadOff_->render(target);
         backButton_->render(target);
 
-        // ⭐ 设置视图：注册所有设置项
         std::vector<Button*> items;
         for (auto& b : themeButtons_) items.push_back(b.get());
         items.push_back(animOn_.get());

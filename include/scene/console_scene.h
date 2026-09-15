@@ -12,6 +12,23 @@
 
 std::unique_ptr<std::streambuf> makeConsoleStreamBuf(Console* c);
 
+// RAII 包装：构造时重定向 cin/cout/cerr 到 Console，
+// 析构时恢复。即使构造函数中途抛异常，也能正确恢复。
+class ConsoleStreamRedirect {
+public:
+    explicit ConsoleStreamRedirect(Console* console);
+    ~ConsoleStreamRedirect();
+
+    ConsoleStreamRedirect(const ConsoleStreamRedirect&) = delete;
+    ConsoleStreamRedirect& operator=(const ConsoleStreamRedirect&) = delete;
+
+private:
+    std::unique_ptr<std::streambuf> consoleBuf_;
+    std::streambuf* oldCin_  = nullptr;
+    std::streambuf* oldCout_ = nullptr;
+    std::streambuf* oldCerr_ = nullptr;
+};
+
 class ConsoleScene : public Scene {
 public:
     ConsoleScene(std::shared_ptr<Background> background,
@@ -39,13 +56,9 @@ private:
     std::shared_ptr<Logger> logger_;
 
     std::unique_ptr<Console> console_;
-    std::unique_ptr<std::streambuf> consoleBuf_;
-    std::streambuf* oldCin_ = nullptr;
-    std::streambuf* oldCout_ = nullptr;
-    std::streambuf* oldCerr_ = nullptr;
+    std::unique_ptr<ConsoleStreamRedirect> redirect_;
 
     std::thread worker_;
     std::atomic<bool> workerDone_{false};
     std::atomic<int> pendingScene_{static_cast<int>(SceneId::None)};
-    void playConsoleSound();
 };

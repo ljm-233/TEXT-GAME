@@ -69,61 +69,23 @@ message(STATUS "  版本: ${SFML_VERSION}")
 message(STATUS "  路径: ${SFML_DIR}")
 
 # ============================================================
+# 源文件收集（自动扫描，加新文件无需改本文件）
+# ============================================================
+file(GLOB_RECURSE TEXTGAME_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/src/core/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/config/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/scene/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/*.cpp
+)
+list(LENGTH TEXTGAME_SOURCES TEXTGAME_SOURCES_COUNT)
+message(STATUS "=== 源文件扫描 ===")
+message(STATUS "  共 ${TEXTGAME_SOURCES_COUNT} 个 .cpp 文件")
+
+# ============================================================
 # 可执行文件
 # ============================================================
-add_executable(text_game
-    src/core/main.cpp
-    src/core/application.cpp
-    src/core/game.cpp
-    src/core/scene_manager.cpp
-    src/core/platform.cpp
-    src/ui/button.cpp
-    src/ui/slider.cpp
-    src/ui/confirm_dialog.cpp
-    src/ui/theme.cpp
-    src/ui/ui_scale.cpp
-    src/ui/utf8.cpp
-    src/ui/window.cpp
-    src/ui/background.cpp
-    src/ui/font_holder.cpp
-    src/ui/console.cpp
-    src/ui/button_style.cpp
-    src/ui/text_input.cpp
-    src/ui/new_save_dialog.cpp
-    src/ui/animation.cpp
-    src/ui/notification.cpp
-    src/ui/pause_menu.cpp
-    src/ui/sound_manager.cpp
-    src/ui/particle_system.cpp
-    src/ui/animator.cpp
-    src/ui/gamepad.cpp
-    src/ui/focus_group.cpp
-    src/game/calculator.cpp
-    src/game/save_manager.cpp
-    src/game/level.cpp
-    src/game/camera.cpp
-    src/game/player.cpp
-    src/game/game_world.cpp
-    src/game/coin.cpp
-    src/game/enemy.cpp
-    src/game/jump_pad.cpp
-    src/game/checkpoint.cpp
-    src/game/moving_platform.cpp
-    src/game/player_sprite_factory.cpp
-    src/game/parallax.cpp
-    src/game/level_intro.cpp
-    src/game/key.cpp
-    src/game/door.cpp
-    src/game/spike.cpp
-    src/game/coin_sprite_factory.cpp
-    src/game/enemy_sprite_factory.cpp
-    src/scene/main_menu_scene.cpp
-    src/scene/save_select_scene.cpp
-    src/scene/level_select_scene.cpp
-    src/scene/game_scene.cpp
-    src/scene/settings_scene.cpp
-    src/scene/console_scene.cpp
-)
+add_executable(text_game ${TEXTGAME_SOURCES})
 
 target_include_directories(text_game PRIVATE
     include
@@ -169,12 +131,11 @@ if(APPLE)
 endif()
 
 install(TARGETS text_game RUNTIME DESTINATION .)
+
 # ============================================================
 # Windows：把 SFML 的 DLL 一起装到输出目录
 # ============================================================
 if(WIN32)
-    # 找到 SFML 的运行时 DLL 目录
-    # 从 sfml-graphics 的 IMPORTED_LOCATION 推导
     get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION_RELEASE)
     if(NOT _sfml_graphics_loc)
         get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION)
@@ -183,7 +144,6 @@ if(WIN32)
     if(_sfml_graphics_loc)
         get_filename_component(_sfml_dll_dir "${_sfml_graphics_loc}" DIRECTORY)
 
-        # 把所有 sfml-*.dll 和 openal32.dll 一起安装
         install(DIRECTORY "${_sfml_dll_dir}/"
                 DESTINATION .
                 FILES_MATCHING
@@ -193,6 +153,7 @@ if(WIN32)
                 )
     endif()
 endif()
+
 install(DIRECTORY assets/    DESTINATION assets)
 install(DIRECTORY wallpaper/ DESTINATION wallpaper)
 install(FILES README.md LICENSE DESTINATION .)

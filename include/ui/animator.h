@@ -19,6 +19,7 @@ public:
     void applyTo(sf::Sprite& sprite) const;
 
     const std::string& currentClip() const { return currentClip_; }
+    int currentFrame() const { return currentFrame_; }
 
 private:
     std::map<std::string, Clip> clips_;

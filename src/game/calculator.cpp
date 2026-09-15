@@ -34,6 +34,12 @@ void Calculator::run() {
     while (true) {
         logger_->normal(Str::CalcWhatWant);
         cin >> c;
+        if (cin.fail()) {
+            logger_->error(Str::CalcInvalid);
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            return;
+        }
 
         switch (c) {
         case '1':

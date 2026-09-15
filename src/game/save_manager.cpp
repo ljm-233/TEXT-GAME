@@ -87,13 +87,20 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
 
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
-    if (out) {
-        out << "name="          << info.name         << '\n';
-        out << "created_at="    << info.createdAt    << '\n';
-        out << "last_played="   << info.lastPlayed   << '\n';
-        out << "progress="      << info.progress     << '\n';
-        out << "current_level=" << info.currentLevel << '\n';
-        out << "level_stars="   << serializeStars(info.levelStars) << '\n';
+    if (!out) {
+        logger_->error("创建存档失败: 无法写入 " + path.string());
+        return {};
+    }
+    out << "name="          << info.name         << '\n';
+    out << "created_at="    << info.createdAt    << '\n';
+    out << "last_played="   << info.lastPlayed   << '\n';
+    out << "progress="      << info.progress     << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
+    out << "level_stars="   << serializeStars(info.levelStars) << '\n';
+    out.flush();
+    if (!out) {
+        logger_->error("创建存档失败: 写入过程中断 " + path.string());
+        return {};
     }
 
     logger_->info("创建存档: " + path.string());

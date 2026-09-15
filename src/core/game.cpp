@@ -37,14 +37,6 @@ Game::Game(std::shared_ptr<Window>        window,
     NotificationSystem::instance().setFont(fontHolder_->get());
     sceneManager_ = std::make_unique<SceneManager>(
         [this](SceneId id) { return createScene(id); });
-
-    // ⭐ 初始化马赛克延迟
-    transitionVA_.setPrimitiveType(sf::PrimitiveType::Triangles);
-
-    cellDelays_.resize(kCellsX * kCellsY);
-    std::mt19937 rng(12345);   // 固定种子，每次启动图案一样
-    std::uniform_real_distribution<float> dist(0.f, 0.7f);
-    for (auto& d : cellDelays_) d = dist(rng);
 }
 
 std::unique_ptr<Scene> Game::createScene(SceneId id) {
@@ -78,78 +70,20 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
 
 void Game::switchScene(SceneId next) {
     if (next == SceneId::None) return;
-    pendingScene_ = next;
-    transitionPhase_ = TransitionPhase::FadingOut;
-    transitionProgress_ = 0.f;
-}
+    if (next == sceneManager_->currentId()) return;
 
-void Game::updateTransition(float dt) {
-    if (transitionPhase_ == TransitionPhase::None) return;
+    flushConfigs();
 
-    if (transitionPhase_ == TransitionPhase::FadingOut) {
-        transitionProgress_ += transitionSpeed_ * dt;
-        if (transitionProgress_ >= 1.f) {
-            transitionProgress_ = 1.f;
-
-            // ⭐ 真正切换场景
-            flushConfigs();
-            if (pendingScene_ == SceneId::Exit) {
-                window_->close();
-                transitionPhase_ = TransitionPhase::None;
-                return;
-            } else if (pendingScene_ == SceneId::Back) {
-                sceneManager_->pop();
-            } else {
-                sceneManager_->push(pendingScene_);
-            }
-            pendingScene_ = SceneId::None;
-            transitionPhase_ = TransitionPhase::FadingIn;
-
-            FocusGroup::instance().clear();
-        }
-    } else if (transitionPhase_ == TransitionPhase::FadingIn) {
-        transitionProgress_ -= transitionSpeed_ * dt;
-        if (transitionProgress_ <= 0.f) {
-            transitionProgress_ = 0.f;
-            transitionPhase_ = TransitionPhase::None;
-        }
+    if (next == SceneId::Exit) {
+        window_->close();
+        return;
     }
-}
-
-// ⭐ 构建马赛克溶解几何
-void Game::buildTransitionGeometry(float winW, float winH) {
-    transitionVA_.clear();
-
-    float t = transitionProgress_;
-    float cellW = winW / static_cast<float>(kCellsX);
-    float cellH = winH / static_cast<float>(kCellsY);
-
-    for (int y = 0; y < kCellsY; ++y) {
-        for (int x = 0; x < kCellsX; ++x) {
-            float delay = cellDelays_[static_cast<size_t>(y * kCellsX + x)];
-
-            // 本地进度：delay 到 delay+0.3 之间完成
-            float local = (t - delay) / 0.3f;
-            local = std::clamp(local, 0.f, 1.f);
-            if (local <= 0.f) continue;
-
-            auto a = static_cast<std::uint8_t>(local * 255.f);
-            sf::Color c(0, 0, 0, a);
-
-            float x0 = static_cast<float>(x) * cellW;
-            float y0 = static_cast<float>(y) * cellH;
-            float x1 = x0 + cellW;
-            float y1 = y0 + cellH;
-
-            transitionVA_.append(sf::Vertex{{x0, y0}, c});
-            transitionVA_.append(sf::Vertex{{x1, y0}, c});
-            transitionVA_.append(sf::Vertex{{x1, y1}, c});
-
-            transitionVA_.append(sf::Vertex{{x0, y0}, c});
-            transitionVA_.append(sf::Vertex{{x1, y1}, c});
-            transitionVA_.append(sf::Vertex{{x0, y1}, c});
-        }
+    if (next == SceneId::Back) {
+        sceneManager_->pop();
+    } else {
+        sceneManager_->push(next);
     }
+    FocusGroup::instance().clear();
 }
 
 void Game::saveWindowState() {
@@ -228,12 +162,6 @@ void Game::renderOverlays() {
     }
 
     NotificationSystem::instance().render(rt);
-
-    // ⭐ 马赛克溶解过渡
-    if (transitionPhase_ != TransitionPhase::None && transitionProgress_ > 0.f) {
-        buildTransitionGeometry(winW, winH);
-        rt.draw(transitionVA_);
-    }
 }
 
 void Game::flushConfigs() {
@@ -291,37 +219,26 @@ void Game::run() {
         flushTimer_ += dt;
         if (flushTimer_ >= 5.f) { flushConfigs(); flushTimer_ = 0.f; }
 
-        bool transitioning = (transitionPhase_ != TransitionPhase::None);
-
         Scene& scene = sceneManager_->current();
 
         window_->pollEvents([&](const sf::Event& e) {
-            if (!transitioning) scene.handleEvent(e);
+            scene.handleEvent(e);
         });
 
         auto synth = FocusGroup::instance().takePendingEvents();
-        if (!transitioning) {
-            for (auto& e : synth) {
-                scene.handleEvent(e);
-            }
+        for (auto& e : synth) {
+            scene.handleEvent(e);
         }
 
-        if (!transitioning) {
-            scene.update(dt);
-        }
-
+        scene.update(dt);
         scene.render(*window_);
-
-        updateTransition(dt);
 
         renderOverlays();
         window_->display();
 
-        if (!transitioning) {
-            SceneId next = scene.nextScene();
-            if (next != SceneId::None && next != sceneManager_->currentId()) {
-                switchScene(next);
-            }
+        SceneId next = scene.nextScene();
+        if (next != SceneId::None && next != sceneManager_->currentId()) {
+            switchScene(next);
         }
     }
 

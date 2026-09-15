@@ -42,7 +42,7 @@ std::vector<std::int16_t> generateArpeggio(const std::vector<float>& freqs,
     return result;
 }
 
-// ⭐ BGM：一段 8 秒的循环小调（C 大调五声音阶）
+// BGM：一段 8 秒的循环小调（C 大调五声音阶）
 std::vector<std::int16_t> generateBGM() {
     // 简单和弦进行：C - Am - F - G
     const float chordRoots[4][3] = {
@@ -121,15 +121,14 @@ void SoundManager::init() {
     bgm_->setLooping(true);
     bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 
-    // 声部池
+    // 声部池：占位 buffer 是 silentBuf_（成员，生命周期覆盖 pool_）
     std::vector<std::int16_t> silent(64, 0);
-    sf::SoundBuffer silentBuf;
-    (void)silentBuf.loadFromSamples(silent.data(), silent.size(), 1, kSampleRate,
-                                    {sf::SoundChannel::Mono});
+    (void)silentBuf_.loadFromSamples(silent.data(), silent.size(), 1, kSampleRate,
+                                     {sf::SoundChannel::Mono});
 
     pool_.clear();
     for (int i = 0; i < 16; ++i)
-        pool_.push_back(std::make_unique<sf::Sound>(silentBuf));
+        pool_.push_back(std::make_unique<sf::Sound>(silentBuf_));
 }
 
 void SoundManager::setVolume(float v) {

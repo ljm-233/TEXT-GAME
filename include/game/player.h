@@ -18,8 +18,6 @@ public:
     Type type() const override { return Type::Player; }
 
     void handleEvent(const sf::Event& event);
-
-    // 每帧从手柄读输入（在 update 前调用）
     void handleGamepad();
 
     Vec2 position() const { return pos_; }
@@ -64,9 +62,17 @@ private:
     Vec2 size_{24.f, 32.f};
 
     bool onGround_ = false;
-    bool keyLeft_  = false;
-    bool keyRight_ = false;
-    bool keyJump_  = false;
+
+    // 键盘输入状态（由 handleEvent 更新）
+    bool keyboardLeft_  = false;
+    bool keyboardRight_ = false;
+    bool keyboardJump_  = false;
+
+    // 手柄输入状态（由 handleGamepad 每帧重算）
+    bool gamepadLeft_  = false;
+    bool gamepadRight_ = false;
+    bool gamepadJump_  = false;
+
     bool fellOut_  = false;
     bool justJumped_  = false;
     bool justLanded_  = false;

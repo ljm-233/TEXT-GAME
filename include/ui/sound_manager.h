@@ -51,6 +51,9 @@ private:
     sf::SoundBuffer bufGameOver_;
     sf::SoundBuffer bufCheckpoint_;
 
+    // 声部池的占位 buffer，必须比 pool_ 活得久
+    sf::SoundBuffer silentBuf_;
+
     sf::SoundBuffer bufBGM_;
     std::unique_ptr<sf::Sound> bgm_;
     bool bgmEnabled_ = true;

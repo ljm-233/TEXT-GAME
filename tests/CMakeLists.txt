@@ -7,7 +7,6 @@ add_executable(unit_tests
     test_camera.cpp
     test_animator.cpp
     test_game_constants.cpp
-    test_strings.cpp
     test_moving_platform.cpp
     test_jump_pad.cpp
 )

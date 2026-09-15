@@ -48,6 +48,13 @@ void Player::respawn(Vec2 spawn) {
     prevOnGround_ = false;
     currentScale_ = {1.f, 1.f};
     targetScale_ = {1.f, 1.f};
+    // 清空输入状态
+    keyboardLeft_  = false;
+    keyboardRight_ = false;
+    keyboardJump_  = false;
+    gamepadLeft_   = false;
+    gamepadRight_  = false;
+    gamepadJump_   = false;
 }
 
 void Player::takeDamage() {
@@ -64,14 +71,14 @@ void Player::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         switch (kp->code) {
             case sf::Keyboard::Key::A:
-            case sf::Keyboard::Key::Left:  keyLeft_  = true; break;
+            case sf::Keyboard::Key::Left:  keyboardLeft_  = true; break;
             case sf::Keyboard::Key::D:
-            case sf::Keyboard::Key::Right: keyRight_ = true; break;
+            case sf::Keyboard::Key::Right: keyboardRight_ = true; break;
             case sf::Keyboard::Key::W:
             case sf::Keyboard::Key::Up:
             case sf::Keyboard::Key::Space:
-                if (!keyJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
-                keyJump_ = true;
+                if (!keyboardJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+                keyboardJump_ = true;
                 break;
             default: break;
         }
@@ -79,55 +86,61 @@ void Player::handleEvent(const sf::Event& event) {
     if (const auto* kr = event.getIf<sf::Event::KeyReleased>()) {
         switch (kr->code) {
             case sf::Keyboard::Key::A:
-            case sf::Keyboard::Key::Left:  keyLeft_  = false; break;
+            case sf::Keyboard::Key::Left:  keyboardLeft_  = false; break;
             case sf::Keyboard::Key::D:
-            case sf::Keyboard::Key::Right: keyRight_ = false; break;
+            case sf::Keyboard::Key::Right: keyboardRight_ = false; break;
             case sf::Keyboard::Key::W:
             case sf::Keyboard::Key::Up:
-            case sf::Keyboard::Key::Space: keyJump_ = false; break;
+            case sf::Keyboard::Key::Space: keyboardJump_ = false; break;
             default: break;
         }
     }
 }
 
 void Player::handleGamepad() {
-    if (!gamepadEnabled_) return;
+    if (!gamepadEnabled_) {
+        gamepadLeft_  = false;
+        gamepadRight_ = false;
+        gamepadJump_  = false;
+        return;
+    }
 
     auto& gp = Gamepad::instance();
-    if (!gp.isConnected()) return;
-
-    // ===== 水平：摇杆 + D-Pad =====
-    float x = gp.leftX();
-    if (x > 0.3f || gp.dpadRight()) {
-        keyRight_ = true;
-        keyLeft_  = false;
-    } else if (x < -0.3f || gp.dpadLeft()) {
-        keyLeft_  = true;
-        keyRight_ = false;
-    } else {
-        keyLeft_  = false;
-        keyRight_ = false;
+    if (!gp.isConnected()) {
+        gamepadLeft_  = false;
+        gamepadRight_ = false;
+        gamepadJump_  = false;
+        return;
     }
 
-    // ===== 跳跃 =====
+    float x = gp.leftX();
+    gamepadLeft_  = (x < -0.3f) || gp.dpadLeft();
+    gamepadRight_ = (x >  0.3f) || gp.dpadRight();
+
     bool jumpNow = gp.jumpPressed();
-    if (jumpNow && !keyJump_) {
+    if (jumpNow && !gamepadJump_) {
         jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
     }
-    keyJump_ = jumpNow;
+    gamepadJump_ = jumpNow;
 }
 
 void Player::update(float dt, const Level& level) {
     if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
 
+    // 合并输入：手柄方向优先，键盘作为后备
     float dir = 0.f;
-    if (keyLeft_)  dir -= 1.f;
-    if (keyRight_) dir += 1.f;
+    if (keyboardLeft_)  dir -= 1.f;
+    if (keyboardRight_) dir += 1.f;
+    if (gamepadLeft_)       dir = -1.f;
+    else if (gamepadRight_) dir =  1.f;
+
     vel_.x = dir * GameConst::kPlayerMoveSpeed;
 
     if (onGround_) coyoteTimer_ = GameConst::kPlayerCoyoteTime;
     else           coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
     jumpBufferTimer_ = std::max(0.f, jumpBufferTimer_ - dt);
+
+    bool jumpHeld = keyboardJump_ || gamepadJump_;
 
     if (jumpBufferTimer_ > 0.f && coyoteTimer_ > 0.f && !jumpConsumed_) {
         vel_.y = GameConst::kPlayerJumpVelocity;
@@ -137,9 +150,9 @@ void Player::update(float dt, const Level& level) {
         onGround_ = false;
         justJumped_ = true;
     }
-    if (!keyJump_) jumpConsumed_ = false;
+    if (!jumpHeld) jumpConsumed_ = false;
 
-    if (!keyJump_ && vel_.y < 0.f) vel_.y *= 0.5f;
+    if (!jumpHeld && vel_.y < 0.f) vel_.y *= 0.5f;
 
     vel_.y += GameConst::kPlayerGravity * dt;
     if (vel_.y > GameConst::kPlayerMaxFall) vel_.y = GameConst::kPlayerMaxFall;
