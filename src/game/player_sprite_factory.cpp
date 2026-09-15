@@ -4,72 +4,104 @@ std::shared_ptr<sf::Texture> PlayerSpriteFactory::sheet_;
 
 namespace {
 
-// 画一帧
-void drawFrame(sf::RenderTexture& rt, int frameIndex) {
-    const int fx = frameIndex * 32;
+const sf::Color kCreeperGreen (95, 190, 95);
+const sf::Color kCreeperDark  (45, 110, 45);
+const sf::Color kBlack        (15, 15, 15);
 
-    const sf::Color bodyColor   (80, 200, 120);
-    const sf::Color outlineColor(40, 120, 70);
+// 画一只苦力怕
+//   x, y:     frame 左上角
+//   legL,legR: 左右腿水平偏移（跑步用）
+//   legH:     腿高（跳跃收起 / 下落伸展）
+//   bodyBob:  身体上下浮动（呼吸用）
+void drawCreeper(sf::RenderTarget& rt,
+                 float x, float y,
+                 float legL, float legR,
+                 float legH,
+                 float bodyBob) {
+    const float bodyY = y + 4.f + bodyBob;
 
-    // ========== 身体 ==========
-    sf::RectangleShape body({20.f, 16.f});
-    body.setPosition({fx + 6.f, 4.f});
-    body.setFillColor(bodyColor);
-    body.setOutlineThickness(2.f);
-    body.setOutlineColor(outlineColor);
-    rt.draw(body);
+    // ========== 头/身体（一体方块）==========
+    sf::RectangleShape head({20.f, 20.f});
+    head.setPosition({x + 6.f, bodyY});
+    head.setFillColor(kCreeperGreen);
+    head.setOutlineThickness(2.f);
+    head.setOutlineColor(kCreeperDark);
+    rt.draw(head);
 
-    // ========== 眼睛 ==========
-    sf::RectangleShape eye({3.f, 3.f});
-    eye.setFillColor(sf::Color::White);
-    eye.setPosition({fx + 13.f, 9.f});
+    // ========== 眼睛（两个黑色方块）==========
+    sf::RectangleShape eye({4.f, 4.f});
+    eye.setFillColor(kBlack);
+
+    eye.setPosition({x + 10.f, bodyY + 6.f});
     rt.draw(eye);
-    eye.setPosition({fx + 19.f, 9.f});
+    eye.setPosition({x + 18.f, bodyY + 6.f});
     rt.draw(eye);
+
+    // ========== 嘴（倒 U 形）==========
+    sf::RectangleShape mouth({10.f, 2.f});
+    mouth.setFillColor(kBlack);
+    mouth.setPosition({x + 11.f, bodyY + 12.f});
+    rt.draw(mouth);
+
+    // 左竖
+    mouth.setSize({2.f, 5.f});
+    mouth.setPosition({x + 11.f, bodyY + 12.f});
+    rt.draw(mouth);
+
+    // 右竖
+    mouth.setPosition({x + 19.f, bodyY + 12.f});
+    rt.draw(mouth);
 
     // ========== 腿 ==========
-    float leftLegX  = fx + 8.f;
-    float rightLegX = fx + 19.f;
-    float legY = 20.f;
-    float legH = 10.f;
+    float legTop = bodyY + 20.f;
+
+    sf::RectangleShape leg({5.f, legH});
+    leg.setFillColor(kCreeperGreen);
+    leg.setOutlineThickness(2.f);
+    leg.setOutlineColor(kCreeperDark);
+
+    leg.setPosition({x + 7.f + legL, legTop});
+    rt.draw(leg);
+
+    leg.setPosition({x + 20.f + legR, legTop});
+    rt.draw(leg);
+}
+
+// 每帧对应参数
+void drawFrame(sf::RenderTarget& rt, int frameIndex) {
+    const float fx = static_cast<float>(frameIndex * 32);
+
+    float legL = 0.f, legR = 0.f;
+    float legH = 6.f;
+    float bodyBob = 0.f;
 
     switch (frameIndex) {
-        case 0: /* IDLE1 */ break;
-        case 1: /* IDLE2：身体微下移 */
-            body.setPosition({fx + 6.f, 5.f});
-            rt.draw(body);
-            legY = 21.f;
+        case 0: /* IDLE1：静止 */ break;
+        case 1: /* IDLE2：呼吸，身体下沉 1px */
+            bodyBob = 1.f;
             break;
-        case 2: /* RUN1 */
-            leftLegX += 1.f; rightLegX -= 1.f;
+        case 2: /* RUN1：腿张开 */
+            legL = -1.f; legR = 1.f;
             break;
-        case 3: /* RUN2 */
-            leftLegX += 3.f; rightLegX -= 3.f;
+        case 3: /* RUN2：腿张开更多 */
+            legL = -3.f; legR = 3.f;
             break;
-        case 4: /* RUN3 */
-            leftLegX -= 1.f; rightLegX += 1.f;
+        case 4: /* RUN3：腿内收 */
+            legL = 1.f; legR = -1.f;
             break;
-        case 5: /* RUN4 */
-            leftLegX -= 3.f; rightLegX += 3.f;
+        case 5: /* RUN4：腿内收更多 */
+            legL = 3.f; legR = -3.f;
             break;
-        case 6: /* JUMP：收腿 */
-            legH = 5.f;
+        case 6: /* JUMP：腿收起 */
+            legH = 3.f;
             break;
-        case 7: /* FALL：伸腿 */
-            legH = 12.f;
+        case 7: /* FALL：腿伸展 */
+            legH = 8.f;
             break;
         default: break;
     }
 
-    sf::RectangleShape leg({5.f, legH});
-    leg.setFillColor(bodyColor);
-    leg.setOutlineThickness(2.f);
-    leg.setOutlineColor(outlineColor);
-
-    leg.setPosition({leftLegX, legY});
-    rt.draw(leg);
-    leg.setPosition({rightLegX, legY});
-    rt.draw(leg);
+    drawCreeper(rt, fx, 0.f, legL, legR, legH, bodyBob);
 }
 
 } // namespace
@@ -78,7 +110,6 @@ std::shared_ptr<sf::Texture> PlayerSpriteFactory::getSheet() {
     if (sheet_) return sheet_;
 
     sf::RenderTexture rt;
-    // ⭐ SFML 3：create → resize
     if (!rt.resize({kFrameW * kFrameCount, kFrameH})) {
         return nullptr;
     }
@@ -90,7 +121,6 @@ std::shared_ptr<sf::Texture> PlayerSpriteFactory::getSheet() {
     rt.display();
 
     sheet_ = std::make_shared<sf::Texture>();
-    // ⭐ 显式忽略返回值
     (void)sheet_->loadFromImage(rt.getTexture().copyToImage());
     sheet_->setSmooth(false);
 

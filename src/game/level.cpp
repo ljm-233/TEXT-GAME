@@ -83,30 +83,75 @@ void Level::render(sf::RenderTarget& target,
     int top    = std::max(0, static_cast<int>(camTop / ts));
     int bottom = std::min(height_, static_cast<int>((camTop + camH) / ts) + 1);
 
-    // ========== 瓦片 ==========
+    // ============================================================
+    // 伪 3D 瓦片
+    // ============================================================
+    const sf::Color kBody  (80, 80, 100);
+    const sf::Color kTop   (130, 130, 155);
+    const sf::Color kLeft  (100, 100, 120);
+    const sf::Color kRight (50, 50, 70);
+    const sf::Color kBottom(40, 40, 60);
+
     sf::RectangleShape rect({tsF, tsF});
-    rect.setFillColor(sf::Color(80, 80, 100));
-    rect.setOutlineThickness(1.f);
-    rect.setOutlineColor(sf::Color(60, 60, 80));
 
     for (int y = top; y < bottom; ++y) {
         for (int x = left; x < right; ++x) {
             if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
-            rect.setPosition({static_cast<float>(x) * tsF,
-                              static_cast<float>(y) * tsF});
+
+            float px = static_cast<float>(x) * tsF;
+            float py = static_cast<float>(y) * tsF;
+
+            // 主体
+            rect.setSize({tsF, tsF});
+            rect.setFillColor(kBody);
+            rect.setPosition({px, py});
             target.draw(rect);
+
+            if (pseudo3D_) {
+                // 顶面高光：只有上方是空的时候画
+                if (!isSolid(x, y - 1)) {
+                    sf::RectangleShape topStrip({tsF, 5.f});
+                    topStrip.setFillColor(kTop);
+                    topStrip.setPosition({px, py});
+                    target.draw(topStrip);
+                }
+
+                // 左侧高光
+                if (!isSolid(x - 1, y)) {
+                    sf::RectangleShape leftStrip({4.f, tsF});
+                    leftStrip.setFillColor(kLeft);
+                    leftStrip.setPosition({px, py});
+                    target.draw(leftStrip);
+                }
+
+                // 右侧阴影
+                if (!isSolid(x + 1, y)) {
+                    sf::RectangleShape rightStrip({4.f, tsF});
+                    rightStrip.setFillColor(kRight);
+                    rightStrip.setPosition({px + tsF - 4.f, py});
+                    target.draw(rightStrip);
+                }
+
+                // 底部阴影
+                if (!isSolid(x, y + 1)) {
+                    sf::RectangleShape bottomStrip({tsF, 4.f});
+                    bottomStrip.setFillColor(kBottom);
+                    bottomStrip.setPosition({px, py + tsF - 4.f});
+                    target.draw(bottomStrip);
+                }
+            }
         }
     }
 
-    // ========== 出生点图标（脉动蓝环 + 呼吸光点）==========
+    // ============================================================
+    // 出生点图标
+    // ============================================================
     {
         float cx = playerSpawn_.x + tsF * 0.5f;
         float cy = playerSpawn_.y + tsF * 0.5f;
 
-        // 脉动系数 0.85 ~ 1.15
         float pulse = 1.f + std::sin(time * 3.f) * 0.15f;
 
-        // 外圈（脉动）
         float r1 = tsF * 0.45f * pulse;
         sf::CircleShape ring(r1);
         ring.setOrigin({r1, r1});
@@ -116,7 +161,6 @@ void Level::render(sf::RenderTarget& target,
         ring.setOutlineColor(sf::Color(120, 200, 255, 220));
         target.draw(ring);
 
-        // 内圈（反向脉动）
         float pulse2 = 1.f + std::sin(time * 3.f + 1.5f) * 0.10f;
         float r2 = tsF * 0.28f * pulse2;
         sf::CircleShape ring2(r2);
@@ -127,7 +171,6 @@ void Level::render(sf::RenderTarget& target,
         ring2.setOutlineColor(sf::Color(160, 220, 255, 180));
         target.draw(ring2);
 
-        // 中心光点（呼吸）
         float dotAlpha = 180.f + std::sin(time * 4.f) * 60.f;
         float r3 = tsF * 0.14f;
         sf::CircleShape dot(r3);
@@ -138,12 +181,13 @@ void Level::render(sf::RenderTarget& target,
         target.draw(dot);
     }
 
-    // ========== 终点图标（飘动旗帜 + 双层光晕 + GOAL 文字）==========
+    // ============================================================
+    // 终点图标
+    // ============================================================
     if (hasGoal_) {
         float gx = goalPos_.x;
         float gy = goalPos_.y;
 
-        // 光晕外层（呼吸）
         float haloPulse = 1.f + std::sin(time * 2.2f) * 0.12f;
         float rH1 = tsF * 0.9f * haloPulse;
         sf::CircleShape halo(rH1);
@@ -152,7 +196,6 @@ void Level::render(sf::RenderTarget& target,
         halo.setFillColor(sf::Color(255, 220, 80, 60));
         target.draw(halo);
 
-        // 光晕内层（反向呼吸）
         float haloPulse2 = 1.f + std::sin(time * 2.2f + 1.f) * 0.10f;
         float rH2 = tsF * 0.6f * haloPulse2;
         sf::CircleShape halo2(rH2);
@@ -161,7 +204,6 @@ void Level::render(sf::RenderTarget& target,
         halo2.setFillColor(sf::Color(255, 240, 120, 110));
         target.draw(halo2);
 
-        // 旗杆（不动）
         sf::RectangleShape pole({3.f, tsF * 1.5f});
         pole.setPosition({gx + tsF * 0.35f, gy - tsF * 0.3f});
         pole.setFillColor(sf::Color(230, 230, 240));
@@ -169,7 +211,6 @@ void Level::render(sf::RenderTarget& target,
         pole.setOutlineColor(sf::Color(120, 120, 140));
         target.draw(pole);
 
-        // 三角旗（飘动：顶点随时间左右摇摆）
         float flagWave = std::sin(time * 5.f) * 3.f;
         float flagTop = gy - tsF * 0.25f + std::sin(time * 4.f) * 1.5f;
 
@@ -183,10 +224,8 @@ void Level::render(sf::RenderTarget& target,
         flag.setOutlineColor(sf::Color(140, 20, 20));
         target.draw(flag);
 
-        // 顶部大字 "GOAL"（浮动）
         if (font_) {
             float labelBob = std::sin(time * 2.f) * 4.f;
-
             sf::Text label(*font_, sf::String("GOAL"), 20);
             label.setFillColor(sf::Color(255, 240, 100));
             label.setOutlineThickness(2.f);

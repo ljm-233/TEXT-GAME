@@ -16,6 +16,8 @@ GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
     camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
                            static_cast<float>(level_->pixelHeight()));
 
+    level_->setPseudo3D(true);
+
     spawnPlayer(level_->playerSpawn());
     player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
     spawnLevelObjects();
@@ -43,12 +45,10 @@ void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->checkpointSpawns())
         objects_.push_back(std::make_unique<Checkpoint>(pos, level_->tileSize()));
 
-    // 水平移动平台：范围 4 格
     for (const auto& pos : level_->movingPlatformSpawns())
         objects_.push_back(std::make_unique<MovingPlatform>(
             pos, level_->tileSize(), 4.f * level_->tileSize(), true, 80.f));
 
-    // 垂直移动平台：范围 3 格
     for (const auto& pos : level_->verticalPlatformSpawns())
         objects_.push_back(std::make_unique<MovingPlatform>(
             pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
@@ -71,17 +71,14 @@ void GameWorld::update(float dt) {
     while (accumulator_ >= GameConst::kFixedTimeStep && iterations < 8) {
         float step = GameConst::kFixedTimeStep;
 
-        // ① 移动平台先更新
         for (auto& obj : objects_) {
             if (obj->type() == GameObject::Type::Platform) {
                 obj->update(step, *level_);
             }
         }
 
-        // ② 玩家物理
         if (player_) player_->update(step, *level_);
 
-        // ③ 玩家站台检测
         if (player_) {
             AABB pb = player_->bounds();
             for (auto& obj : objects_) {
@@ -102,7 +99,6 @@ void GameWorld::update(float dt) {
             }
         }
 
-        // ④ 其他对象（跳过平台和玩家——它们已经单独更新过了）
         for (auto& obj : objects_) {
             auto t = obj->type();
             if (t != GameObject::Type::Platform &&
@@ -117,7 +113,6 @@ void GameWorld::update(float dt) {
         ++iterations;
     }
 
-    // 玩家跳跃/落地音效 + 粒子
     if (player_) {
         Vec2 pb = player_->bounds().center();
         float footX = pb.x;
@@ -241,6 +236,44 @@ bool GameWorld::checkGoalReached() const {
     return player_->bounds().intersects(goal);
 }
 
+// ============================================================
+// 阴影渲染
+// ============================================================
+void GameWorld::renderShadow(sf::RenderTarget& target,
+                             Vec2 worldPos,
+                             float width, float height) const {
+    // 从 worldPos 向下找到第一个实体瓦片
+    int ts = level_->tileSize();
+    int tx = static_cast<int>(worldPos.x / ts);
+
+    float shadowY = worldPos.y + height;   // 默认脚底
+
+    for (int ty = static_cast<int>((worldPos.y + height) / ts);
+         ty < level_->height(); ++ty) {
+        if (level_->isSolid(tx, ty)) {
+            shadowY = static_cast<float>(ty * ts);
+            break;
+        }
+    }
+
+    float distance = shadowY - (worldPos.y + height);
+
+    // 距离越远，阴影越淡越小
+    float alphaFactor = std::clamp(1.f - distance / 300.f, 0.2f, 1.f);
+    float scaleFactor = std::clamp(1.f - distance / 500.f, 0.5f, 1.f);
+
+    float rx = (width * 0.5f) * scaleFactor;
+    float ry = rx * 0.35f;
+
+    sf::CircleShape shadow(rx);
+    shadow.setOrigin({rx, ry});
+    shadow.setScale({1.f, 0.35f});
+    shadow.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
+    shadow.setFillColor(sf::Color(0, 0, 0,
+        static_cast<std::uint8_t>(120 * alphaFactor)));
+    target.draw(shadow);
+}
+
 void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
     sf::RectangleShape rect;
     rect.setFillColor(sf::Color::Transparent);
@@ -268,16 +301,37 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
 
 void GameWorld::render(sf::RenderTarget& target) {
     Vec2 camTL = camera_.effectivePosition();
+
+    // 1. 瓦片
     level_->render(target,
                    camTL.x, camTL.y,
                    camera_.viewWidth(), camera_.viewHeight());
 
+    // 2. 阴影（所有对象先画阴影）
+    if (pseudo3D_) {
+        for (const auto& obj : objects_) {
+            switch (obj->type()) {
+                case GameObject::Type::Player: {
+                    AABB b = obj->bounds();
+                    renderShadow(target, {b.x, b.y}, b.w, b.h);
+                    break;
+                }
+                case GameObject::Type::Enemy: {
+                    AABB b = obj->bounds();
+                    renderShadow(target, {b.x, b.y}, b.w, b.h);
+                    break;
+                }
+                default: break;
+            }
+        }
+    }
+
+    // 3. 对象
     for (const auto& obj : objects_) {
         obj->render(target);
     }
 
     if (particlesEnabled_) particles_.render(target);
-
     if (showColliders_) renderDebugColliders(target);
 }
 

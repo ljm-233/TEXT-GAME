@@ -219,8 +219,19 @@ void Player::render(sf::RenderTarget& target) const {
         if ((ms / 100) % 2 == 0) return;
     }
 
-    animator_.applyTo(*sprite_);
+    // ===== 动画关闭：画简单方块 =====
+    if (!animationEnabled_ || !sprite_) {
+        sf::RectangleShape body({size_.x, size_.y});
+        body.setPosition({pos_.x, pos_.y});
+        body.setFillColor(sf::Color(80, 200, 120));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(40, 120, 70));
+        target.draw(body);
+        return;
+    }
 
+    // ===== 精灵动画 =====
+    animator_.applyTo(*sprite_);
     sprite_->setScale(currentScale_);
     sprite_->setPosition({
         pos_.x + size_.x * 0.5f,

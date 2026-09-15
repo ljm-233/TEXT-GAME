@@ -133,6 +133,7 @@ add_executable(text_game
     src/game/moving_platform.cpp
     src/ui/animator.cpp
     src/game/player_sprite_factory.cpp
+    src/scene/level_select_scene.cpp
 )
 
 target_include_directories(text_game PRIVATE

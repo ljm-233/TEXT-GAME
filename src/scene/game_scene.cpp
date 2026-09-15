@@ -31,7 +31,6 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
 
     levelIndex_ = std::max(1, save_.currentLevel);
 
-    // 视差背景
     parallax_ = std::make_unique<ParallaxBackground>();
 
     if (!loadLevel(levelIndex_)) {
@@ -69,19 +68,17 @@ bool GameScene::loadLevel(int index) {
     levelIndex_ = index;
     lastState_ = GameWorld::State::Playing;
 
-    // 创建开场文字
-    intro_ = std::make_unique<LevelIntro>(
-        *font_, index, static_cast<float>(world_->totalCoins()));
+    if (preferences_->getBool("level_intro", true)) {
+        intro_ = std::make_unique<LevelIntro>(
+            *font_, index, static_cast<float>(world_->totalCoins()));
+    } else {
+        intro_.reset();
+    }
 
-    // 强制刷新缓存
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
     return true;
 }
-
-// ============================================================
-// 缓存刷新
-// ============================================================
 
 void GameScene::refreshHud() {
     int lives = world_->lives();
@@ -160,24 +157,19 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
     overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 70.f});
 }
 
-// ============================================================
-// 事件
-// ============================================================
-
 void GameScene::handleEvent(const sf::Event& event) {
     if (paused_) {
         pauseMenu_->handleEvent(event);
         return;
     }
 
-    // ===== 开场动画：任意键/点击跳过 =====
     if (intro_) {
         if (event.getIf<sf::Event::KeyPressed>() ||
             event.getIf<sf::Event::MouseButtonPressed>()) {
             intro_->skip();
             intro_.reset();
         }
-        return;   // 开场期间不吃其他事件
+        return;
     }
 
     auto state = world_->state();
@@ -231,10 +223,6 @@ void GameScene::handleEvent(const sf::Event& event) {
     world_->handleEvent(event);
 }
 
-// ============================================================
-// 更新
-// ============================================================
-
 void GameScene::update(float dt) {
     if (paused_) {
         pauseMenu_->update(dt);
@@ -250,7 +238,6 @@ void GameScene::update(float dt) {
         return;
     }
 
-    // ===== 开场动画期间：更新视差和开场，冻结游戏 =====
     if (intro_) {
         intro_->update(dt);
         if (parallax_) parallax_->update(dt);
@@ -280,10 +267,6 @@ void GameScene::update(float dt) {
     }
 }
 
-// ============================================================
-// 渲染
-// ============================================================
-
 void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH) {
     refreshOverlayLayout(winW, winH);
 
@@ -304,12 +287,12 @@ void GameScene::render(Window& window) {
 
     sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
 
-    // ===== 阶段 1：全屏背景（贴图） =====
+    // 阶段 1：全屏背景
     rt.setView(screenView);
     rt.clear(sf::Color::Black);
     if (background_) background_->render(rt);
 
-    // ===== 阶段 2：游戏世界 =====
+    // 阶段 2：游戏世界
     if (winW != lastViewWinW_ || winH != lastViewWinH_) {
         lastViewWinW_ = winW;
         lastViewWinH_ = winH;
@@ -323,12 +306,19 @@ void GameScene::render(Window& window) {
         worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
     }
 
+    // 从 Preferences 读 5 个开关
+    world_->setShowColliders(preferences_->getBool("show_colliders", false));
+    world_->setScreenShake(preferences_->getBool("screen_shake", true));
+    world_->setParticles(preferences_->getBool("particles", true));
+    world_->setPseudo3D(preferences_->getBool("pseudo_3d", true));
+    world_->setPlayerAnimation(preferences_->getBool("player_animation", true));
+
     Vec2 camCenter = world_->cameraCenter();
     worldView_.setCenter({camCenter.x, camCenter.y});
     rt.setView(worldView_);
 
-    // ⭐ 视差背景（在世界 view 下，用摄像机偏移驱动）
-    if (parallax_) {
+    // 视差背景（可选）
+    if (parallax_ && preferences_->getBool("parallax", true)) {
         float camLeft = camCenter.x - kLogicalW * 0.5f;
         float camTop  = camCenter.y - kLogicalH * 0.5f;
         parallax_->render(rt, camLeft, camTop, kLogicalW, kLogicalH);
@@ -336,17 +326,14 @@ void GameScene::render(Window& window) {
 
     world_->render(rt);
 
-    // ===== 阶段 3：HUD =====
+    // 阶段 3：HUD
     rt.setView(screenView);
 
     refreshHud();
     hudText_.setPosition({20.f, 16.f});
     rt.draw(hudText_);
 
-    // ⭐ 开场文字
-    if (intro_) {
-        intro_->render(rt, winW, winH);
-    }
+    if (intro_) intro_->render(rt, winW, winH);
 
     renderStateOverlay(rt, winW, winH);
 

@@ -8,13 +8,15 @@ MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
                              std::shared_ptr<Logger> logger)
     : background_(std::move(background)),
       logger_(std::move(logger)),
-      startButton_     (Str::StartGame,  font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      calculatorButton_(Str::Calculator, font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      settingsButton_  (Str::Settings,   font, {0.f, 0.f}, {280.f, 70.f}, 30),
-      exitButton_      (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 70.f}, 30) {}
+      startButton_       (Str::StartGame,  font, {0.f, 0.f}, {280.f, 56.f}, 26),
+      levelSelectButton_ (Str::LevelSelect, font, {0.f, 0.f}, {280.f, 56.f}, 26),
+      calculatorButton_  (Str::Calculator, font, {0.f, 0.f}, {280.f, 56.f}, 26),
+      settingsButton_    (Str::Settings,   font, {0.f, 0.f}, {280.f, 56.f}, 26),
+      exitButton_        (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 56.f}, 26) {}
 
 void MainMenuScene::handleEvent(const sf::Event& event) {
     startButton_.handleEvent(event);
+    levelSelectButton_.handleEvent(event);
     calculatorButton_.handleEvent(event);
     settingsButton_.handleEvent(event);
     exitButton_.handleEvent(event);
@@ -26,6 +28,10 @@ void MainMenuScene::update(float dt) {
     if (startButton_.consumeClick()) {
         logger_->info("点击: 启动游戏");
         nextScene_ = SceneId::SaveSelect;
+    }
+    if (levelSelectButton_.consumeClick()) {
+        logger_->info("点击: 选关");
+        nextScene_ = SceneId::LevelSelect;
     }
     if (calculatorButton_.consumeClick()) {
         logger_->info("点击: 计算器");
@@ -49,14 +55,14 @@ void MainMenuScene::render(Window& window) {
     float cx = static_cast<float>(size.x) / 2.f;
     float cy = static_cast<float>(size.y) / 2.f;
 
-    const float btnW = 280.f, btnH = 70.f, gap = 20.f;
-    float totalH = btnH * 4 + gap * 3;
+    const float btnW = 280.f, btnH = 56.f, gap = 14.f;
+    float totalH = btnH * 5 + gap * 4;
     float startY = cy - totalH / 2.f;
 
-    Button* btns[] = {&startButton_, &calculatorButton_,
+    Button* btns[] = {&startButton_, &levelSelectButton_, &calculatorButton_,
                       &settingsButton_, &exitButton_};
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         float targetY = startY + static_cast<float>(i) * (btnH + gap);
 
         float delay = static_cast<float>(i) * kButtonDelay;

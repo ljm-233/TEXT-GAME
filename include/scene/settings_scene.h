@@ -28,9 +28,10 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
-    enum class Tab { Display = 0, Interface = 1, Other = 2 };
-    static constexpr int kTabCount = 3;
+    enum class Tab { Display = 0, Interface = 1, Graphics = 2, Audio = 3, Other = 4 };
+    static constexpr int kTabCount = 5;
 
+    // ===== 应用状态 =====
     void refreshSelection();
     void applyResolution();
     void applyFullscreen();
@@ -40,26 +41,35 @@ private:
     void applyTheme();
     void applyWallpaper();
     void applyFpsPosition();
+    void applyFpsFormat();
     void applyFpsLimit();
     void applyButtonStyle();
     void applyLogRotation();
     void applyAnimation();
     void applyNotification();
     void applySound();
+    void applyBGM();
     void applyAutoPause();
-    void applyFpsFormat();
     void applyConsolePrompt();
     void applyShowColliders();
     void applyScreenShake();
     void applyParticles();
+    void applyPseudo3D();
+    void applyParallax();
+    void applyPlayerAnimation();
+    void applyLevelIntro();
     void resetAllPreferences();
 
-    void renderTabs        (Window& window);
-    void renderDisplayTab  (Window& window, float contentX, float ctrlX, float y);
-    void renderInterfaceTab(Window& window, float contentX, float ctrlX, float y);
-    void renderOtherTab    (Window& window, float contentX, float ctrlX, float y);
-    void renderBackButton  (Window& window);
+    // ===== 渲染子函数 =====
+    void renderTabs         (Window& window);
+    void renderDisplayTab   (Window& window, float contentX, float ctrlX, float y);
+    void renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
+    void renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
+    void renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
+    void renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
+    void renderBackButton   (Window& window);
 
+    // ===== 依赖 =====
     std::shared_ptr<Background>    background_;
     std::shared_ptr<Preferences>   preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
@@ -68,26 +78,26 @@ private:
     const sf::Font&                font_;
 
     Tab currentTab_ = Tab::Display;
-
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
-    // ===== Display =====
+    // ================= Display =================
     std::vector<std::unique_ptr<Button>> resolutionButtons_;
     std::unique_ptr<Button> fullscreenOn_, fullscreenOff_;
     std::unique_ptr<Button> vsyncOn_, vsyncOff_;
     std::vector<std::unique_ptr<Button>> antiAliasingButtons_;
     std::vector<std::unique_ptr<Button>> logLevelButtons_;
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
-    std::unique_ptr<Button> animationOn_, animationOff_;
-    std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
-    std::unique_ptr<Button> notificationOn_, notificationOff_;
-    std::vector<std::unique_ptr<Button>> notificationPosButtons_;
 
-    // ===== Interface =====
+    // ================= Interface =================
     std::unique_ptr<Button> fpsOn_, fpsOff_;
     std::vector<std::unique_ptr<Button>> fpsPosButtons_;
     std::vector<std::unique_ptr<Button>> fpsFormatButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
+    std::vector<std::unique_ptr<Button>> themeButtons_;
+    std::unique_ptr<Button> wallpaperButton_;
+    std::unique_ptr<Button> clockOn_, clockOff_;
+    std::vector<std::unique_ptr<Button>> clockPosButtons_;
+
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
     std::vector<std::unique_ptr<Button>> consoleFontButtons_;
@@ -96,67 +106,85 @@ private:
     std::unique_ptr<Button> consoleAutoScrollOn_, consoleAutoScrollOff_;
     std::unique_ptr<Button> consoleBlinkOn_, consoleBlinkOff_;
     std::vector<std::unique_ptr<Button>> consolePromptButtons_;
-    std::vector<std::unique_ptr<Button>> themeButtons_;
-    std::unique_ptr<Button> wallpaperButton_;
-    std::unique_ptr<Button> clockOn_, clockOff_;
-    std::vector<std::unique_ptr<Button>> clockPosButtons_;
 
-    // ===== Other =====
-    std::unique_ptr<Button> rememberOn_, rememberOff_;
-    std::vector<std::unique_ptr<Button>> logRotateButtons_;
-    std::vector<std::unique_ptr<Button>> logKeepButtons_;
+    // ================= Graphics =================
+    std::unique_ptr<Button> animationOn_, animationOff_;
+    std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
+    std::unique_ptr<Button> notificationOn_, notificationOff_;
+    std::vector<std::unique_ptr<Button>> notificationPosButtons_;
+    std::unique_ptr<Button> pseudo3DOn_, pseudo3DOff_;
+    std::unique_ptr<Button> parallaxOn_, parallaxOff_;
+    std::unique_ptr<Button> playerAnimOn_, playerAnimOff_;
+    std::unique_ptr<Button> levelIntroOn_, levelIntroOff_;
+    std::unique_ptr<Button> particlesOn_, particlesOff_;
+    std::unique_ptr<Button> screenShakeOn_, screenShakeOff_;
+    std::unique_ptr<Button> showCollidersOn_, showCollidersOff_;
     std::vector<std::unique_ptr<Button>> buttonCornerButtons_;
     std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
+
+    // ================= Audio =================
     std::unique_ptr<Button> soundOn_, soundOff_;
     std::unique_ptr<Slider> soundVolumeSlider_;
+    std::unique_ptr<Button> bgmOn_, bgmOff_;
+    std::unique_ptr<Slider> bgmVolumeSlider_;
+
+    // ================= Other =================
+    std::unique_ptr<Button> rememberOn_, rememberOff_;
     std::unique_ptr<Button> autoPauseOn_, autoPauseOff_;
-    std::unique_ptr<Button> showCollidersOn_, showCollidersOff_;
-    std::unique_ptr<Button> screenShakeOn_, screenShakeOff_;
-    std::unique_ptr<Button> particlesOn_, particlesOff_;
+    std::vector<std::unique_ptr<Button>> logRotateButtons_;
+    std::vector<std::unique_ptr<Button>> logKeepButtons_;
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
+    std::unique_ptr<TextInput> playerNameInput_;
 
     std::unique_ptr<Button> backButton_;
     std::unique_ptr<ConfirmDialog> resetConfirm_;
     std::unique_ptr<ConfirmDialog> aboutDialog_;
 
-    std::unique_ptr<TextInput> playerNameInput_;
+    // ================= 标签 =================
+    sf::Text headingDisplay_, headingInterface_, headingGraphics_;
+    sf::Text headingAudio_, headingOther_;
 
-    // ===== 标签 =====
-    sf::Text headingDisplay_, headingInterface_, headingOther_;
     sf::Text labelResolution_, labelFullscreen_, labelVsync_;
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
-    sf::Text labelAnimation_, labelAnimationSpeed_;
-    sf::Text labelNotification_, labelNotificationPos_;
+
     sf::Text labelFps_, labelFpsPos_, labelFpsFormat_, labelUiScale_;
+    sf::Text labelTheme_, labelWallpaper_;
+    sf::Text labelClock_, labelClockPos_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelConsoleFont_, labelConsoleHistory_;
     sf::Text labelConsoleLineHeight_, labelConsoleAutoScroll_;
     sf::Text labelConsoleBlink_, labelConsolePrompt_;
-    sf::Text labelTheme_, labelWallpaper_;
-    sf::Text labelClock_, labelClockPos_;
-    sf::Text labelRememberSize_, labelLogRotate_, labelLogKeep_;
+
+    sf::Text labelAnimation_, labelAnimationSpeed_;
+    sf::Text labelNotification_, labelNotificationPos_;
+    sf::Text labelPseudo3D_, labelParallax_;
+    sf::Text labelPlayerAnim_, labelLevelIntro_;
+    sf::Text labelParticles_, labelScreenShake_, labelShowColliders_;
     sf::Text labelButtonCorner_, labelButtonOutline_;
-    sf::Text labelSound_, labelSoundVolume_, labelAutoPause_;
-    sf::Text labelShowColliders_, labelScreenShake_, labelParticles_;
-    sf::Text labelPlayerName_;
+
+    sf::Text labelSound_, labelSoundVolume_;
+    sf::Text labelBGM_, labelBGMVolume_;
+
+    sf::Text labelRememberSize_, labelAutoPause_;
+    sf::Text labelLogRotate_, labelLogKeep_, labelPlayerName_;
     sf::Text hintUiScale_;
 
-    // ===== 状态 =====
+    // ================= 状态 =================
     int     selectedResolution_;
     bool    fullscreen_;
     bool    vsync_;
     int     antiAliasingLevel_;
     int     logLevel_;
     int     fpsLimit_;
-    bool    animationEnabled_;
-    int     animationSpeedIndex_;
-    bool    notificationEnabled_;
-    int     notificationPosition_;
+
     bool    showFps_;
     int     fpsPosition_;
     int     fpsFormat_;
     float   uiScale_;
+    ThemeId themeId_;
+    bool    showClock_;
+    int     clockPosition_;
     int     consoleMask_;
     int     consolePanelAlpha_;
     int     consoleFontSize_;
@@ -165,20 +193,30 @@ private:
     bool    consoleAutoScroll_;
     bool    consoleBlinkCursor_;
     int     consolePrompt_;
-    ThemeId themeId_;
+
+    bool    animationEnabled_;
+    int     animationSpeedIndex_;
+    bool    notificationEnabled_;
+    int     notificationPosition_;
+    bool    pseudo3D_;
+    bool    parallaxEnabled_;
+    bool    playerAnimEnabled_;
+    bool    levelIntroEnabled_;
+    bool    particlesEnabled_;
+    bool    screenShake_;
+    bool    showColliders_;
     float   buttonCorner_;
     float   buttonOutline_;
-    bool    showClock_;
-    int     clockPosition_;
-    bool    rememberSize_;
-    int     logRotateIndex_;
-    int     logKeepIndex_;
+
     bool    soundEnabled_;
     float   soundVolume_;
+    bool    bgmEnabled_;
+    float   bgmVolume_;
+
+    bool    rememberSize_;
     bool    autoPauseOnBlur_;
-    bool    showColliders_;
-    bool    screenShake_;
-    bool    particlesEnabled_;
+    int     logRotateIndex_;
+    int     logKeepIndex_;
 
     SceneId nextScene_ = SceneId::None;
 };

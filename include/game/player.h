@@ -29,6 +29,7 @@ public:
     void takeDamage();
     bool isInvincible() const { return invincibleTimer_ > 0.f; }
     void bounce();
+    void setAnimationEnabled(bool e) { animationEnabled_ = e; }
 
     void setVelocityY(float vy) { vel_.y = vy; onGround_ = false; jumpConsumed_ = true; }
     void setPositionY(float y) { pos_.y = y; onGround_ = false; }
@@ -68,6 +69,7 @@ private:
     bool  jumpConsumed_   = false;
 
     float invincibleTimer_ = 0.f;
+    bool animationEnabled_ = true;
 
     // 弹性动画
     sf::Vector2f currentScale_{1.f, 1.f};
@@ -77,4 +79,5 @@ private:
     std::shared_ptr<sf::Texture>       sheet_;
     Animator                           animator_;
     std::unique_ptr<sf::Sprite>        sprite_;
+    void renderShadow(sf::RenderTarget& target, const Level& level) const;
 };

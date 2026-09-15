@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
+#include "level_select_scene.h"
 
 Game::Game(std::shared_ptr<Window>        window,
            std::shared_ptr<Logger>        logger,
@@ -58,6 +59,9 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
         case SceneId::Console:
             return std::make_unique<ConsoleScene>(
                 background_, preferences_, saveManager_, font, logger_);
+        case SceneId::LevelSelect:
+            return std::make_unique<LevelSelectScene>(
+                background_, saveManager_, font, logger_);
         default:
             return nullptr;
     }

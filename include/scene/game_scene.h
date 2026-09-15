@@ -45,11 +45,9 @@ private:
 
     GameWorld::State lastState_ = GameWorld::State::Playing;
 
-    // ===== 新：视差背景 + 开场文字 =====
     std::unique_ptr<ParallaxBackground> parallax_;
     std::unique_ptr<LevelIntro>         intro_;
 
-    // ===== 渲染缓存 =====
     sf::View worldView_;
     float    lastViewWinW_ = 0.f;
     float    lastViewWinH_ = 0.f;

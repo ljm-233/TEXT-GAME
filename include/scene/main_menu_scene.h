@@ -21,14 +21,14 @@ private:
     std::shared_ptr<Background> background_;
     std::shared_ptr<Logger> logger_;
     Button startButton_;
+    Button levelSelectButton_;
     Button calculatorButton_;
     Button settingsButton_;
     Button exitButton_;
 
-    // 入场动画
     float elapsed_ = 0.f;
-    static constexpr float kButtonDelay = 0.12f;   // 每个按钮间隔
-    static constexpr float kButtonRise  = 0.4f;    // 上升时长
+    static constexpr float kButtonDelay = 0.10f;
+    static constexpr float kButtonRise  = 0.4f;
 
     SceneId nextScene_ = SceneId::None;
 };

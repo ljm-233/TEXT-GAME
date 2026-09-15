@@ -19,11 +19,11 @@ public:
     void render(sf::RenderTarget& target);
 
     void setViewSize(float w, float h);
-
-    // 开关
-    void setShowColliders(bool b) { showColliders_ = b; }
-    void setScreenShake(bool b)   { screenShake_ = b; }
-    void setParticles(bool b)     { particlesEnabled_ = b; }
+    void setShowColliders(bool b)    { showColliders_ = b; }
+    void setScreenShake(bool b)      { screenShake_ = b; }
+    void setParticles(bool b)        { particlesEnabled_ = b; }
+    void setPseudo3D(bool b)         { pseudo3D_ = b; if (level_) level_->setPseudo3D(b); }
+    void setPlayerAnimation(bool b)  { if (player_) player_->setAnimationEnabled(b); }
 
     Player& player() { return *player_; }
     const Player& player() const { return *player_; }
@@ -44,6 +44,8 @@ private:
     void spawnLevelObjects();
     void checkCollisionsSafe();
     void renderDebugColliders(sf::RenderTarget& target);
+    void renderShadow(sf::RenderTarget& target, Vec2 worldPos,
+                      float width, float height) const;
 
     std::unique_ptr<Level> level_;
     int levelIndex_ = 1;
@@ -64,4 +66,5 @@ private:
     bool showColliders_    = false;
     bool screenShake_      = true;
     bool particlesEnabled_ = true;
+    bool pseudo3D_         = true;
 };

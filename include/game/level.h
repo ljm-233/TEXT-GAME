@@ -29,8 +29,9 @@ public:
     Vec2 goalPos() const { return goalPos_; }
     bool hasGoal() const { return hasGoal_; }
 
-    // 设字体（用于 START / GOAL 文字）
     void setFont(const sf::Font* f) { font_ = f; }
+    void setPseudo3D(bool b) { pseudo3D_ = b; }
+    bool isPseudo3D() const { return pseudo3D_; }
 
     void render(sf::RenderTarget& target,
                 float camLeft, float camTop,
@@ -49,7 +50,7 @@ private:
     Vec2 goalPos_{0.f, 0.f};
     bool hasGoal_ = false;
 
-    // 动画时间（mutable：render 是 const，但需要推进时间）
     mutable sf::Clock animClock_;
     const sf::Font* font_ = nullptr;
+    bool pseudo3D_ = true;
 };

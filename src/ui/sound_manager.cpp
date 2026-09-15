@@ -123,7 +123,7 @@ void SoundManager::init() {
     loadSamples(bufBGM_, generateBGM());
     bgm_ = std::make_unique<sf::Sound>(bufBGM_);
     bgm_->setLooping(true);
-    bgm_->setVolume(volume_ * 40.f);   // BGM 比音效轻
+    bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 
     // 声部池
     std::vector<std::int16_t> silent(64, 0);
@@ -140,7 +140,7 @@ void SoundManager::init() {
 void SoundManager::setVolume(float v) {
     volume_ = std::clamp(v, 0.f, 1.f);
     for (auto& s : pool_) s->setVolume(volume_ * 100.f);
-    if (bgm_) bgm_->setVolume(volume_ * 40.f);
+    if (bgm_) bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 }
 
 void SoundManager::play(const sf::SoundBuffer& buf) {
@@ -169,6 +169,11 @@ void SoundManager::setBGMEnabled(bool e) {
     if (!bgmEnabled_) {
         stopBGM();
     }
+}
+
+void SoundManager::setBGMVolume(float v) {
+    bgmVolume_ = std::clamp(v, 0.f, 1.f);
+    if (bgm_) bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 }
 
 void SoundManager::playBGM() {

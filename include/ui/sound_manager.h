@@ -32,6 +32,8 @@ public:
     void pauseBGM();
     void resumeBGM();
     void setBGMEnabled(bool e);
+    void setBGMVolume(float v);
+    float bgmVolume() const { return bgmVolume_; }
     bool isBGMEnabled() const { return bgmEnabled_; }
 
 private:
@@ -52,6 +54,7 @@ private:
     sf::SoundBuffer bufBGM_;
     std::unique_ptr<sf::Sound> bgm_;
     bool  bgmEnabled_ = true;
+    float bgmVolume_ = 0.4f;
     bool  bgmPlaying_ = false;
 
     std::vector<std::unique_ptr<sf::Sound>> pool_;
