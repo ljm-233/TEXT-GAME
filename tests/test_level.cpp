@@ -2,13 +2,12 @@
 #include "level.h"
 
 TEST_CASE("Level - 从字符串加载") {
-    const char* text = R"(
-#####
+    // ⭐ 注意：R"( 后面紧贴 #，不要换行
+    const char* text = R"(#####
 #P  #
 #   #
 #  G#
-#####
-)";
+#####)";
 
     Level level;
     REQUIRE(level.loadFromString(text));
@@ -37,14 +36,12 @@ TEST_CASE("Level - 从字符串加载") {
 }
 
 TEST_CASE("Level - 敌人和金币") {
-    const char* text = R"(
-#######
+    const char* text = R"(#######
 #P  C #
 #  E  #
 #  C  #
 #    G#
-#######
-)";
+#######)";
 
     Level level;
     REQUIRE(level.loadFromString(text));
@@ -60,11 +57,10 @@ TEST_CASE("Level - 空地图") {
 }
 
 TEST_CASE("Level - 不等长行") {
-    // 第二行更长，应该按最长的算宽度
-    const char* text =
-        "#####\n"
-        "#P     #\n"
-        "#####\n";
+    // 第二行更长（7 字符），应该按最长的算宽度
+    const char* text = R"(#####
+#P    #
+#####)";
 
     Level level;
     REQUIRE(level.loadFromString(text));
