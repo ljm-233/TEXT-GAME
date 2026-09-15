@@ -30,7 +30,7 @@ public:
     bool hasGoal() const { return hasGoal_; }
 
     void setFont(const sf::Font* f) { font_ = f; }
-    void setPseudo3D(bool b) { pseudo3D_ = b; }
+    void setPseudo3D(bool b);
     bool isPseudo3D() const { return pseudo3D_; }
 
     void render(sf::RenderTarget& target,
@@ -38,6 +38,8 @@ public:
                 float camW,    float camH) const;
 
 private:
+    void buildGeometry();
+
     int width_ = 0, height_ = 0, tileSize_ = 32;
     std::vector<char> tiles_;
     Vec2 playerSpawn_{0.f, 0.f};
@@ -53,4 +55,7 @@ private:
     mutable sf::Clock animClock_;
     const sf::Font* font_ = nullptr;
     bool pseudo3D_ = true;
+
+    // 一次性构建的整个关卡的三角形顶点数组
+    sf::VertexArray vertexArray_;
 };

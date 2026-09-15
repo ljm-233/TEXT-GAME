@@ -1,10 +1,12 @@
 #include "level.h"
-#include "camera.h"
-#include "utf8.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
+
+// ============================================================
+// 加载
+// ============================================================
 
 bool Level::loadFromFile(const std::string& path) {
     std::ifstream in(path);
@@ -59,6 +61,8 @@ bool Level::loadFromString(const std::string& text) {
             tiles_[static_cast<size_t>(y * width_ + x)] = c;
         }
     }
+
+    buildGeometry();
     return true;
 }
 
@@ -71,76 +75,95 @@ bool Level::isSolid(int tx, int ty) const {
     return tileAt(tx, ty) == '#';
 }
 
-void Level::render(sf::RenderTarget& target,
-                   float camLeft, float camTop,
-                   float camW,    float camH) const {
-    int ts = tileSize_;
-    float tsF = static_cast<float>(ts);
-    float time = animClock_.getElapsedTime().asSeconds();
+void Level::setPseudo3D(bool b) {
+    if (pseudo3D_ == b) return;
+    pseudo3D_ = b;
+    buildGeometry();
+}
 
-    int left   = std::max(0, static_cast<int>(camLeft / ts));
-    int right  = std::min(width_,  static_cast<int>((camLeft + camW) / ts) + 1);
-    int top    = std::max(0, static_cast<int>(camTop / ts));
-    int bottom = std::min(height_, static_cast<int>((camTop + camH) / ts) + 1);
+// ============================================================
+// 几何构建
+// ============================================================
 
-    // ============================================================
-    // 伪 3D 瓦片
-    // ============================================================
+void Level::buildGeometry() {
+    const float tsF = static_cast<float>(tileSize_);
+
     const sf::Color kBody  (80, 80, 100);
     const sf::Color kTop   (130, 130, 155);
     const sf::Color kLeft  (100, 100, 120);
     const sf::Color kRight (50, 50, 70);
     const sf::Color kBottom(40, 40, 60);
 
-    sf::RectangleShape rect({tsF, tsF});
+    // ===== 第一步：统计顶点数 =====
+    std::size_t vertexCount = 0;
+    for (int y = 0; y < height_; ++y) {
+        for (int x = 0; x < width_; ++x) {
+            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
 
-    for (int y = top; y < bottom; ++y) {
-        for (int x = left; x < right; ++x) {
+            vertexCount += 6;   // 主体
+            if (!pseudo3D_) continue;
+            if (!isSolid(x, y - 1)) vertexCount += 6;
+            if (!isSolid(x - 1, y)) vertexCount += 6;
+            if (!isSolid(x + 1, y)) vertexCount += 6;
+            if (!isSolid(x, y + 1)) vertexCount += 6;
+        }
+    }
+
+    // ===== 第二步：一次性 resize =====
+    vertexArray_.clear();
+    vertexArray_.setPrimitiveType(sf::PrimitiveType::Triangles);
+    vertexArray_.resize(vertexCount);
+
+    std::size_t idx = 0;
+
+    auto addQuad = [&](float x0, float y0, float x1, float y1, sf::Color c) {
+        vertexArray_[idx++] = sf::Vertex{{x0, y0}, c};
+        vertexArray_[idx++] = sf::Vertex{{x1, y0}, c};
+        vertexArray_[idx++] = sf::Vertex{{x1, y1}, c};
+
+        vertexArray_[idx++] = sf::Vertex{{x0, y0}, c};
+        vertexArray_[idx++] = sf::Vertex{{x1, y1}, c};
+        vertexArray_[idx++] = sf::Vertex{{x0, y1}, c};
+    };
+
+    // ===== 第三步：填充 =====
+    for (int y = 0; y < height_; ++y) {
+        for (int x = 0; x < width_; ++x) {
             if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
 
             float px = static_cast<float>(x) * tsF;
             float py = static_cast<float>(y) * tsF;
 
-            // 主体
-            rect.setSize({tsF, tsF});
-            rect.setFillColor(kBody);
-            rect.setPosition({px, py});
-            target.draw(rect);
+            addQuad(px, py, px + tsF, py + tsF, kBody);
 
-            if (pseudo3D_) {
-                // 顶面高光：只有上方是空的时候画
-                if (!isSolid(x, y - 1)) {
-                    sf::RectangleShape topStrip({tsF, 5.f});
-                    topStrip.setFillColor(kTop);
-                    topStrip.setPosition({px, py});
-                    target.draw(topStrip);
-                }
+            if (!pseudo3D_) continue;
 
-                // 左侧高光
-                if (!isSolid(x - 1, y)) {
-                    sf::RectangleShape leftStrip({4.f, tsF});
-                    leftStrip.setFillColor(kLeft);
-                    leftStrip.setPosition({px, py});
-                    target.draw(leftStrip);
-                }
-
-                // 右侧阴影
-                if (!isSolid(x + 1, y)) {
-                    sf::RectangleShape rightStrip({4.f, tsF});
-                    rightStrip.setFillColor(kRight);
-                    rightStrip.setPosition({px + tsF - 4.f, py});
-                    target.draw(rightStrip);
-                }
-
-                // 底部阴影
-                if (!isSolid(x, y + 1)) {
-                    sf::RectangleShape bottomStrip({tsF, 4.f});
-                    bottomStrip.setFillColor(kBottom);
-                    bottomStrip.setPosition({px, py + tsF - 4.f});
-                    target.draw(bottomStrip);
-                }
-            }
+            if (!isSolid(x, y - 1))
+                addQuad(px, py, px + tsF, py + 5.f, kTop);
+            if (!isSolid(x - 1, y))
+                addQuad(px, py, px + 4.f, py + tsF, kLeft);
+            if (!isSolid(x + 1, y))
+                addQuad(px + tsF - 4.f, py, px + tsF, py + tsF, kRight);
+            if (!isSolid(x, y + 1))
+                addQuad(px, py + tsF - 4.f, px + tsF, py + tsF, kBottom);
         }
+    }
+}
+
+// ============================================================
+// 渲染
+// ============================================================
+
+void Level::render(sf::RenderTarget& target,
+                   float /*camLeft*/, float /*camTop*/,
+                   float /*camW*/,    float /*camH*/) const {
+    float time = animClock_.getElapsedTime().asSeconds();
+    const float tsF = static_cast<float>(tileSize_);
+
+    // ===== 整关一次性 draw =====
+    // SFML / GPU 会自动裁掉视图外的顶点，无需手动剔除
+    if (vertexArray_.getVertexCount() > 0) {
+        target.draw(vertexArray_);
     }
 
     // ============================================================
@@ -151,7 +174,6 @@ void Level::render(sf::RenderTarget& target,
         float cy = playerSpawn_.y + tsF * 0.5f;
 
         float pulse = 1.f + std::sin(time * 3.f) * 0.15f;
-
         float r1 = tsF * 0.45f * pulse;
         sf::CircleShape ring(r1);
         ring.setOrigin({r1, r1});

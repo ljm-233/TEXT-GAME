@@ -1,8 +1,8 @@
 #include "particle_system.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <cstdint>
+#include <cstdlib>
 
 namespace {
 
@@ -14,14 +14,14 @@ float randRange(float lo, float hi) {
 }
 constexpr float kGravity = 800.f;
 
-}
+} // namespace
 
-void ParticleSystem::emit(Vec2 pos, int count, sf::Color color,
-                          float speedMin, float speedMax,
-                          float lifeMin, float lifeMax,
-                          float sizeMin, float sizeMax) {
+void ParticleSystem::emit(Vec2 pos, int count, sf::Color color, float speedMin,
+                          float speedMax, float lifeMin, float lifeMax, float sizeMin,
+                          float sizeMax) {
     for (int i = 0; i < count; ++i) {
-        if (particles_.size() >= kMaxParticles) break;
+        if (particles_.size() >= kMaxParticles)
+            break;
         Particle p;
         p.pos = pos;
         float angle = randRange(0.f, 6.2831853f);
@@ -36,24 +36,19 @@ void ParticleSystem::emit(Vec2 pos, int count, sf::Color color,
 }
 
 void ParticleSystem::emitCoin(Vec2 pos) {
-    emit(pos, 12, sf::Color(255, 210, 60),
-         80.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
+    emit(pos, 12, sf::Color(255, 210, 60), 80.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
 }
 void ParticleSystem::emitJump(Vec2 pos) {
-    emit(pos, 6, sf::Color(200, 220, 255),
-         40.f, 100.f, 0.2f, 0.4f, 2.f, 4.f);
+    emit(pos, 6, sf::Color(200, 220, 255), 40.f, 100.f, 0.2f, 0.4f, 2.f, 4.f);
 }
 void ParticleSystem::emitLand(Vec2 pos) {
-    emit(pos, 8, sf::Color(180, 180, 200),
-         60.f, 140.f, 0.2f, 0.4f, 3.f, 5.f);
+    emit(pos, 8, sf::Color(180, 180, 200), 60.f, 140.f, 0.2f, 0.4f, 3.f, 5.f);
 }
 void ParticleSystem::emitStomp(Vec2 pos) {
-    emit(pos, 14, sf::Color(240, 80, 80),
-         100.f, 250.f, 0.4f, 0.7f, 3.f, 6.f);
+    emit(pos, 14, sf::Color(240, 80, 80), 100.f, 250.f, 0.4f, 0.7f, 3.f, 6.f);
 }
 void ParticleSystem::emitHurt(Vec2 pos) {
-    emit(pos, 10, sf::Color(255, 100, 100),
-         100.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
+    emit(pos, 10, sf::Color(255, 100, 100), 100.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
 }
 
 void ParticleSystem::update(float dt) {
@@ -62,10 +57,9 @@ void ParticleSystem::update(float dt) {
         p.pos += p.vel * dt;
         p.life -= dt;
     }
-    particles_.erase(
-        std::remove_if(particles_.begin(), particles_.end(),
-            [](const Particle& p) { return p.life <= 0.f; }),
-        particles_.end());
+    particles_.erase(std::remove_if(particles_.begin(), particles_.end(),
+                                    [](const Particle& p) { return p.life <= 0.f; }),
+                     particles_.end());
 }
 
 void ParticleSystem::render(sf::RenderTarget& target) {

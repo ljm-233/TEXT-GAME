@@ -1,6 +1,7 @@
 #include "main_menu_scene.h"
 #include "strings.h"
 #include "animation.h"
+#include "focus_group.h"
 #include <algorithm>
 
 MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
@@ -72,4 +73,10 @@ void MainMenuScene::render(Window& window) {
         btns[i]->setPosition({cx - btnW / 2.f, targetY + yOffset});
         btns[i]->render(window.native());
     }
+
+    // ⭐ 注册焦点列表
+    FocusGroup::instance().setItems({
+        &startButton_, &levelSelectButton_, &calculatorButton_,
+        &settingsButton_, &exitButton_
+    });
 }

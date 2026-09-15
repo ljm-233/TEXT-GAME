@@ -5,13 +5,14 @@
 
 namespace {
 float clampAxis(float desired, float view, float level) {
-    if (level <= 0.f) return desired;
+    if (level <= 0.f)
+        return desired;
     if (level <= view) {
         return (level - view) * 0.5f;
     }
     return std::clamp(desired, 0.f, level - view);
 }
-}
+} // namespace
 
 void Camera::snapTo(Vec2 target) {
     float desiredX = target.x - viewW_ * 0.5f;
@@ -34,7 +35,8 @@ void Camera::follow(Vec2 target, float dt) {
 }
 
 void Camera::shake(float intensity, float duration) {
-    if (intensity <= 0.f || duration <= 0.f) return;
+    if (intensity <= 0.f || duration <= 0.f)
+        return;
     // 更强的震动会覆盖更弱的
     if (intensity >= shakeIntensity_ || shakeTimer_ <= 0.f) {
         shakeIntensity_ = intensity;
@@ -53,7 +55,7 @@ void Camera::updateShake(float dt) {
         shakeOffset_ = {0.f, 0.f};
         return;
     }
-    float t = shakeTimer_ / shakeDuration_;   // 1 → 0
+    float t = shakeTimer_ / shakeDuration_; // 1 → 0
     float amp = shakeIntensity_ * t;
     float rx = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 2.f * amp;
     float ry = (static_cast<float>(std::rand()) / RAND_MAX - 0.5f) * 2.f * amp;

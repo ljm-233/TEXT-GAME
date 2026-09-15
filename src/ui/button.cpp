@@ -1,9 +1,9 @@
 #include "button.h"
-#include "animation.h"
-#include "button_style.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
+#include "button_style.h"
+#include "animation.h"
 #include <algorithm>
 #include <cmath>
 
@@ -11,11 +11,14 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 }
 
-Button::Button(const std::string& label, const sf::Font& font, sf::Vector2f position,
-               sf::Vector2f size, unsigned characterSize)
-      : text_(font, toSf(label), scaledFontSize(characterSize)),
-        position_(position),
-        size_(size) {
+Button::Button(const std::string& label,
+               const sf::Font& font,
+               sf::Vector2f position,
+               sf::Vector2f size,
+               unsigned characterSize)
+    : text_(font, toSf(label), scaledFontSize(characterSize)),
+      position_(position),
+      size_(size) {
     shape_.setPosition(position_);
     text_.setFillColor(getTheme().textPrimary);
     refreshShape();
@@ -41,6 +44,10 @@ void Button::setText(const std::string& text) {
 
 void Button::setSelected(bool s) {
     selected_ = s;
+}
+
+void Button::setFocused(bool f) {
+    focused_ = f;
 }
 
 void Button::refreshShape() {
@@ -74,42 +81,45 @@ void Button::refreshShape() {
         arc({r, size_.y - r}, kPi / 2.f);
     }
 
-    shape_.setOutlineThickness(style.outlineThickness);
+    // 焦点按钮：加粗描边
+    float outline = style.outlineThickness;
+    if (focused_) outline = std::max(outline, 4.f);
+    shape_.setOutlineThickness(outline);
 }
 
 void Button::updateColors(float dt) {
     const auto& t = getTheme();
 
     sf::Color targetFill;
-    if (pressed_)
-        targetFill = t.buttonPressed;
-    else if (hovered_)
-        targetFill = t.buttonHover;
-    else if (selected_)
-        targetFill = t.buttonSelected;
-    else
-        targetFill = t.buttonNormal;
+    if (pressed_)        targetFill = t.buttonPressed;
+    else if (hovered_)   targetFill = t.buttonHover;
+    else if (focused_)   targetFill = t.buttonSelected;   // 焦点 = 选中色
+    else if (selected_)  targetFill = t.buttonSelected;
+    else                 targetFill = t.buttonNormal;
 
-    const sf::Color targetOutline = t.outline;
-    const sf::Color targetText = t.textPrimary;
+    sf::Color targetOutline = focused_ ? sf::Color(255, 240, 120)
+                                       : t.outline;
+    sf::Color targetText    = t.textPrimary;
 
     if (!colorsInitialized_) {
-        currentFill_ = targetFill;
+        currentFill_    = targetFill;
         currentOutline_ = targetOutline;
-        currentText_ = targetText;
+        currentText_    = targetText;
         colorsInitialized_ = true;
         return;
     }
 
-    currentFill_ = Anim::approach(currentFill_, targetFill, dt);
+    currentFill_    = Anim::approach(currentFill_,    targetFill,    dt);
     currentOutline_ = Anim::approach(currentOutline_, targetOutline, dt);
-    currentText_ = Anim::approach(currentText_, targetText, dt);
+    currentText_    = Anim::approach(currentText_,    targetText,    dt);
 }
 
 void Button::centerText() {
     auto b = text_.getLocalBounds();
-    text_.setOrigin({b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
-    text_.setPosition({position_.x + size_.x / 2.f, position_.y + size_.y / 2.f});
+    text_.setOrigin({b.position.x + b.size.x / 2.f,
+                     b.position.y + b.size.y / 2.f});
+    text_.setPosition({position_.x + size_.x / 2.f,
+                       position_.y + size_.y / 2.f});
 }
 
 bool Button::contains(sf::Vector2f point) const {
@@ -119,23 +129,21 @@ bool Button::contains(sf::Vector2f point) const {
 
 void Button::handleEvent(const sf::Event& event) {
     if (const auto* mm = event.getIf<sf::Event::MouseMoved>()) {
-        hovered_ = contains(
-            {static_cast<float>(mm->position.x), static_cast<float>(mm->position.y)});
+        hovered_ = contains({static_cast<float>(mm->position.x),
+                             static_cast<float>(mm->position.y)});
     }
     if (const auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            hovered_ = contains(
-                {static_cast<float>(mb->position.x), static_cast<float>(mb->position.y)});
-            if (hovered_)
-                pressed_ = true;
+            hovered_ = contains({static_cast<float>(mb->position.x),
+                                 static_cast<float>(mb->position.y)});
+            if (hovered_) pressed_ = true;
         }
     }
     if (const auto* mb = event.getIf<sf::Event::MouseButtonReleased>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            bool inside = contains(
-                {static_cast<float>(mb->position.x), static_cast<float>(mb->position.y)});
-            if (pressed_ && inside)
-                clicked_ = true;
+            bool inside = contains({static_cast<float>(mb->position.x),
+                                    static_cast<float>(mb->position.y)});
+            if (pressed_ && inside) clicked_ = true;
             pressed_ = false;
         }
     }
@@ -148,7 +156,6 @@ bool Button::consumeClick() {
 }
 
 void Button::render(sf::RenderTarget& target) {
-    // 用自上次 render 起的时间做颜色平滑
     float dt = animClock_.restart().asSeconds();
     updateColors(dt);
 

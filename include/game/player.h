@@ -18,6 +18,10 @@ public:
     Type type() const override { return Type::Player; }
 
     void handleEvent(const sf::Event& event);
+
+    // 每帧从手柄读输入（在 update 前调用）
+    void handleGamepad();
+
     Vec2 position() const { return pos_; }
     Vec2 velocity() const { return vel_; }
     bool onGround() const { return onGround_; }
@@ -29,7 +33,6 @@ public:
     void takeDamage();
     bool isInvincible() const { return invincibleTimer_ > 0.f; }
     void bounce();
-    void setAnimationEnabled(bool e) { animationEnabled_ = e; }
 
     void setVelocityY(float vy) { vel_.y = vy; onGround_ = false; jumpConsumed_ = true; }
     void setPositionY(float y) { pos_.y = y; onGround_ = false; }
@@ -39,6 +42,9 @@ public:
         vel_.y = 0.f;
         onGround_ = true;
     }
+
+    void setAnimationEnabled(bool e) { animationEnabled_ = e; }
+    void setGamepadEnabled(bool e)   { gamepadEnabled_ = e; }
 
     bool consumeFellOut() { bool f = fellOut_; fellOut_ = false; return f; }
     bool consumeJustJumped() { bool j = justJumped_; justJumped_ = false; return j; }
@@ -69,15 +75,16 @@ private:
     bool  jumpConsumed_   = false;
 
     float invincibleTimer_ = 0.f;
+
     bool animationEnabled_ = true;
+    bool gamepadEnabled_   = true;
 
     // 弹性动画
     sf::Vector2f currentScale_{1.f, 1.f};
     sf::Vector2f targetScale_{1.f, 1.f};
 
-    // 精灵动画（sprite 用 unique_ptr，因为 sf::Sprite 无默认构造）
+    // 精灵动画
     std::shared_ptr<sf::Texture>       sheet_;
     Animator                           animator_;
     std::unique_ptr<sf::Sprite>        sprite_;
-    void renderShadow(sf::RenderTarget& target, const Level& level) const;
 };

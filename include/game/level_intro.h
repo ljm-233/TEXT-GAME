@@ -18,8 +18,8 @@ private:
     sf::Text subtitle_;
     float elapsed_ = 0.f;
 
-    static constexpr float kFadeIn     = 0.4f;
-    static constexpr float kHold       = 1.4f;
-    static constexpr float kFadeOut    = 0.5f;
+    static constexpr float kFadeIn = 0.4f;
+    static constexpr float kHold = 1.4f;
+    static constexpr float kFadeOut = 0.5f;
     static constexpr float kTotalDuration = kFadeIn + kHold + kFadeOut;
 };

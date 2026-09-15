@@ -1,17 +1,20 @@
 #include "save_select_scene.h"
 #include "strings.h"
+#include "focus_group.h"
 
-SaveSelectScene::SaveSelectScene(std::shared_ptr<Background> background,
+SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
                                  std::shared_ptr<SaveManager> saveManager,
-                                 const sf::Font& font, std::shared_ptr<Logger> logger)
-      : background_(std::move(background)),
-        saveManager_(std::move(saveManager)),
-        logger_(std::move(logger)),
-        font_(font) {
-    newButton_ = std::make_unique<Button>(Str::NewSave, font_, sf::Vector2f{0.f, 0.f},
-                                          sf::Vector2f{520.f, 60.f}, 26);
-    backButton_ = std::make_unique<Button>(Str::Back, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{160.f, 50.f}, 22);
+                                 const sf::Font&              font,
+                                 std::shared_ptr<Logger>      logger)
+    : background_(std::move(background)),
+      saveManager_(std::move(saveManager)),
+      logger_(std::move(logger)),
+      font_(font) {
+
+    newButton_  = std::make_unique<Button>(Str::NewSave, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{520.f, 60.f}, 26);
+    backButton_ = std::make_unique<Button>(Str::Back, font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 50.f}, 22);
 
     rebuildButtons();
     logger_->info("进入存档选择页，共 " + std::to_string(saves_.size()) + " 个存档");
@@ -25,16 +28,16 @@ void SaveSelectScene::rebuildButtons() {
 
     for (const auto& s : saves_) {
         saveButtons_.push_back(std::make_unique<Button>(
-            s.name, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{440.f, 55.f}, 22));
+            s.name, font_, sf::Vector2f{0.f, 0.f},
+            sf::Vector2f{440.f, 55.f}, 22));
 
-        deleteButtons_.push_back(std::make_unique<Button>(Str::DeleteMark, font_,
-                                                          sf::Vector2f{0.f, 0.f},
-                                                          sf::Vector2f{60.f, 55.f}, 26));
+        deleteButtons_.push_back(std::make_unique<Button>(
+            Str::DeleteMark, font_, sf::Vector2f{0.f, 0.f},
+            sf::Vector2f{60.f, 55.f}, 26));
     }
 }
 
 void SaveSelectScene::handleEvent(const sf::Event& event) {
-    // 优先级：新建对话框 > 删除确认框 > 正常控件
     if (newSaveDialog_) {
         newSaveDialog_->handleEvent(event);
         return;
@@ -51,22 +54,18 @@ void SaveSelectScene::handleEvent(const sf::Event& event) {
         }
     }
 
-    for (auto& b : saveButtons_)
-        b->handleEvent(event);
-    for (auto& b : deleteButtons_)
-        b->handleEvent(event);
+    for (auto& b : saveButtons_)   b->handleEvent(event);
+    for (auto& b : deleteButtons_) b->handleEvent(event);
     newButton_->handleEvent(event);
     backButton_->handleEvent(event);
 }
 
 void SaveSelectScene::update(float /*dt*/) {
-    // ===== 新建存档对话框 =====
     if (newSaveDialog_) {
         auto r = newSaveDialog_->consumeResult();
         if (r == NewSaveDialog::Result::Created) {
             std::string name = newSaveDialog_->getName();
-            if (name.empty())
-                name = Str::NewSavePlaceholder;
+            if (name.empty()) name = Str::NewSavePlaceholder;
             auto info = saveManager_->createSave(name);
             saveManager_->setPendingSave(info);
             newSaveDialog_.reset();
@@ -77,7 +76,6 @@ void SaveSelectScene::update(float /*dt*/) {
         return;
     }
 
-    // ===== 删除确认框 =====
     if (confirm_) {
         auto r = confirm_->consumeResult();
         if (r == ConfirmDialog::Result::Yes) {
@@ -95,7 +93,6 @@ void SaveSelectScene::update(float /*dt*/) {
         return;
     }
 
-    // ===== 正常交互 =====
     for (size_t i = 0; i < saveButtons_.size(); ++i) {
         if (saveButtons_[i]->consumeClick()) {
             logger_->info("选择存档: " + saves_[i].filename);
@@ -110,8 +107,8 @@ void SaveSelectScene::update(float /*dt*/) {
             pendingDeleteIndex_ = static_cast<int>(i);
             confirm_ = std::make_unique<ConfirmDialog>(
                 font_,
-                std::string(Str::DeleteConfirmHead) + saves_[i].name +
-                    Str::DeleteConfirmTail,
+                std::string(Str::DeleteConfirmHead) + saves_[i].name
+                    + Str::DeleteConfirmTail,
                 sf::Vector2f(1280.f, 720.f));
             logger_->info("请求删除存档: " + saves_[i].filename);
             return;
@@ -119,10 +116,9 @@ void SaveSelectScene::update(float /*dt*/) {
     }
 
     if (newButton_->consumeClick()) {
-        // 弹出命名对话框
         std::string defName = Str::NewSavePlaceholder;
-        newSaveDialog_ =
-            std::make_unique<NewSaveDialog>(font_, defName, sf::Vector2f(1280.f, 720.f));
+        newSaveDialog_ = std::make_unique<NewSaveDialog>(
+            font_, defName, sf::Vector2f(1280.f, 720.f));
         return;
     }
 
@@ -133,8 +129,7 @@ void SaveSelectScene::update(float /*dt*/) {
 
 void SaveSelectScene::render(Window& window) {
     window.clear();
-    if (background_)
-        background_->render(window.native());
+    if (background_) background_->render(window.native());
 
     auto size = window.native().getSize();
     float w = static_cast<float>(size.x);
@@ -142,7 +137,7 @@ void SaveSelectScene::render(Window& window) {
 
     const float btnW = 440.f;
     const float delW = 60.f;
-    const float gap = 12.f;
+    const float gap  = 12.f;
     const float gapX = 8.f;
     const float rowW = btnW + gapX + delW;
 
@@ -172,5 +167,20 @@ void SaveSelectScene::render(Window& window) {
     if (newSaveDialog_) {
         newSaveDialog_->relayout({w, h});
         newSaveDialog_->render(window.native());
+    }
+
+    // ============================================================
+    // ⭐ 注册焦点
+    // ============================================================
+    if (confirm_ || newSaveDialog_) {
+        // 弹窗打开时不处理（弹窗的按钮暂不支持手柄）
+        FocusGroup::instance().clear();
+    } else {
+        std::vector<Button*> items;
+        for (auto& b : saveButtons_)   items.push_back(b.get());
+        for (auto& b : deleteButtons_) items.push_back(b.get());
+        items.push_back(newButton_.get());
+        items.push_back(backButton_.get());
+        FocusGroup::instance().setItems(items);
     }
 }

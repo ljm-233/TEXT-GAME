@@ -4,8 +4,11 @@
 
 class Button {
 public:
-    Button(const std::string& label, const sf::Font& font, sf::Vector2f position,
-           sf::Vector2f size, unsigned characterSize = 28);
+    Button(const std::string& label,
+           const sf::Font& font,
+           sf::Vector2f position,
+           sf::Vector2f size,
+           unsigned characterSize = 28);
 
     void handleEvent(const sf::Event& event);
     void render(sf::RenderTarget& target);
@@ -13,11 +16,18 @@ public:
     bool consumeClick();
 
     sf::Vector2f position() const { return position_; }
-    sf::Vector2f size() const { return size_; }
+    sf::Vector2f size() const     { return size_; }
     void setPosition(sf::Vector2f p);
     void setSize(sf::Vector2f s);
     void setText(const std::string& text);
     void setSelected(bool s);
+
+    // ===== 焦点（手柄导航用）=====
+    void setFocused(bool f);
+    bool isFocused() const { return focused_; }
+
+    // 外部触发点击（手柄 A 键用）
+    void triggerClick() { clicked_ = true; }
 
 private:
     bool contains(sf::Vector2f point) const;
@@ -26,17 +36,17 @@ private:
     void updateColors(float dt);
 
     sf::ConvexShape shape_;
-    sf::Text text_;
-    sf::Vector2f position_;
-    sf::Vector2f size_;
-    bool hovered_ = false;
-    bool pressed_ = false;
-    bool clicked_ = false;
+    sf::Text       text_;
+    sf::Vector2f   position_;
+    sf::Vector2f   size_;
+    bool hovered_  = false;
+    bool pressed_  = false;
+    bool clicked_  = false;
     bool selected_ = false;
+    bool focused_  = false;
 
-    // ===== 动画状态 =====
     sf::Clock animClock_;
-    bool colorsInitialized_ = false;
+    bool      colorsInitialized_ = false;
     sf::Color currentFill_;
     sf::Color currentOutline_;
     sf::Color currentText_;

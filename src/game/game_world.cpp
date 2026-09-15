@@ -66,19 +66,25 @@ void GameWorld::handleEvent(const sf::Event& event) {
 void GameWorld::update(float dt) {
     if (state_ != State::Playing) return;
 
+    // ===== 手柄输入（每帧读一次）=====
+    if (player_) player_->handleGamepad();
+
     accumulator_ += dt;
     int iterations = 0;
     while (accumulator_ >= GameConst::kFixedTimeStep && iterations < 8) {
         float step = GameConst::kFixedTimeStep;
 
+        // ① 移动平台先更新
         for (auto& obj : objects_) {
             if (obj->type() == GameObject::Type::Platform) {
                 obj->update(step, *level_);
             }
         }
 
+        // ② 玩家物理
         if (player_) player_->update(step, *level_);
 
+        // ③ 玩家站台检测
         if (player_) {
             AABB pb = player_->bounds();
             for (auto& obj : objects_) {
@@ -99,6 +105,7 @@ void GameWorld::update(float dt) {
             }
         }
 
+        // ④ 其他对象（跳过平台和玩家）
         for (auto& obj : objects_) {
             auto t = obj->type();
             if (t != GameObject::Type::Platform &&
@@ -236,17 +243,13 @@ bool GameWorld::checkGoalReached() const {
     return player_->bounds().intersects(goal);
 }
 
-// ============================================================
-// 阴影渲染
-// ============================================================
 void GameWorld::renderShadow(sf::RenderTarget& target,
                              Vec2 worldPos,
                              float width, float height) const {
-    // 从 worldPos 向下找到第一个实体瓦片
     int ts = level_->tileSize();
     int tx = static_cast<int>(worldPos.x / ts);
 
-    float shadowY = worldPos.y + height;   // 默认脚底
+    float shadowY = worldPos.y + height;
 
     for (int ty = static_cast<int>((worldPos.y + height) / ts);
          ty < level_->height(); ++ty) {
@@ -258,7 +261,6 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
 
     float distance = shadowY - (worldPos.y + height);
 
-    // 距离越远，阴影越淡越小
     float alphaFactor = std::clamp(1.f - distance / 300.f, 0.2f, 1.f);
     float scaleFactor = std::clamp(1.f - distance / 500.f, 0.5f, 1.f);
 
@@ -302,12 +304,10 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
 void GameWorld::render(sf::RenderTarget& target) {
     Vec2 camTL = camera_.effectivePosition();
 
-    // 1. 瓦片
     level_->render(target,
                    camTL.x, camTL.y,
                    camera_.viewWidth(), camera_.viewHeight());
 
-    // 2. 阴影（所有对象先画阴影）
     if (pseudo3D_) {
         for (const auto& obj : objects_) {
             switch (obj->type()) {
@@ -326,7 +326,6 @@ void GameWorld::render(sf::RenderTarget& target) {
         }
     }
 
-    // 3. 对象
     for (const auto& obj : objects_) {
         obj->render(target);
     }

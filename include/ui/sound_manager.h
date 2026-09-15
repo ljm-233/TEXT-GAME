@@ -1,8 +1,8 @@
 #pragma once
 #include <SFML/Audio.hpp>
+#include <cstddef>
 #include <memory>
 #include <vector>
-#include <cstddef>
 
 class SoundManager {
 public:
@@ -11,7 +11,7 @@ public:
     void init();
 
     void setEnabled(bool e) { enabled_ = e; }
-    bool isEnabled() const  { return enabled_; }
+    bool isEnabled() const { return enabled_; }
 
     void setVolume(float v);
     float volume() const { return volume_; }
@@ -53,14 +53,14 @@ private:
 
     sf::SoundBuffer bufBGM_;
     std::unique_ptr<sf::Sound> bgm_;
-    bool  bgmEnabled_ = true;
+    bool bgmEnabled_ = true;
     float bgmVolume_ = 0.4f;
-    bool  bgmPlaying_ = false;
+    bool bgmPlaying_ = false;
 
     std::vector<std::unique_ptr<sf::Sound>> pool_;
     std::size_t nextIndex_ = 0;
 
-    bool  enabled_ = true;
-    float volume_  = 0.6f;
-    bool  initialized_ = false;
+    bool enabled_ = true;
+    float volume_ = 0.6f;
+    bool initialized_ = false;
 };

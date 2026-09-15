@@ -49,6 +49,7 @@ private:
     void applyNotification();
     void applySound();
     void applyBGM();
+    void applyGamepad();
     void applyAutoPause();
     void applyConsolePrompt();
     void applyShowColliders();
@@ -127,6 +128,7 @@ private:
     std::unique_ptr<Slider> soundVolumeSlider_;
     std::unique_ptr<Button> bgmOn_, bgmOff_;
     std::unique_ptr<Slider> bgmVolumeSlider_;
+    std::unique_ptr<Button> gamepadOn_, gamepadOff_;
 
     // ================= Other =================
     std::unique_ptr<Button> rememberOn_, rememberOff_;
@@ -165,6 +167,7 @@ private:
 
     sf::Text labelSound_, labelSoundVolume_;
     sf::Text labelBGM_, labelBGMVolume_;
+    sf::Text labelGamepad_;
 
     sf::Text labelRememberSize_, labelAutoPause_;
     sf::Text labelLogRotate_, labelLogKeep_, labelPlayerName_;
@@ -212,6 +215,7 @@ private:
     float   soundVolume_;
     bool    bgmEnabled_;
     float   bgmVolume_;
+    bool    gamepadEnabled_;
 
     bool    rememberSize_;
     bool    autoPauseOnBlur_;

@@ -2,7 +2,8 @@
 #include <cmath>
 
 JumpPad::JumpPad(Vec2 pos, int tileSize)
-    : pos_(pos), tileSize_(tileSize) {
+      : pos_(pos),
+        tileSize_(tileSize) {
     float ts = static_cast<float>(tileSize_);
 
     base_.setSize({ts, ts * 0.5f});
@@ -17,7 +18,8 @@ JumpPad::JumpPad(Vec2 pos, int tileSize)
 
 void JumpPad::update(float dt, const Level& /*level*/) {
     animTimer_ += dt;
-    if (cooldown_ > 0.f) cooldown_ -= dt;
+    if (cooldown_ > 0.f)
+        cooldown_ -= dt;
 }
 
 AABB JumpPad::bounds() const {

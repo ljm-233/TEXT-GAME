@@ -114,31 +114,35 @@ constexpr const char* LabelNotification = "屏幕通知";
 constexpr const char* LabelNotificationPos = "通知位置";
 
 // ===== 新设置项 =====
-constexpr const char* LabelSound          = "音效";
-constexpr const char* LabelSoundVolume    = "音效音量";
-constexpr const char* LabelAutoPause      = "失焦自动暂停";
-constexpr const char* LabelFpsFormat      = "FPS 格式";
-constexpr const char* LabelConsolePrompt  = "控制台提示符";
+constexpr const char* LabelSound = "音效";
+constexpr const char* LabelSoundVolume = "音效音量";
+constexpr const char* LabelAutoPause = "失焦自动暂停";
+constexpr const char* LabelFpsFormat = "FPS 格式";
+constexpr const char* LabelConsolePrompt = "控制台提示符";
 
 constexpr const char* LabelShowColliders = "显示碰撞盒";
-constexpr const char* LabelScreenShake   = "屏幕震动";
-constexpr const char* LabelParticles     = "粒子效果";
+constexpr const char* LabelScreenShake = "屏幕震动";
+constexpr const char* LabelParticles = "粒子效果";
 // ===== 新 Tab =====
 constexpr const char* TabGraphics = "画面";
 constexpr const char* TabAudioLog = "音频";
-constexpr const char* TabGame     = "游戏";
+constexpr const char* TabGame = "游戏";
 
 // ===== 新设置项 =====
-constexpr const char* LabelPseudo3D        = "伪 3D 效果";
-constexpr const char* LabelParallax        = "视差背景";
+constexpr const char* LabelPseudo3D = "伪 3D 效果";
+constexpr const char* LabelParallax = "视差背景";
 constexpr const char* LabelPlayerAnimation = "玩家动画";
-constexpr const char* LabelLevelIntro      = "关卡开场";
-constexpr const char* LabelBGM             = "背景音乐";
+constexpr const char* LabelLevelIntro = "关卡开场";
+constexpr const char* LabelBGM = "背景音乐";
 // ===== 关卡选择 =====
-constexpr const char* LevelSelect      = "选关";
+constexpr const char* LevelSelect = "选关";
 constexpr const char* LevelSelectTitle = "选择关卡";
-constexpr const char* NoSaveHint       = "没有存档，请先创建存档";
-constexpr const char* SaveLabel        = "当前存档: ";
-constexpr const char* LockedHint       = "未解锁";
+constexpr const char* NoSaveHint = "没有存档，请先创建存档";
+constexpr const char* SaveLabel = "当前存档: ";
+constexpr const char* LockedHint = "未解锁";
+
+// ===== 手柄 =====
+constexpr const char* LabelGamepad        = "手柄支持";
+constexpr const char* LabelGamepadDeadzone = "摇杆死区";
 
 } // namespace Str

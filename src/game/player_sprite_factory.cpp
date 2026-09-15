@@ -4,20 +4,17 @@ std::shared_ptr<sf::Texture> PlayerSpriteFactory::sheet_;
 
 namespace {
 
-const sf::Color kCreeperGreen (95, 190, 95);
-const sf::Color kCreeperDark  (45, 110, 45);
-const sf::Color kBlack        (15, 15, 15);
+const sf::Color kCreeperGreen(95, 190, 95);
+const sf::Color kCreeperDark(45, 110, 45);
+const sf::Color kBlack(15, 15, 15);
 
 // 画一只苦力怕
 //   x, y:     frame 左上角
 //   legL,legR: 左右腿水平偏移（跑步用）
 //   legH:     腿高（跳跃收起 / 下落伸展）
 //   bodyBob:  身体上下浮动（呼吸用）
-void drawCreeper(sf::RenderTarget& rt,
-                 float x, float y,
-                 float legL, float legR,
-                 float legH,
-                 float bodyBob) {
+void drawCreeper(sf::RenderTarget& rt, float x, float y, float legL, float legR,
+                 float legH, float bodyBob) {
     const float bodyY = y + 4.f + bodyBob;
 
     // ========== 头/身体（一体方块）==========
@@ -76,29 +73,35 @@ void drawFrame(sf::RenderTarget& rt, int frameIndex) {
     float bodyBob = 0.f;
 
     switch (frameIndex) {
-        case 0: /* IDLE1：静止 */ break;
-        case 1: /* IDLE2：呼吸，身体下沉 1px */
-            bodyBob = 1.f;
-            break;
-        case 2: /* RUN1：腿张开 */
-            legL = -1.f; legR = 1.f;
-            break;
-        case 3: /* RUN2：腿张开更多 */
-            legL = -3.f; legR = 3.f;
-            break;
-        case 4: /* RUN3：腿内收 */
-            legL = 1.f; legR = -1.f;
-            break;
-        case 5: /* RUN4：腿内收更多 */
-            legL = 3.f; legR = -3.f;
-            break;
-        case 6: /* JUMP：腿收起 */
-            legH = 3.f;
-            break;
-        case 7: /* FALL：腿伸展 */
-            legH = 8.f;
-            break;
-        default: break;
+    case 0: /* IDLE1：静止 */
+        break;
+    case 1: /* IDLE2：呼吸，身体下沉 1px */
+        bodyBob = 1.f;
+        break;
+    case 2: /* RUN1：腿张开 */
+        legL = -1.f;
+        legR = 1.f;
+        break;
+    case 3: /* RUN2：腿张开更多 */
+        legL = -3.f;
+        legR = 3.f;
+        break;
+    case 4: /* RUN3：腿内收 */
+        legL = 1.f;
+        legR = -1.f;
+        break;
+    case 5: /* RUN4：腿内收更多 */
+        legL = 3.f;
+        legR = -3.f;
+        break;
+    case 6: /* JUMP：腿收起 */
+        legH = 3.f;
+        break;
+    case 7: /* FALL：腿伸展 */
+        legH = 8.f;
+        break;
+    default:
+        break;
     }
 
     drawCreeper(rt, fx, 0.f, legL, legR, legH, bodyBob);
@@ -107,7 +110,8 @@ void drawFrame(sf::RenderTarget& rt, int frameIndex) {
 } // namespace
 
 std::shared_ptr<sf::Texture> PlayerSpriteFactory::getSheet() {
-    if (sheet_) return sheet_;
+    if (sheet_)
+        return sheet_;
 
     sf::RenderTexture rt;
     if (!rt.resize({kFrameW * kFrameCount, kFrameH})) {

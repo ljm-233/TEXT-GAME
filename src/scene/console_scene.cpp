@@ -1,8 +1,8 @@
 #include "console_scene.h"
 #include "calculator.h"
+#include "sound_manager.h"
 #include "strings.h"
 #include "theme.h"
-#include "sound_manager.h"
 #include "utf8.h"
 #include <algorithm>
 #include <iostream>
@@ -31,10 +31,11 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
                                          static_cast<unsigned>(lineHeight),
                                          static_cast<unsigned>(historyLines), autoScroll,
                                          blinkCursor, sf::Vector2u{1280, 720});
-        // 提示符
+    // 提示符
     int promptIdx = preferences_->getInt("console_prompt", 0);
     static const char* prompts[] = {"> ", "$ ", "λ ", "❯ "};
-    if (promptIdx < 0 || promptIdx > 3) promptIdx = 0;
+    if (promptIdx < 0 || promptIdx > 3)
+        promptIdx = 0;
     console_->setPrompt(prompts[promptIdx]);
 
     consoleBuf_ = makeConsoleStreamBuf(console_.get());

@@ -1,6 +1,7 @@
 #include "level_select_scene.h"
 #include "strings.h"
 #include "utf8.h"
+#include "focus_group.h"
 
 LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
                                    std::shared_ptr<SaveManager> saveManager,
@@ -18,7 +19,6 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
     saveNameText_.setFillColor(sf::Color(200, 220, 255));
     hintText_.setFillColor(sf::Color(255, 180, 80));
 
-    // 读最新存档
     auto saves = saveManager_->listSaves();
     if (!saves.empty()) {
         hasSave_ = true;
@@ -36,7 +36,6 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
         logger_->warn("关卡选择: 没有存档");
     }
 
-    // 创建关卡按钮
     for (int i = 1; i <= kMaxLevels; ++i) {
         levelButtons_.push_back(std::make_unique<Button>(
             std::to_string(i), font_,
@@ -53,7 +52,6 @@ void LevelSelectScene::refreshSelection() {
     for (int i = 0; i < kMaxLevels; ++i) {
         int level = i + 1;
         bool unlocked = hasSave_ && level <= currentLevel_;
-        // 未解锁的按钮：显示灰色 + "×"
         if (!unlocked) {
             levelButtons_[i]->setText("—");
         } else {
@@ -81,12 +79,8 @@ void LevelSelectScene::update(float /*dt*/) {
 
         int level = i + 1;
         bool unlocked = hasSave_ && level <= currentLevel_;
-        if (!unlocked) {
-            // 未解锁：忽略
-            continue;
-        }
+        if (!unlocked) continue;
 
-        // 更新存档的 currentLevel（选关进游戏不改变进度，但传进 SaveInfo）
         SaveInfo chosen = save_;
         chosen.currentLevel = level;
         saveManager_->setPendingSave(chosen);
@@ -110,7 +104,6 @@ void LevelSelectScene::render(Window& window) {
     float h = static_cast<float>(size.y);
     float cx = w / 2.f;
 
-    // ===== 标题 =====
     {
         auto b = titleText_.getLocalBounds();
         titleText_.setOrigin({b.position.x + b.size.x / 2.f,
@@ -119,7 +112,6 @@ void LevelSelectScene::render(Window& window) {
         window.native().draw(titleText_);
     }
 
-    // ===== 存档名 =====
     {
         auto b = saveNameText_.getLocalBounds();
         saveNameText_.setOrigin({b.position.x + b.size.x / 2.f,
@@ -128,7 +120,6 @@ void LevelSelectScene::render(Window& window) {
         window.native().draw(saveNameText_);
     }
 
-    // ===== 没有存档提示 =====
     if (!hasSave_) {
         auto b = hintText_.getLocalBounds();
         hintText_.setOrigin({b.position.x + b.size.x / 2.f,
@@ -136,7 +127,6 @@ void LevelSelectScene::render(Window& window) {
         hintText_.setPosition({cx, h / 2.f});
         window.native().draw(hintText_);
     } else {
-        // ===== 关卡按钮（一行 5 个，两行）=====
         const float btnSize  = 120.f;
         const float gapX     = 30.f;
         const float gapY     = 40.f;
@@ -158,7 +148,20 @@ void LevelSelectScene::render(Window& window) {
         }
     }
 
-    // ===== 返回 =====
     backButton_->setPosition({cx - 90.f, h - 100.f});
     backButton_->render(window.native());
+
+    // ============================================================
+    // ⭐ 注册焦点：只注册"已解锁"的关卡 + 返回
+    // ============================================================
+    std::vector<Button*> items;
+    for (int i = 0; i < kMaxLevels; ++i) {
+        int level = i + 1;
+        bool unlocked = hasSave_ && level <= currentLevel_;
+        if (unlocked) {
+            items.push_back(levelButtons_[i].get());
+        }
+    }
+    items.push_back(backButton_.get());
+    FocusGroup::instance().setItems(items);
 }

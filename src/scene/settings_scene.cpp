@@ -6,6 +6,8 @@
 #include "animation.h"
 #include "notification.h"
 #include "sound_manager.h"
+#include "focus_group.h"
+#include "gamepad.h"
 #include <algorithm>
 #include <cmath>
 
@@ -199,6 +201,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    scaledFontSize(20)),
       labelBGM_            (font, toSf(Str::LabelBGM),            scaledFontSize(20)),
       labelBGMVolume_      (font, toSf("BGM 音量"),               scaledFontSize(20)),
+      labelGamepad_        (font, toSf(Str::LabelGamepad),        scaledFontSize(20)),
 
       labelRememberSize_   (font, toSf(Str::LabelRememberSize),   scaledFontSize(20)),
       labelAutoPause_      (font, toSf(Str::LabelAutoPause),      scaledFontSize(20)),
@@ -207,7 +210,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelPlayerName_     (font, toSf(Str::LabelPlayerName),     scaledFontSize(20)),
       hintUiScale_         (font, toSf(Str::HintUiScale),         scaledFontSize(14)) {
 
-    // ===== 读偏好 =====
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
     fullscreen_          = preferences_->getBool("fullscreen", false);
     vsync_               = preferences_->getBool("vsync", true);
@@ -249,13 +251,13 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     soundVolume_         = static_cast<float>(preferences_->getDouble("sound_volume", 0.6));
     bgmEnabled_          = preferences_->getBool("bgm_enabled", true);
     bgmVolume_           = static_cast<float>(preferences_->getDouble("bgm_volume", 0.4));
+    gamepadEnabled_      = preferences_->getBool("gamepad_enabled", true);
 
     rememberSize_        = preferences_->getBool("remember_window_size", true);
     autoPauseOnBlur_     = preferences_->getBool("auto_pause_on_blur", true);
     logRotateIndex_      = indexOfLogRotate(preferences_->getInt("log_rotate", 0));
     logKeepIndex_        = indexOfLogKeep(preferences_->getInt("log_keep", 1));
 
-    // 玩家名输入框
     playerNameInput_ = std::make_unique<TextInput>(
         font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
         Str::PlayerNamePlaceholder, 18, 16);
@@ -264,7 +266,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         preferences_->set("player_name", s);
     });
 
-    // 标签颜色
     auto headingColor = sf::Color(160, 200, 240);
     headingDisplay_.setFillColor(headingColor);
     headingInterface_.setFillColor(headingColor);
@@ -288,13 +289,13 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelShowColliders_,
                     &labelButtonCorner_, &labelButtonOutline_,
                     &labelSound_, &labelSoundVolume_, &labelBGM_, &labelBGMVolume_,
+                    &labelGamepad_,
                     &labelRememberSize_, &labelAutoPause_,
                     &labelLogRotate_, &labelLogKeep_, &labelPlayerName_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
-    // ===== Tab 按钮 =====
     const char* tabLabels[] = {
         Str::TabDisplay, Str::TabInterface, Str::TabGraphics,
         Str::TabAudioLog, Str::TabOther
@@ -313,7 +314,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         return std::make_pair(std::move(on), std::move(off));
     };
 
-    // ================= Display =================
+    // Display
     for (int i = 0; i < kResolutionCount; ++i)
         resolutionButtons_.push_back(std::make_unique<Button>(
             kResolutions[i].label, font_,
@@ -330,7 +331,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         fpsLimitButtons_.push_back(std::make_unique<Button>(
             kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
-    // ================= Interface =================
+    // Interface
     { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
     for (int i = 0; i < kPosCount; ++i)
         fpsPosButtons_.push_back(std::make_unique<Button>(
@@ -373,7 +374,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         consolePromptButtons_.push_back(std::make_unique<Button>(
             kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
 
-    // ================= Graphics =================
+    // Graphics
     { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_ = std::move(on); animationOff_ = std::move(off); }
     for (int i = 0; i < kAnimSpeedCount; ++i)
         animationSpeedButtons_.push_back(std::make_unique<Button>(
@@ -396,7 +397,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         buttonOutlineButtons_.push_back(std::make_unique<Button>(
             kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
 
-    // ================= Audio =================
+    // Audio
     { auto [on, off] = makeToggle(Str::On, Str::Off); soundOn_ = std::move(on); soundOff_ = std::move(off); }
     soundVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, soundVolume_ * 100.f,
@@ -405,8 +406,9 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     bgmVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, bgmVolume_ * 100.f,
         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    { auto [on, off] = makeToggle(Str::On, Str::Off); gamepadOn_ = std::move(on); gamepadOff_ = std::move(off); }
 
-    // ================= Other =================
+    // Other
     { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
     { auto [on, off] = makeToggle(Str::On, Str::Off); autoPauseOn_ = std::move(on); autoPauseOff_ = std::move(off); }
     for (int i = 0; i < kLogRotateCount; ++i)
@@ -517,6 +519,8 @@ void SettingsScene::refreshSelection() {
     soundOff_->setSelected(!soundEnabled_);
     bgmOn_->setSelected(bgmEnabled_);
     bgmOff_->setSelected(!bgmEnabled_);
+    gamepadOn_->setSelected(gamepadEnabled_);
+    gamepadOff_->setSelected(!gamepadEnabled_);
 
     rememberOn_->setSelected(rememberSize_);
     rememberOff_->setSelected(!rememberSize_);
@@ -561,13 +565,11 @@ void SettingsScene::applyLogLevel() {
 void SettingsScene::applyTheme() {
     setTheme(themeId_);
     preferences_->setInt("theme", static_cast<int>(themeId_));
-    NotificationSystem::instance().push("主题已切换", NotificationType::Success);
 }
 void SettingsScene::applyWallpaper() {
     if (!background_) return;
     if (background_->next()) {
         preferences_->set("current_wallpaper", background_->currentFile());
-        NotificationSystem::instance().push("壁纸已切换", NotificationType::Info);
     }
 }
 void SettingsScene::applyFpsPosition() { preferences_->setInt("fps_position", fpsPosition_); }
@@ -614,6 +616,10 @@ void SettingsScene::applyBGM() {
     SoundManager::instance().setBGMVolume(bgmVolume_);
     preferences_->setBool("bgm_enabled", bgmEnabled_);
     preferences_->setDouble("bgm_volume", bgmVolume_);
+}
+void SettingsScene::applyGamepad() {
+    preferences_->setBool("gamepad_enabled", gamepadEnabled_);
+    FocusGroup::instance().setEnabled(gamepadEnabled_);
 }
 void SettingsScene::applyAutoPause()      { preferences_->setBool("auto_pause_on_blur", autoPauseOnBlur_); }
 void SettingsScene::applyConsolePrompt()  { preferences_->setInt("console_prompt", consolePrompt_); }
@@ -695,6 +701,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             soundVolumeSlider_->handleEvent(event);
             bgmOn_->handleEvent(event);    bgmOff_->handleEvent(event);
             bgmVolumeSlider_->handleEvent(event);
+            gamepadOn_->handleEvent(event); gamepadOff_->handleEvent(event);
             break;
         case Tab::Other:
             rememberOn_->handleEvent(event); rememberOff_->handleEvent(event);
@@ -1023,6 +1030,12 @@ void SettingsScene::update(float /*dt*/) {
                 SoundManager::instance().setBGMVolume(bgmVolume_);
                 preferences_->setDouble("bgm_volume", bgmVolume_);
             }
+            if (gamepadOn_->consumeClick() && !gamepadEnabled_) {
+                gamepadEnabled_ = true; refreshSelection(); applyGamepad(); return;
+            }
+            if (gamepadOff_->consumeClick() && gamepadEnabled_) {
+                gamepadEnabled_ = false; refreshSelection(); applyGamepad(); return;
+            }
             break;
         }
         case Tab::Other: {
@@ -1091,7 +1104,6 @@ void SettingsScene::renderTabs(Window& window) {
     }
 }
 
-// ===== 通用布局 helper =====
 namespace {
 struct RowDrawer {
     sf::RenderTarget& target;
@@ -1239,6 +1251,7 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
     r.slider(labelSoundVolume_, soundVolumeSlider_.get());
     r.toggle(labelBGM_,         bgmOn_,   bgmOff_);
     r.slider(labelBGMVolume_,   bgmVolumeSlider_.get());
+    r.toggle(labelGamepad_,     gamepadOn_, gamepadOff_);
 }
 
 void SettingsScene::renderOtherTab(Window& window, float contentX,
@@ -1254,7 +1267,6 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
     r.multi (labelLogRotate_,    logRotateButtons_, 96.f);
     r.multi (labelLogKeep_,      logKeepButtons_,   96.f);
 
-    // 玩家名
     labelPlayerName_.setPosition({contentX, r.y + 8.f});
     window.native().draw(labelPlayerName_);
     playerNameInput_->setPosition({ctrlX, r.y});
@@ -1314,5 +1326,94 @@ void SettingsScene::render(Window& window) {
     if (aboutDialog_) {
         aboutDialog_->relayout({w, h});
         aboutDialog_->render(window.native());
+    }
+
+    // ============================================================
+    // ⭐ 注册焦点
+    // ============================================================
+    if (resetConfirm_ || aboutDialog_) {
+        FocusGroup::instance().clear();
+    } else {
+        std::vector<Button*> items;
+
+        for (auto& b : tabButtons_) items.push_back(b.get());
+
+        switch (currentTab_) {
+            case Tab::Display:
+                for (auto& b : resolutionButtons_)   items.push_back(b.get());
+                items.push_back(fullscreenOn_.get());
+                items.push_back(fullscreenOff_.get());
+                items.push_back(vsyncOn_.get());
+                items.push_back(vsyncOff_.get());
+                for (auto& b : antiAliasingButtons_) items.push_back(b.get());
+                for (auto& b : logLevelButtons_)     items.push_back(b.get());
+                for (auto& b : fpsLimitButtons_)     items.push_back(b.get());
+                break;
+            case Tab::Interface:
+                items.push_back(fpsOn_.get());
+                items.push_back(fpsOff_.get());
+                for (auto& b : fpsPosButtons_)      items.push_back(b.get());
+                for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
+                for (auto& b : uiScaleButtons_)     items.push_back(b.get());
+                for (auto& b : themeButtons_)       items.push_back(b.get());
+                items.push_back(wallpaperButton_.get());
+                items.push_back(clockOn_.get());
+                items.push_back(clockOff_.get());
+                for (auto& b : clockPosButtons_)    items.push_back(b.get());
+                for (auto& b : consoleFontButtons_)    items.push_back(b.get());
+                for (auto& b : consoleHistoryButtons_) items.push_back(b.get());
+                for (auto& b : consoleLineHeightButtons_) items.push_back(b.get());
+                items.push_back(consoleAutoScrollOn_.get());
+                items.push_back(consoleAutoScrollOff_.get());
+                items.push_back(consoleBlinkOn_.get());
+                items.push_back(consoleBlinkOff_.get());
+                for (auto& b : consolePromptButtons_) items.push_back(b.get());
+                break;
+            case Tab::Graphics:
+                items.push_back(animationOn_.get());
+                items.push_back(animationOff_.get());
+                for (auto& b : animationSpeedButtons_) items.push_back(b.get());
+                items.push_back(notificationOn_.get());
+                items.push_back(notificationOff_.get());
+                for (auto& b : notificationPosButtons_) items.push_back(b.get());
+                items.push_back(pseudo3DOn_.get());
+                items.push_back(pseudo3DOff_.get());
+                items.push_back(parallaxOn_.get());
+                items.push_back(parallaxOff_.get());
+                items.push_back(playerAnimOn_.get());
+                items.push_back(playerAnimOff_.get());
+                items.push_back(levelIntroOn_.get());
+                items.push_back(levelIntroOff_.get());
+                items.push_back(particlesOn_.get());
+                items.push_back(particlesOff_.get());
+                items.push_back(screenShakeOn_.get());
+                items.push_back(screenShakeOff_.get());
+                items.push_back(showCollidersOn_.get());
+                items.push_back(showCollidersOff_.get());
+                for (auto& b : buttonCornerButtons_)  items.push_back(b.get());
+                for (auto& b : buttonOutlineButtons_) items.push_back(b.get());
+                break;
+            case Tab::Audio:
+                items.push_back(soundOn_.get());
+                items.push_back(soundOff_.get());
+                items.push_back(bgmOn_.get());
+                items.push_back(bgmOff_.get());
+                items.push_back(gamepadOn_.get());
+                items.push_back(gamepadOff_.get());
+                break;
+            case Tab::Other:
+                items.push_back(rememberOn_.get());
+                items.push_back(rememberOff_.get());
+                items.push_back(autoPauseOn_.get());
+                items.push_back(autoPauseOff_.get());
+                for (auto& b : logRotateButtons_) items.push_back(b.get());
+                for (auto& b : logKeepButtons_)   items.push_back(b.get());
+                items.push_back(aboutButton_.get());
+                items.push_back(resetButton_.get());
+                break;
+        }
+
+        items.push_back(backButton_.get());
+        FocusGroup::instance().setItems(items);
     }
 }

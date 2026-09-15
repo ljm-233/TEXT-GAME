@@ -3,23 +3,19 @@
 #include "animation.h"
 #include "game_constants.h"
 #include "player_sprite_factory.h"
+#include "gamepad.h"
 #include <algorithm>
 #include <cmath>
 
 Player::Player(Vec2 spawn)
     : pos_(spawn), spawn_(spawn) {
 
-    // 图集
     sheet_ = PlayerSpriteFactory::getSheet();
-
-    // ⭐ sf::Sprite 无默认构造，必须传 texture
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
 
-    // 精灵原点：底部中心
     sprite_->setOrigin({PlayerSpriteFactory::kFrameW * 0.5f,
                         static_cast<float>(PlayerSpriteFactory::kFrameH)});
 
-    // ===== 动画剪辑 =====
     const int fw = PlayerSpriteFactory::kFrameW;
     const int fh = PlayerSpriteFactory::kFrameH;
 
@@ -94,6 +90,33 @@ void Player::handleEvent(const sf::Event& event) {
     }
 }
 
+void Player::handleGamepad() {
+    if (!gamepadEnabled_) return;
+
+    auto& gp = Gamepad::instance();
+    if (!gp.isConnected()) return;
+
+    // ===== 水平：摇杆 + D-Pad =====
+    float x = gp.leftX();
+    if (x > 0.3f || gp.dpadRight()) {
+        keyRight_ = true;
+        keyLeft_  = false;
+    } else if (x < -0.3f || gp.dpadLeft()) {
+        keyLeft_  = true;
+        keyRight_ = false;
+    } else {
+        keyLeft_  = false;
+        keyRight_ = false;
+    }
+
+    // ===== 跳跃 =====
+    bool jumpNow = gp.jumpPressed();
+    if (jumpNow && !keyJump_) {
+        jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+    }
+    keyJump_ = jumpNow;
+}
+
 void Player::update(float dt, const Level& level) {
     if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
 
@@ -134,7 +157,6 @@ void Player::update(float dt, const Level& level) {
     if (onGround_ && !prevOnGround_) justLanded_ = true;
     prevOnGround_ = onGround_;
 
-    // ===== 弹性动画 =====
     if (justJumped_) {
         targetScale_ = {0.85f, 1.15f};
     } else if (justLanded_) {
@@ -145,7 +167,6 @@ void Player::update(float dt, const Level& level) {
     currentScale_.x = Anim::approachF(currentScale_.x, targetScale_.x, dt * 6.f);
     currentScale_.y = Anim::approachF(currentScale_.y, targetScale_.y, dt * 6.f);
 
-    // ===== 精灵动画 =====
     updateAnimation(dt);
 }
 
@@ -219,7 +240,6 @@ void Player::render(sf::RenderTarget& target) const {
         if ((ms / 100) % 2 == 0) return;
     }
 
-    // ===== 动画关闭：画简单方块 =====
     if (!animationEnabled_ || !sprite_) {
         sf::RectangleShape body({size_.x, size_.y});
         body.setPosition({pos_.x, pos_.y});
@@ -230,7 +250,6 @@ void Player::render(sf::RenderTarget& target) const {
         return;
     }
 
-    // ===== 精灵动画 =====
     animator_.applyTo(*sprite_);
     sprite_->setScale(currentScale_);
     sprite_->setPosition({

@@ -6,8 +6,14 @@ class Camera {
 public:
     Camera() = default;
 
-    void setViewSize(float w, float h) { viewW_ = w; viewH_ = h; }
-    void setLevelBounds(float w, float h) { levelW_ = w; levelH_ = h; }
+    void setViewSize(float w, float h) {
+        viewW_ = w;
+        viewH_ = h;
+    }
+    void setLevelBounds(float w, float h) {
+        levelW_ = w;
+        levelH_ = h;
+    }
 
     void snapTo(Vec2 target);
     void follow(Vec2 target, float dt);
@@ -20,7 +26,7 @@ public:
         return {pos_.x + shakeOffset_.x + viewW_ * 0.5f,
                 pos_.y + shakeOffset_.y + viewH_ * 0.5f};
     }
-    float viewWidth()  const { return viewW_; }
+    float viewWidth() const { return viewW_; }
     float viewHeight() const { return viewH_; }
 
 private:
@@ -30,7 +36,7 @@ private:
     float levelW_ = 0.f;
     float levelH_ = 0.f;
 
-    Vec2  shakeOffset_{0.f, 0.f};
+    Vec2 shakeOffset_{0.f, 0.f};
     float shakeTimer_ = 0.f;
     float shakeDuration_ = 0.f;
     float shakeIntensity_ = 0.f;

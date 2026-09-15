@@ -43,8 +43,9 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
 }
 
 bool GameScene::loadLevel(int index) {
-    std::string path = std::string(PROJECT_ROOT) +
-                       "/assets/levels/level" + std::to_string(index) + ".txt";
+    auto levelPath = preferences_->assetFile(
+        "levels/level" + std::to_string(index) + ".txt");
+    std::string path = levelPath.string();
 
     if (!std::filesystem::exists(path)) {
         logger_->error("关卡文件不存在: " + path);
@@ -306,7 +307,7 @@ void GameScene::render(Window& window) {
         worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
     }
 
-    // 从 Preferences 读 5 个开关
+    // 从 Preferences 读开关
     world_->setShowColliders(preferences_->getBool("show_colliders", false));
     world_->setScreenShake(preferences_->getBool("screen_shake", true));
     world_->setParticles(preferences_->getBool("particles", true));
@@ -317,7 +318,7 @@ void GameScene::render(Window& window) {
     worldView_.setCenter({camCenter.x, camCenter.y});
     rt.setView(worldView_);
 
-    // 视差背景（可选）
+    // 视差背景
     if (parallax_ && preferences_->getBool("parallax", true)) {
         float camLeft = camCenter.x - kLogicalW * 0.5f;
         float camTop  = camCenter.y - kLogicalH * 0.5f;

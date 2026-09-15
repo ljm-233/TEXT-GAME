@@ -2,7 +2,8 @@
 #include <cmath>
 
 Checkpoint::Checkpoint(Vec2 pos, int tileSize)
-    : pos_(pos), tileSize_(tileSize) {
+      : pos_(pos),
+        tileSize_(tileSize) {
     float ts = static_cast<float>(tileSize_);
 
     pole_.setSize({ts * 0.15f, ts * 0.9f});
@@ -11,7 +12,7 @@ Checkpoint::Checkpoint(Vec2 pos, int tileSize)
     pole_.setOutlineColor(sf::Color(80, 80, 90));
 
     flag_.setSize({ts * 0.55f, ts * 0.35f});
-    flag_.setFillColor(sf::Color(120, 120, 130));   // 未激活灰色
+    flag_.setFillColor(sf::Color(120, 120, 130)); // 未激活灰色
     flag_.setOutlineThickness(1.f);
     flag_.setOutlineColor(sf::Color(80, 80, 90));
 }

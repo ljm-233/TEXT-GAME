@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(text_game CXX)
+project(text_game VERSION 0.1.0 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
@@ -30,49 +30,31 @@ endif()
 message(STATUS "  识别为:   ${TEXTGAME_PLATFORM}")
 
 # ============================================================
-# 编译器检测
+# 编译器
 # ============================================================
 message(STATUS "=== 编译器检测 ===")
 message(STATUS "  ID:       ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "  版本:     ${CMAKE_CXX_COMPILER_VERSION}")
 
-# ============================================================
-# C++ 标准
-# ============================================================
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ============================================================
-# 编译选项：按编译器区分
-# ============================================================
 if(MSVC)
-    # MSVC 用 /W4，不用 -Wall
     add_compile_options(/W4 /permissive- /utf-8)
-    # Windows 定义 UNICODE
     add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wshadow
-    )
-    # GCC 专用：UTF-8 编码
+    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(
-            -finput-charset=UTF-8
-            -fexec-charset=UTF-8
-        )
+        add_compile_options(-finput-charset=UTF-8 -fexec-charset=UTF-8)
     endif()
 endif()
 
 # ============================================================
-# 查找 SFML 3
+# SFML 3
 # ============================================================
 find_package(SFML 3 COMPONENTS Graphics Window System Audio QUIET)
-
 if(NOT SFML_FOUND)
     message(FATAL_ERROR
         "未找到 SFML 3。\n"
@@ -94,6 +76,7 @@ add_executable(text_game
     src/core/application.cpp
     src/core/game.cpp
     src/core/scene_manager.cpp
+    src/core/platform.cpp
     src/ui/button.cpp
     src/ui/slider.cpp
     src/ui/confirm_dialog.cpp
@@ -112,6 +95,9 @@ add_executable(text_game
     src/ui/pause_menu.cpp
     src/ui/sound_manager.cpp
     src/ui/particle_system.cpp
+    src/ui/animator.cpp
+    src/ui/gamepad.cpp
+    src/ui/focus_group.cpp
     src/game/calculator.cpp
     src/game/save_manager.cpp
     src/game/level.cpp
@@ -122,18 +108,16 @@ add_executable(text_game
     src/game/enemy.cpp
     src/game/jump_pad.cpp
     src/game/checkpoint.cpp
+    src/game/moving_platform.cpp
+    src/game/player_sprite_factory.cpp
+    src/game/parallax.cpp
+    src/game/level_intro.cpp
     src/scene/main_menu_scene.cpp
     src/scene/save_select_scene.cpp
+    src/scene/level_select_scene.cpp
     src/scene/game_scene.cpp
     src/scene/settings_scene.cpp
     src/scene/console_scene.cpp
-    src/core/platform.cpp
-    src/game/parallax.cpp
-    src/game/level_intro.cpp
-    src/game/moving_platform.cpp
-    src/ui/animator.cpp
-    src/game/player_sprite_factory.cpp
-    src/scene/level_select_scene.cpp
 )
 
 target_include_directories(text_game PRIVATE
@@ -149,11 +133,10 @@ string(TIMESTAMP BUILD_DATE "%Y-%m-%d")
 
 target_compile_definitions(text_game PRIVATE
     PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-    PROJECT_VERSION="0.1.0"
+    PROJECT_VERSION="${PROJECT_VERSION}"
     BUILD_DATE="${BUILD_DATE}"
 )
 
-# 平台宏（代码里可以 #ifdef TEXTGAME_PLATFORM_WINDOWS）
 if(WIN32)
     target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_WINDOWS)
 elseif(APPLE)
@@ -162,9 +145,6 @@ elseif(UNIX)
     target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_LINUX)
 endif()
 
-# ============================================================
-# 链接：SFML 目标（不同平台名字一样）
-# ============================================================
 target_link_libraries(text_game PRIVATE
     SFML::Graphics
     SFML::Window
@@ -172,16 +152,10 @@ target_link_libraries(text_game PRIVATE
     SFML::Audio
 )
 
-# ============================================================
-# Windows：GUI 程序（不弹控制台）
-# ============================================================
 if(WIN32 AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     set_target_properties(text_game PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
-# ============================================================
-# macOS：应用包（可选）
-# ============================================================
 if(APPLE)
     set_target_properties(text_game PROPERTIES
         MACOSX_BUNDLE TRUE
@@ -189,7 +163,29 @@ if(APPLE)
     )
 endif()
 
-# ============================================================
-# 完成
-# ============================================================
+install(TARGETS text_game RUNTIME DESTINATION .)
+install(DIRECTORY assets/    DESTINATION assets)
+install(DIRECTORY wallpaper/ DESTINATION wallpaper)
+install(FILES README.md LICENSE DESTINATION .)
+
+set(CPACK_PACKAGE_NAME        "TEXT-GAME")
+set(CPACK_PACKAGE_VENDOR      "ljm-233")
+set(CPACK_PACKAGE_VERSION     "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION "A 2D platformer built from scratch in C++20 + SFML 3")
+set(CPACK_PACKAGE_CONTACT     "ljm-233")
+
+if(WIN32)
+    set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-Windows")
+elseif(APPLE)
+    set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-macOS")
+else()
+    set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-Linux")
+endif()
+
+set(CPACK_GENERATOR "TGZ;ZIP")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+set(CPACK_STRIP_FILES TRUE)
+
+include(CPack)
+
 message(STATUS "=== 构建配置完成 ===")

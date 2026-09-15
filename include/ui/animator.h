@@ -9,7 +9,7 @@ public:
     struct Clip {
         std::vector<sf::IntRect> frames;
         float fps = 10.f;
-        bool  loop = true;
+        bool loop = true;
     };
 
     void addClip(const std::string& name, const Clip& clip);
@@ -23,6 +23,6 @@ public:
 private:
     std::map<std::string, Clip> clips_;
     std::string currentClip_;
-    int   currentFrame_ = 0;
+    int currentFrame_ = 0;
     float timer_ = 0.f;
 };

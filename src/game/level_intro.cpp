@@ -4,16 +4,14 @@
 #include <cstdint>
 
 LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins)
-    : title_(font, sf::String(), 72),
-      subtitle_(font, sf::String(), 24) {
-
-    title_.setString(sf::String::fromUtf8(
-        ("关卡 " + std::to_string(levelIndex)).begin(),
-        ("关卡 " + std::to_string(levelIndex)).end()));
+      : title_(font, sf::String(), 72),
+        subtitle_(font, sf::String(), 24) {
+    title_.setString(sf::String::fromUtf8(("关卡 " + std::to_string(levelIndex)).begin(),
+                                          ("关卡 " + std::to_string(levelIndex)).end()));
     title_.setFillColor(sf::Color(255, 255, 255));
 
-    std::string sub = "收集 " + std::to_string(static_cast<int>(totalCoins))
-                    + " 个金币，到达终点";
+    std::string sub =
+        "收集 " + std::to_string(static_cast<int>(totalCoins)) + " 个金币，到达终点";
     subtitle_.setString(toSf(sub));
     subtitle_.setFillColor(sf::Color(200, 220, 255));
 }
@@ -47,8 +45,7 @@ void LevelIntro::render(sf::RenderTarget& target, float winW, float winH) {
         auto c = title_.getFillColor();
         title_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
         auto b = title_.getLocalBounds();
-        title_.setOrigin({b.position.x + b.size.x / 2.f,
-                          b.position.y + b.size.y / 2.f});
+        title_.setOrigin({b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
         title_.setPosition({winW / 2.f, winH / 2.f - 30.f});
         target.draw(title_);
     }
@@ -58,8 +55,8 @@ void LevelIntro::render(sf::RenderTarget& target, float winW, float winH) {
         auto c = subtitle_.getFillColor();
         subtitle_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
         auto b = subtitle_.getLocalBounds();
-        subtitle_.setOrigin({b.position.x + b.size.x / 2.f,
-                             b.position.y + b.size.y / 2.f});
+        subtitle_.setOrigin(
+            {b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
         subtitle_.setPosition({winW / 2.f, winH / 2.f + 50.f});
         target.draw(subtitle_);
     }

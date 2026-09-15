@@ -8,6 +8,7 @@
 #include "logging.h"
 #include "notification.h"
 #include "paths.h"
+#include "platform.h"
 #include "preferences.h"
 #include "resolution.h"
 #include "runtime_config.h"
@@ -16,7 +17,6 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "window.h"
-#include "platform.h"
 
 #include <algorithm>
 

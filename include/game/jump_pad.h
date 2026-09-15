@@ -20,9 +20,9 @@ public:
 
 private:
     Vec2 pos_;
-    int  tileSize_;
+    int tileSize_;
     float animTimer_ = 0.f;
-    float cooldown_  = 0.f;
+    float cooldown_ = 0.f;
 
     static constexpr float kCooldown = 0.3f;
 

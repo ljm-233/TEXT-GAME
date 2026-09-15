@@ -28,15 +28,13 @@ SpaceAfterCStyleCast: false
 SpaceAfterTemplateKeyword: true
 SpacesBeforeTrailingComments: 1
 
-# 指针对齐：类型侧（sf::Font* font_）
+# 指针对齐
 PointerAlignment: Left
 DerivePointerAlignment: false
 
 # 换行
 BinPackArguments: true
 BinPackParameters: true
-AllowAllArgumentsOnNextLine: true
-AllowAllParametersOfDeclarationOnNextLine: true
 AlignAfterOpenBracket: Align
 AlignOperands: Align
 

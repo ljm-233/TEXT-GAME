@@ -1,10 +1,12 @@
 #include "moving_platform.h"
 
-MovingPlatform::MovingPlatform(Vec2 pos, int tileSize, float range,
-                               bool horizontal, float speed)
-    : pos_(pos), origin_(pos), range_(range),
-      horizontal_(horizontal), tileSize_(tileSize) {
-
+MovingPlatform::MovingPlatform(Vec2 pos, int tileSize, float range, bool horizontal,
+                               float speed)
+      : pos_(pos),
+        origin_(pos),
+        range_(range),
+        horizontal_(horizontal),
+        tileSize_(tileSize) {
     float ts = static_cast<float>(tileSize_);
     // 平台尺寸：2.5 格宽 × 0.6 格高
     size_ = {ts * 2.5f, ts * 0.6f};

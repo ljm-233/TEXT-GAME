@@ -6,22 +6,25 @@
 #include "ui_scale.h"
 #include "utf8.h"
 #include <algorithm>
+#include "focus_group.h"
 
 namespace {
 const char* kThemeNames[] = {"深色", "蓝色", "浅色"};
 }
 
-PauseMenu::PauseMenu(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+PauseMenu::PauseMenu(const sf::Font& font,
+                     std::shared_ptr<Preferences> prefs,
                      sf::Vector2f windowSize)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        windowSize_(windowSize),
-        title_(font, toSf("已暂停"), scaledFontSize(32)),
-        settingsTitle_(font, toSf("设置"), scaledFontSize(28)),
-        labelTheme_(font, toSf("主题"), scaledFontSize(20)),
-        labelAnim_(font, toSf("动画效果"), scaledFontSize(20)),
-        labelNotif_(font, toSf("屏幕通知"), scaledFontSize(20)),
-        hintText_(font, toSf("* 部分设置返回主菜单后完全生效"), scaledFontSize(14)) {
+    : font_(font),
+      prefs_(std::move(prefs)),
+      windowSize_(windowSize),
+      title_(font, toSf("已暂停"), scaledFontSize(32)),
+      settingsTitle_(font, toSf("设置"), scaledFontSize(28)),
+      labelTheme_(font, toSf("主题"), scaledFontSize(20)),
+      labelAnim_(font, toSf("动画效果"), scaledFontSize(20)),
+      labelNotif_(font, toSf("屏幕通知"), scaledFontSize(20)),
+      labelGamepad_(font, toSf("手柄支持"), scaledFontSize(20)),
+      hintText_(font, toSf("* 部分设置返回主菜单后完全生效"), scaledFontSize(14)) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 180));
     backdrop_.setSize(windowSize_);
 
@@ -260,20 +263,40 @@ void PauseMenu::render(sf::RenderTarget& target) {
 
     if (view_ == View::Main) {
         target.draw(title_);
-        for (auto& b : mainButtons_)
-            b->render(target);
+        for (auto& b : mainButtons_) b->render(target);
+
+        // ⭐ 主视图：注册三个按钮
+        FocusGroup::instance().setItems({
+            mainButtons_[0].get(),
+            mainButtons_[1].get(),
+            mainButtons_[2].get()
+        });
     } else {
         target.draw(settingsTitle_);
         target.draw(labelTheme_);
         target.draw(labelAnim_);
         target.draw(labelNotif_);
+        target.draw(labelGamepad_);
         target.draw(hintText_);
-        for (auto& b : themeButtons_)
-            b->render(target);
+        for (auto& b : themeButtons_) b->render(target);
         animOn_->render(target);
         animOff_->render(target);
         notifOn_->render(target);
         notifOff_->render(target);
+        gamepadOn_->render(target);
+        gamepadOff_->render(target);
         backButton_->render(target);
+
+        // ⭐ 设置视图：注册所有设置项
+        std::vector<Button*> items;
+        for (auto& b : themeButtons_) items.push_back(b.get());
+        items.push_back(animOn_.get());
+        items.push_back(animOff_.get());
+        items.push_back(notifOn_.get());
+        items.push_back(notifOff_.get());
+        items.push_back(gamepadOn_.get());
+        items.push_back(gamepadOff_.get());
+        items.push_back(backButton_.get());
+        FocusGroup::instance().setItems(items);
     }
 }

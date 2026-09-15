@@ -8,9 +8,8 @@ public:
     ParallaxBackground();
 
     void update(float dt);
-    void render(sf::RenderTarget& target,
-                float camLeft, float camTop,
-                float viewW,   float viewH);
+    void render(sf::RenderTarget& target, float camLeft, float camTop, float viewW,
+                float viewH);
 
 private:
     struct Cloud {
