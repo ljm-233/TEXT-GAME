@@ -1,41 +1,55 @@
-name: Build
+name: Build & Test
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   # ============================================================
-  # Linux (Arch 容器)
+  # Linux (Arch 容器 - 最稳，SFML 3 官方有包)
   # ============================================================
   build-arch:
+    name: Arch Linux
     runs-on: ubuntu-latest
     container: archlinux:latest
+
     steps:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel cmake ninja sfml git
+          pacman -S --noconfirm \
+            base-devel cmake ninja sfml git \
+            clang
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Configure (with tests)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build -j
 
+      - name: Run unit tests
+        run: ./build/tests/unit_tests
+
   # ============================================================
-  # Ubuntu (从源码装 SFML 3)
+  # Ubuntu（从源码编译 SFML 3）
   # ============================================================
   build-ubuntu:
+    name: Ubuntu 24.04
     runs-on: ubuntu-24.04
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build tools & SFML 3 deps
+      - name: Install build tools & dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -45,36 +59,102 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libfreetype6-dev \
             libxi-dev libx11-dev
 
+      - name: Cache SFML build
+        id: cache-sfml
+        uses: actions/cache@v4
+        with:
+          path: /tmp/SFML-install
+          key: sfml-3.0.0-ubuntu-24.04
+
       - name: Build & install SFML 3
+        if: steps.cache-sfml.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch 3.0.0 https://github.com/SFML/SFML.git /tmp/SFML
+          git clone --depth 1 --branch 3.0.0 \
+            https://github.com/SFML/SFML.git /tmp/SFML
           cmake -S /tmp/SFML -B /tmp/SFML/build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/tmp/SFML-install \
             -DBUILD_SHARED_LIBS=ON \
             -DSFML_BUILD_EXAMPLES=OFF \
             -DSFML_BUILD_DOC=OFF
           cmake --build /tmp/SFML/build -j
-          sudo cmake --install /tmp/SFML/build
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Install SFML
+        run: |
+          cd /tmp/SFML/build
+          sudo cmake --install . --prefix /usr/local
+
+      - name: Configure (with tests)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build -j
 
+      - name: Run unit tests
+        run: ./build/tests/unit_tests
+
   # ============================================================
-  # macOS
+  # macOS（Homebrew SFML）
   # ============================================================
   build-macos:
+    name: macOS
     runs-on: macos-14
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install cmake ninja sfml
+        run: |
+          brew install cmake ninja sfml
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: Configure (with tests)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build -j
+
+      - name: Run unit tests
+        run: ./build/tests/unit_tests
+
+  # ============================================================
+  # Windows（vcpkg）
+  # ============================================================
+  build-windows:
+    name: Windows
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg integrate install
+
+      - name: Install SFML via vcpkg
+        run: |
+          C:\vcpkg\vcpkg install sfml:x64-windows
+
+      - name: Configure
+        run: |
+          cmake -S . -B build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Debug `
+            -DBUILD_TESTS=ON `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Run unit tests
+        run: .\build\tests\unit_tests.exe

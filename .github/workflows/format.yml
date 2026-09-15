@@ -1,0 +1,25 @@
+name: Format Check
+
+on:
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  clang-format:
+    name: clang-format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check format
+        run: |
+          # 找出所有 .cpp 和 .h 文件
+          FILES=$(find src include -name "*.cpp" -o -name "*.h")
+          # 用 --dry-run 检查，有格式问题就报错
+          clang-format --dry-run --Werror $FILES

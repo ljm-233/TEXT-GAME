@@ -188,4 +188,15 @@ set(CPACK_STRIP_FILES TRUE)
 
 include(CPack)
 
+# ============================================================
+# 测试（默认关闭，加 -DBUILD_TESTS=ON 开启）
+# ============================================================
+option(BUILD_TESTS "Build unit tests" OFF)
+
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+    message(STATUS "=== 单元测试已启用 ===")
+endif()
+
 message(STATUS "=== 构建配置完成 ===")

@@ -1,5 +1,10 @@
 # TEXT-GAME
 
+[![Build & Test](https://github.com/ljm-233/TEXT-GAME/actions/workflows/build.yml/badge.svg)](https://github.com/ljm-233/TEXT-GAME/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+一个基于 C++20 和 SFML 3 的跨平台 2D 平台跳跃游戏项目。...
+
 一个用 C++20 和 SFML 3 从零构建的 **2D 平台跳跃游戏**。包含自研的引擎层（DI 容器、场景系统、配置管理、日志、UI 组件、动画、通知、音效）和完整的游戏本体（物理、关卡、玩家控制、敌人、金币、多关卡）。
 
 ## 🎮 游戏玩法
