@@ -636,6 +636,14 @@ void SettingsScene::resetAllPreferences() { preferences_->resetAll(); }
 // 事件
 // ============================================================
 
+void SettingsScene::onEnter() {
+    nextScene_ = SceneId::None;
+}
+
+void SettingsScene::onResume() {
+    nextScene_ = SceneId::None;
+}
+
 void SettingsScene::handleEvent(const sf::Event& event) {
     if (resetConfirm_) { resetConfirm_->handleEvent(event); return; }
     if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }

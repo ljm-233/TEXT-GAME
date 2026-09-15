@@ -13,6 +13,9 @@ public:
                      const sf::Font&              font,
                      std::shared_ptr<Logger>      logger);
 
+    void onEnter() override;
+    void onResume() override;
+
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
     void render(Window& window) override;

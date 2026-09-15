@@ -14,9 +14,11 @@ public:
     GameScene(std::shared_ptr<Background>  background,
               const sf::Font&              font,
               std::shared_ptr<Logger>      logger,
-              SaveInfo                     save,
               std::shared_ptr<SaveManager> saveManager,
               std::shared_ptr<Preferences> preferences);
+
+    void onEnter() override;
+    void onResume() override;
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
@@ -26,13 +28,13 @@ public:
 
 private:
     bool loadLevel(int index);
+    void subscribeWorldEvents();
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
     void renderStateOverlay(sf::RenderTarget& rt, float winW, float winH);
 
-    // ⭐ 星级计算
     int  calcStars() const;
-    int  targetTime() const;   // 目标时间（秒）
+    int  targetTime() const;
     void applyStars();
 
     std::shared_ptr<Background>  background_;
@@ -48,12 +50,8 @@ private:
     std::unique_ptr<PauseMenu> pauseMenu_;
     bool paused_ = false;
 
-    GameWorld::State lastState_ = GameWorld::State::Playing;
-    int lastLives_ = 3;
-
-    // ⭐ 统计
-    float levelTime_ = 0.f;    // 本关用时
-    int   finalStars_ = 0;     // 最终星级
+    float levelTime_ = 0.f;
+    int   finalStars_ = 0;
     int   finalCoins_ = 0;
     int   finalTotalCoins_ = 0;
 

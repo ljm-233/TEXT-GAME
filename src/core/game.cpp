@@ -53,7 +53,6 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
         case SceneId::Game:
             return std::make_unique<GameScene>(
                 background_, font, logger_,
-                saveManager_->takePendingSave(),
                 saveManager_,
                 preferences_);
         case SceneId::Settings:

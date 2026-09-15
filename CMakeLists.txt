@@ -179,6 +179,26 @@ set(CPACK_STRIP_FILES TRUE)
 include(CPack)
 
 # ============================================================
+# 关卡验证工具（独立目标）
+# ============================================================
+add_executable(validate_levels
+    tools/validate_levels.cpp
+    src/game/level.cpp
+    src/game/level_validator.cpp
+)
+target_include_directories(validate_levels PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/core
+    ${CMAKE_SOURCE_DIR}/include/game
+)
+target_compile_definitions(validate_levels PRIVATE
+    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+target_link_libraries(validate_levels PRIVATE
+    SFML::Graphics
+)
+
+# ============================================================
 # 测试（默认关闭，加 -DBUILD_TESTS=ON 开启）
 # ============================================================
 option(BUILD_TESTS "Build unit tests" OFF)

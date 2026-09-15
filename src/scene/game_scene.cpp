@@ -8,6 +8,8 @@
 #include <cmath>
 #include <filesystem>
 #include <sstream>
+#include <type_traits>
+#include <variant>
 
 namespace {
 // ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
@@ -18,14 +20,12 @@ constexpr float kPerCoinTime = 3.f;
 GameScene::GameScene(std::shared_ptr<Background>  background,
                      const sf::Font&              font,
                      std::shared_ptr<Logger>      logger,
-                     SaveInfo                     save,
                      std::shared_ptr<SaveManager> saveManager,
                      std::shared_ptr<Preferences> preferences)
     : background_(std::move(background)),
       logger_(std::move(logger)),
       saveManager_(std::move(saveManager)),
       preferences_(std::move(preferences)),
-      save_(std::move(save)),
       font_(&font),
       hudText_(font, sf::String(), 20),
       overlayTitle_(font, sf::String(), 48),
@@ -40,7 +40,12 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
     overlaySubHint_.setFillColor(sf::Color(180, 180, 200));
     overlayTime_.setFillColor(sf::Color(220, 220, 240));
     overlayStars_.setFillColor(sf::Color(255, 220, 80));
+}
 
+void GameScene::onEnter() {
+    nextScene_ = SceneId::None;
+
+    save_ = saveManager_->takePendingSave();
     levelIndex_ = std::max(1, save_.currentLevel);
 
     parallax_ = std::make_unique<ParallaxBackground>();
@@ -52,6 +57,63 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
     }
 
     logger_->info("进入游戏场景，存档: " + save_.filename);
+}
+
+void GameScene::onResume() {
+    nextScene_ = SceneId::None;
+}
+
+void GameScene::subscribeWorldEvents() {
+    if (!world_) return;
+
+    world_->bus().subscribe([this](const GameEvent& e) {
+        const bool particlesOn = preferences_->getBool("particles", true);
+
+        std::visit([this, particlesOn](const auto& ev) {
+            using T = std::decay_t<decltype(ev)>;
+
+            if constexpr (std::is_same_v<T, EvJumped>) {
+                SoundManager::instance().playJump();
+                if (particlesOn) world_->particles().emitJump(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvLanded>) {
+                SoundManager::instance().playLand();
+                if (particlesOn) world_->particles().emitLand(ev.pos, ev.intensity);
+            } else if constexpr (std::is_same_v<T, EvCoined>) {
+                SoundManager::instance().playCoin();
+                if (particlesOn) world_->particles().emitCoin(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvStomped>) {
+                SoundManager::instance().playStomp();
+                if (particlesOn) world_->particles().emitStomp(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvHurt>) {
+                SoundManager::instance().playHurt();
+                if (particlesOn) world_->particles().emitHurt(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
+                SoundManager::instance().playCheckpoint();
+                if (particlesOn) world_->particles().emitCoin(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvJumpPad>) {
+                SoundManager::instance().playJump();
+                if (particlesOn) world_->particles().emitJump(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvLevelComplete>) {
+                finalCoins_      = world_->coins();
+                finalTotalCoins_ = world_->totalCoins();
+                finalStars_      = calcStars();
+                applyStars();
+                saveManager_->updateProgress(save_.filename,
+                                             world_->coins(), levelIndex_);
+                SoundManager::instance().playLevelComplete();
+                NotificationSystem::instance().push(
+                    "关卡完成！获得 " + std::to_string(finalStars_) + " 星",
+                    NotificationType::Success, 5.f);
+            } else if constexpr (std::is_same_v<T, EvGameOver>) {
+                finalCoins_      = world_->coins();
+                finalTotalCoins_ = world_->totalCoins();
+                finalStars_      = 0;
+                SoundManager::instance().playGameOver();
+                NotificationSystem::instance().push(
+                    "游戏失败，按 R 重试", NotificationType::Error, 5.f);
+            }
+        }, e);
+    });
 }
 
 bool GameScene::loadLevel(int index) {
@@ -79,10 +141,7 @@ bool GameScene::loadLevel(int index) {
     world_ = std::make_unique<GameWorld>(std::move(level), index);
     world_->setViewSize(kLogicalW, kLogicalH);
     levelIndex_ = index;
-    lastState_ = GameWorld::State::Playing;
-    lastLives_ = 3;
 
-    // ⭐ 重置计时
     levelTime_ = 0.f;
     finalStars_ = 0;
     finalCoins_ = 0;
@@ -97,6 +156,10 @@ bool GameScene::loadLevel(int index) {
 
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
+
+    // ⭐ 新建 world 后立即订阅事件（每次 loadLevel 都会重建 world）
+    subscribeWorldEvents();
+
     return true;
 }
 
@@ -190,7 +253,6 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                              tb.position.y + tb.size.y / 2.f});
     overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
 
-    // 金币统计
     std::string stats = "金币: " + std::to_string(finalCoins_) +
                         " / " + std::to_string(finalTotalCoins_);
     overlayHint_.setString(toSf(stats));
@@ -200,7 +262,6 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                             hb.position.y + hb.size.y / 2.f});
     overlayHint_.setPosition({winW / 2.f, winH / 2.f - 60.f});
 
-    // 时间统计
     char timeBuf[64];
     std::snprintf(timeBuf, sizeof(timeBuf),
                   "时间: %.1f 秒  /  目标: %d 秒",
@@ -211,7 +272,6 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                             tb2.position.y + tb2.size.y / 2.f});
     overlayTime_.setPosition({winW / 2.f, winH / 2.f - 15.f});
 
-    // 星级
     if (state == GameWorld::State::LevelComplete) {
         std::string stars;
         for (int i = 0; i < 3; ++i) {
@@ -227,7 +287,6 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
         overlayStars_.setString("");
     }
 
-    // 提示
     std::string hint;
     if (state == GameWorld::State::LevelComplete) {
         hint = "Enter 继续    R 重玩本关    ESC 返回";
@@ -266,8 +325,6 @@ void GameScene::handleEvent(const sf::Event& event) {
             }
             if (kp->code == sf::Keyboard::Key::R) {
                 world_->reset();
-                lastState_ = GameWorld::State::Playing;
-                lastLives_ = 3;
                 levelTime_ = 0.f;
                 finalStars_ = 0;
                 finalCoins_ = 0;
@@ -304,8 +361,6 @@ void GameScene::handleEvent(const sf::Event& event) {
         }
         if (kp->code == sf::Keyboard::Key::R) {
             world_->reset();
-            lastState_ = GameWorld::State::Playing;
-            lastLives_ = 3;
             levelTime_ = 0.f;
             lastOverlayState_ = GameWorld::State::Playing;
             NotificationSystem::instance().push("已重生",
@@ -340,42 +395,12 @@ void GameScene::update(float dt) {
 
     if (world_->state() != GameWorld::State::Playing) return;
 
-    // ⭐ 累加计时
     levelTime_ += dt;
 
     world_->update(dt);
     if (parallax_) parallax_->update(dt);
 
-    // 检测掉血
-    int curLives = world_->lives();
-    lastLives_ = curLives;
-
-    GameWorld::State cur = world_->state();
-    if (cur != lastState_) {
-        if (cur == GameWorld::State::LevelComplete) {
-            // ⭐ 计算并写入星级
-            finalCoins_ = world_->coins();
-            finalTotalCoins_ = world_->totalCoins();
-            finalStars_ = calcStars();
-            applyStars();
-
-            saveManager_->updateProgress(save_.filename, world_->coins(),
-                                         levelIndex_);
-            SoundManager::instance().playLevelComplete();
-
-            NotificationSystem::instance().push(
-                "关卡完成！获得 " + std::to_string(finalStars_) + " 星",
-                NotificationType::Success, 5.f);
-        } else if (cur == GameWorld::State::GameOver) {
-            finalCoins_ = world_->coins();
-            finalTotalCoins_ = world_->totalCoins();
-            finalStars_ = 0;
-            SoundManager::instance().playGameOver();
-            NotificationSystem::instance().push(
-                "游戏失败，按 R 重试", NotificationType::Error, 5.f);
-        }
-        lastState_ = cur;
-    }
+    // 状态变化的响应由 EventBus 的 EvLevelComplete / EvGameOver 处理
 }
 
 void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH) {

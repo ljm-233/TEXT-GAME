@@ -1,5 +1,6 @@
 #pragma once
 #include "camera.h"
+#include "event_bus.h"
 #include "game_object.h"
 #include "level.h"
 #include "particle_system.h"
@@ -40,6 +41,10 @@ public:
     const Level& level() const { return *level_; }
     Vec2 cameraCenter() const { return camera_.center(); }
 
+    // ===== 事件总线（供 GameScene 订阅）=====
+    EventBus& bus() { return bus_; }
+    ParticleSystem& particles() { return particles_; }
+
     void reset();
 
     int lives() const { return lives_; }
@@ -65,6 +70,7 @@ private:
 
     Camera camera_;
     ParticleSystem particles_;
+    EventBus bus_;
 
     int lives_ = 3;
     int coins_ = 0;
@@ -82,5 +88,5 @@ private:
         int   tx;
         int   ty;
     };
-    std::vector<DoorEntry> doors_;    // 裸指针，方便统一解锁
+    std::vector<DoorEntry> doors_;
 };

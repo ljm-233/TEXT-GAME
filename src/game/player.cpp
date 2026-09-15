@@ -7,10 +7,14 @@
 #include <algorithm>
 #include <cmath>
 
-Player::Player(Vec2 spawn)
+Player::Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet)
     : pos_(spawn), spawn_(spawn) {
 
-    sheet_ = PlayerSpriteFactory::getSheet();
+    // 无 sprite 模式（测试用）：跳过所有纹理/动画初始化
+    if (!sheet)
+        return;
+
+    sheet_ = sheet;
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
 
     sprite_->setOrigin({PlayerSpriteFactory::kFrameW * 0.5f,
@@ -48,7 +52,6 @@ void Player::respawn(Vec2 spawn) {
     prevOnGround_ = false;
     currentScale_ = {1.f, 1.f};
     targetScale_ = {1.f, 1.f};
-    // 清空输入状态
     keyboardLeft_  = false;
     keyboardRight_ = false;
     keyboardJump_  = false;

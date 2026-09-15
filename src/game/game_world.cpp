@@ -7,7 +7,7 @@
 #include "key.h"
 #include "door.h"
 #include "spike.h"
-#include "sound_manager.h"
+#include "player_sprite_factory.h"
 #include "game_constants.h"
 #include <algorithm>
 #include <cmath>
@@ -29,7 +29,7 @@ GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
 }
 
 void GameWorld::spawnPlayer(Vec2 spawn) {
-    auto p = std::make_unique<Player>(spawn);
+    auto p = std::make_unique<Player>(spawn, PlayerSpriteFactory::getSheet());
     player_ = p.get();
     objects_.push_back(std::move(p));
 }
@@ -56,11 +56,9 @@ void GameWorld::spawnLevelObjects() {
         objects_.push_back(std::make_unique<MovingPlatform>(
             pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
 
-    // ===== 钥匙 =====
     for (const auto& pos : level_->keySpawns())
         objects_.push_back(std::make_unique<Key>(pos, level_->tileSize()));
 
-    // ===== 门（关着时是实体）=====
     doors_.clear();
     for (const auto& pos : level_->doorSpawns()) {
         auto d = std::make_unique<Door>(pos, level_->tileSize());
@@ -73,7 +71,6 @@ void GameWorld::spawnLevelObjects() {
         objects_.push_back(std::move(d));
     }
 
-    // ===== 尖刺 =====
     for (const auto& pos : level_->spikeSpawns())
         objects_.push_back(std::make_unique<Spike>(pos, level_->tileSize()));
 }
@@ -143,38 +140,38 @@ void GameWorld::update(float dt) {
         ++iterations;
     }
 
+    // 跳跃 / 落地事件
     if (player_) {
         Vec2 pb = player_->bounds().center();
         float footX = pb.x;
         float footY = player_->bounds().bottom();
+
         if (player_->consumeJustJumped()) {
-            SoundManager::instance().playJump();
-            if (particlesEnabled_) particles_.emitJump({footX, footY});
+            bus_.emit(EvJumped{Vec2{footX, footY}});
         }
         if (player_->consumeJustLanded()) {
-            SoundManager::instance().playLand();
-            if (particlesEnabled_) {
-                // ⭐ 根据下落速度决定粒子强度
-                float vy = std::abs(player_->velocity().y);
-                // vy = 300 → 弱，vy = 1000 → 强
-                float intensity = std::clamp(vy / 700.f, 0.5f, 1.5f);
-                particles_.emitLand({footX, footY}, intensity);
-            }
+            float vy = std::abs(player_->velocity().y);
+            float intensity = std::clamp(vy / 700.f, 0.5f, 1.5f);
+            bus_.emit(EvLanded{Vec2{footX, footY}, intensity});
         }
     }
 
+    // 掉图
     if (player_ && player_->consumeFellOut()) {
         --lives_;
-        SoundManager::instance().playHurt();
+        bus_.emit(EvHurt{player_->bounds().center()});
         if (screenShake_) camera_.shake(8.f, 0.3f);
         if (lives_ <= 0) {
             state_ = State::GameOver;
+            bus_.emit(EvGameOver{});
             return;
         }
     }
 
+    // 到达终点
     if (checkGoalReached()) {
         state_ = State::LevelComplete;
+        bus_.emit(EvLevelComplete{});
         return;
     }
 
@@ -206,8 +203,7 @@ void GameWorld::checkCollisionsSafe() {
                 if (!c->collected()) {
                     c->collect();
                     ++coins_;
-                    SoundManager::instance().playCoin();
-                    if (particlesEnabled_) particles_.emitCoin(c->bounds().center());
+                    bus_.emit(EvCoined{c->bounds().center()});
                 }
                 break;
             }
@@ -222,17 +218,16 @@ void GameWorld::checkCollisionsSafe() {
                 if (falling && fromAbove) {
                     e->kill();
                     player_->bounce();
-                    SoundManager::instance().playStomp();
-                    if (particlesEnabled_) particles_.emitStomp(e->bounds().center());
+                    bus_.emit(EvStomped{e->bounds().center()});
                     if (screenShake_) camera_.shake(4.f, 0.15f);
                 } else if (!player_->isInvincible()) {
                     player_->takeDamage();
                     --lives_;
-                    SoundManager::instance().playHurt();
-                    if (particlesEnabled_) particles_.emitHurt(pb.center());
+                    bus_.emit(EvHurt{pb.center()});
                     if (screenShake_) camera_.shake(8.f, 0.3f);
                     if (lives_ <= 0) {
                         state_ = State::GameOver;
+                        bus_.emit(EvGameOver{});
                         return;
                     }
                 }
@@ -243,8 +238,7 @@ void GameWorld::checkCollisionsSafe() {
                 if (jp->canTrigger()) {
                     player_->setVelocityY(JumpPad::kLaunchSpeed);
                     jp->trigger();
-                    SoundManager::instance().playJump();
-                    if (particlesEnabled_) particles_.emitJump(pb.center());
+                    bus_.emit(EvJumpPad{pb.center()});
                 }
                 break;
             }
@@ -253,8 +247,7 @@ void GameWorld::checkCollisionsSafe() {
                 if (!cp->isActive()) {
                     cp->activate();
                     player_->setSpawn(cp->respawnPos());
-                    SoundManager::instance().playCheckpoint();
-                    if (particlesEnabled_) particles_.emitCoin(cp->bounds().center());
+                    bus_.emit(EvCheckpoint{cp->bounds().center()});
                 }
                 break;
             }
@@ -263,10 +256,8 @@ void GameWorld::checkCollisionsSafe() {
                 if (!k->collected()) {
                     k->collect();
                     player_->addKey();
-                    SoundManager::instance().playCoin();
-                    if (particlesEnabled_) particles_.emitCoin(k->bounds().center());
+                    bus_.emit(EvCoined{k->bounds().center()});
 
-                    // 收集钥匙后解锁所有门 + 取消实体
                     for (auto& entry : doors_) {
                         entry.door->unlock();
                         level_->setDynamicSolid(entry.tx, entry.ty, false);
@@ -283,11 +274,11 @@ void GameWorld::checkCollisionsSafe() {
                 if (!player_->isInvincible()) {
                     player_->takeDamage();
                     --lives_;
-                    SoundManager::instance().playHurt();
-                    if (particlesEnabled_) particles_.emitHurt(pb.center());
+                    bus_.emit(EvHurt{pb.center()});
                     if (screenShake_) camera_.shake(8.f, 0.3f);
                     if (lives_ <= 0) {
                         state_ = State::GameOver;
+                        bus_.emit(EvGameOver{});
                         return;
                     }
                 }
@@ -412,7 +403,6 @@ void GameWorld::reset() {
     doors_.clear();
     if (player_) player_->resetKeys();
 
-    // 清空所有动态实体
     for (int ty = 0; ty < level_->height(); ++ty)
         for (int tx = 0; tx < level_->width(); ++tx)
             level_->setDynamicSolid(tx, ty, false);

@@ -1,14 +1,23 @@
 #pragma once
 #include "paths.h"
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <unordered_map>
 
 class Config {
 public:
+    // 生产用：从 Paths 推导配置文件路径（configDir() / filename）
     Config(const Paths& paths, const std::string& filename)
-          : paths_(paths),
+          : paths_(&paths),
             filePath_(paths.configDir() / filename) {
+        load();
+    }
+
+    // 测试用 / 独立用：直接指定配置文件路径，不依赖 Paths
+    explicit Config(const std::filesystem::path& filePath)
+          : paths_(nullptr),
+            filePath_(filePath) {
         load();
     }
 
@@ -77,25 +86,42 @@ public:
     bool isDirty() const { return dirty_; }
 
     // ---------- 资源路径 ----------
-    std::filesystem::path configDir() const { return paths_.configDir(); }
-    std::filesystem::path cacheDir() const { return paths_.cacheDir(); }
-    std::filesystem::path tempDir() const { return paths_.tempDir(); }
-    std::filesystem::path savesDir() const { return paths_.savesDir(); }
-    std::filesystem::path wallpaperDir() const { return paths_.wallpaperDir(); }
-    std::filesystem::path assetsDir() const { return paths_.assetsDir(); }
+    // 当用"裸路径"构造时（paths_ == nullptr），
+    // 除 configDir() 外的路径方法返回空路径。
+    std::filesystem::path configDir() const {
+        return paths_ ? paths_->configDir() : filePath_.parent_path();
+    }
+    std::filesystem::path cacheDir() const {
+        return paths_ ? paths_->cacheDir() : std::filesystem::path{};
+    }
+    std::filesystem::path tempDir() const {
+        return paths_ ? paths_->tempDir() : std::filesystem::path{};
+    }
+    std::filesystem::path savesDir() const {
+        return paths_ ? paths_->savesDir() : std::filesystem::path{};
+    }
+    std::filesystem::path wallpaperDir() const {
+        return paths_ ? paths_->wallpaperDir() : std::filesystem::path{};
+    }
+    std::filesystem::path assetsDir() const {
+        return paths_ ? paths_->assetsDir() : std::filesystem::path{};
+    }
 
     std::filesystem::path configFile(const std::string& name) const {
-        return paths_.configDir() / name;
+        return configDir() / name;
     }
     std::filesystem::path saveFile(const std::string& name) const {
-        return paths_.savesDir() / name;
+        return savesDir() / name;
     }
     std::filesystem::path assetFile(const std::string& name) const {
-        return paths_.assetsDir() / name;
+        return assetsDir() / name;
     }
 
+    // 测试用：直接访问本 Config 对应的文件路径
+    const std::filesystem::path& filePath() const { return filePath_; }
+
 protected:
-    const Paths& paths_;
+    const Paths* paths_ = nullptr;   // 可空
     std::filesystem::path filePath_;
     std::unordered_map<std::string, std::string> values_;
 

@@ -1,0 +1,36 @@
+name: Validate Levels
+
+on:
+  push:
+    paths:
+      - 'assets/levels/**'
+      - 'src/game/level*.cpp'
+      - 'include/game/level*.h'
+      - 'tools/validate_levels.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/validate-levels.yml'
+  pull_request:
+    paths:
+      - 'assets/levels/**'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate ASCII levels
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed cmake ninja sfml git
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build validator
+        run: cmake --build build --target validate_levels
+
+      - name: Run validator
+        run: ./build/validate_levels assets/levels

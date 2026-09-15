@@ -9,6 +9,7 @@ add_executable(unit_tests
     test_game_constants.cpp
     test_moving_platform.cpp
     test_jump_pad.cpp
+    test_player.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -31,8 +32,10 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/camera.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/animator.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/animation.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/gamepad.cpp
     ${CMAKE_SOURCE_DIR}/src/game/moving_platform.cpp
     ${CMAKE_SOURCE_DIR}/src/game/jump_pad.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/player.cpp
 )
 
 target_link_libraries(unit_tests PRIVATE

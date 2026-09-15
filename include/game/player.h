@@ -8,7 +8,9 @@
 
 class Player : public GameObject {
 public:
-    explicit Player(Vec2 spawn);
+    // sheet 为 nullptr 时进入"无 sprite"模式（测试用）
+    // 生产代码请传 PlayerSpriteFactory::getSheet()
+    explicit Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet = nullptr);
 
     void update(float dt, const Level& level) override;
     void render(sf::RenderTarget& target) const override;

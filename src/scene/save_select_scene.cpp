@@ -37,6 +37,16 @@ void SaveSelectScene::rebuildButtons() {
     }
 }
 
+void SaveSelectScene::onEnter() {
+    nextScene_ = SceneId::None;
+}
+
+void SaveSelectScene::onResume() {
+    nextScene_ = SceneId::None;
+    // 存档列表可能变化（例如从 Game 回来后进度更新），刷新按钮
+    rebuildButtons();
+}
+
 void SaveSelectScene::handleEvent(const sf::Event& event) {
     if (newSaveDialog_) {
         newSaveDialog_->handleEvent(event);

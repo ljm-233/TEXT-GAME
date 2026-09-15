@@ -15,6 +15,15 @@ MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
       settingsButton_    (Str::Settings,   font, {0.f, 0.f}, {280.f, 56.f}, 26),
       exitButton_        (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 56.f}, 26) {}
 
+void MainMenuScene::onEnter() {
+    nextScene_ = SceneId::None;
+    elapsed_ = 0.f;
+}
+
+void MainMenuScene::onResume() {
+    nextScene_ = SceneId::None;
+}
+
 void MainMenuScene::handleEvent(const sf::Event& event) {
     startButton_.handleEvent(event);
     levelSelectButton_.handleEvent(event);

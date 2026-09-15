@@ -64,6 +64,14 @@ void LevelSelectScene::refreshSelection() {
     }
 }
 
+void LevelSelectScene::onEnter() {
+    nextScene_ = SceneId::None;
+}
+
+void LevelSelectScene::onResume() {
+    nextScene_ = SceneId::None;
+}
+
 void LevelSelectScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape) {
