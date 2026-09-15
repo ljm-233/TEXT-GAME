@@ -17,6 +17,9 @@ public:
 
     char tileAt(int tx, int ty) const;
     bool isSolid(int tx, int ty) const;
+    // 运行时动态实体（门锁上 = true，解锁 = false）
+    void setDynamicSolid(int tx, int ty, bool solid);
+    bool isDynamicSolid(int tx, int ty) const;
 
     Vec2 playerSpawn() const { return playerSpawn_; }
     const std::vector<Vec2>& enemySpawns()      const { return enemySpawns_; }
@@ -25,6 +28,9 @@ public:
     const std::vector<Vec2>& checkpointSpawns() const { return checkpointSpawns_; }
     const std::vector<Vec2>& movingPlatformSpawns() const { return movingPlatformSpawns_; }
     const std::vector<Vec2>& verticalPlatformSpawns() const { return verticalPlatformSpawns_; }
+    const std::vector<Vec2>& keySpawns()  const { return keySpawns_; }
+    const std::vector<Vec2>& doorSpawns() const { return doorSpawns_; }
+    const std::vector<Vec2>& spikeSpawns() const { return spikeSpawns_; }
 
     Vec2 goalPos() const { return goalPos_; }
     bool hasGoal() const { return hasGoal_; }
@@ -42,6 +48,7 @@ private:
 
     int width_ = 0, height_ = 0, tileSize_ = 32;
     std::vector<char> tiles_;
+    std::vector<bool> dynamicSolid_;   // 运行时动态实体（门等）
     Vec2 playerSpawn_{0.f, 0.f};
     std::vector<Vec2> enemySpawns_;
     std::vector<Vec2> coinSpawns_;
@@ -49,6 +56,9 @@ private:
     std::vector<Vec2> checkpointSpawns_;
     std::vector<Vec2> movingPlatformSpawns_;
     std::vector<Vec2> verticalPlatformSpawns_;
+    std::vector<Vec2> keySpawns_;
+    std::vector<Vec2> doorSpawns_;
+    std::vector<Vec2> spikeSpawns_;
     Vec2 goalPos_{0.f, 0.f};
     bool hasGoal_ = false;
 

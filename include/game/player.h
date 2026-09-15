@@ -49,6 +49,9 @@ public:
     bool consumeFellOut() { bool f = fellOut_; fellOut_ = false; return f; }
     bool consumeJustJumped() { bool j = justJumped_; justJumped_ = false; return j; }
     bool consumeJustLanded() { bool l = justLanded_; justLanded_ = false; return l; }
+    int  keys() const { return keys_; }
+    void addKey() { ++keys_; }
+    void resetKeys() { keys_ = 0; }
 
 private:
     void moveHorizontal(float dx, const Level& level);
@@ -78,6 +81,7 @@ private:
 
     bool animationEnabled_ = true;
     bool gamepadEnabled_   = true;
+    int keys_ = 0;
 
     // 弹性动画
     sf::Vector2f currentScale_{1.f, 1.f};

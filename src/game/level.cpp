@@ -18,12 +18,16 @@ bool Level::loadFromFile(const std::string& path) {
 
 bool Level::loadFromString(const std::string& text) {
     tiles_.clear();
+    dynamicSolid_.clear();
     enemySpawns_.clear();
     coinSpawns_.clear();
     jumpPadSpawns_.clear();
     checkpointSpawns_.clear();
     movingPlatformSpawns_.clear();
     verticalPlatformSpawns_.clear();
+    keySpawns_.clear();
+    doorSpawns_.clear();
+    spikeSpawns_.clear();
     hasGoal_ = false;
 
     std::istringstream iss(text);
@@ -41,6 +45,7 @@ bool Level::loadFromString(const std::string& text) {
         width_ = std::max(width_, static_cast<int>(l.size()));
 
     tiles_.assign(static_cast<size_t>(width_ * height_), ' ');
+    dynamicSolid_.assign(static_cast<size_t>(width_ * height_), false);
 
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < static_cast<int>(lines[y].size()); ++x) {
@@ -56,12 +61,14 @@ bool Level::loadFromString(const std::string& text) {
                 case 'M': movingPlatformSpawns_.push_back({px, py}); c = ' '; break;
                 case 'V': verticalPlatformSpawns_.push_back({px, py}); c = ' '; break;
                 case 'G': goalPos_ = {px, py}; hasGoal_ = true; c = ' '; break;
+                case 'K': keySpawns_.push_back({px, py}); c = ' '; break;
+                case 'L': doorSpawns_.push_back({px, py}); c = ' '; break;
+                case '^': spikeSpawns_.push_back({px, py}); c = ' '; break;
                 default: break;
             }
             tiles_[static_cast<size_t>(y * width_ + x)] = c;
         }
     }
-
     buildGeometry();
     return true;
 }
@@ -72,7 +79,19 @@ char Level::tileAt(int tx, int ty) const {
 }
 
 bool Level::isSolid(int tx, int ty) const {
-    return tileAt(tx, ty) == '#';
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
+    if (tiles_[static_cast<size_t>(ty * width_ + tx)] == '#') return true;
+    return dynamicSolid_[static_cast<size_t>(ty * width_ + tx)];
+}
+
+void Level::setDynamicSolid(int tx, int ty, bool solid) {
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return;
+    dynamicSolid_[static_cast<size_t>(ty * width_ + tx)] = solid;
+}
+
+bool Level::isDynamicSolid(int tx, int ty) const {
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
+    return dynamicSolid_[static_cast<size_t>(ty * width_ + tx)];
 }
 
 void Level::setPseudo3D(bool b) {

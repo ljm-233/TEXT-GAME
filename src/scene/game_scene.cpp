@@ -100,8 +100,11 @@ void GameScene::refreshHud() {
         "   关卡: " + std::to_string(levelIndex_) +
         "   生命: " + std::to_string(lives) +
         "   金币: " + std::to_string(coins) +
-        " / " + std::to_string(world_->totalCoins()) +
-        "   WASD 移动，Space 跳跃，ESC 暂停";
+        " / " + std::to_string(world_->totalCoins());
+    if (world_->player().keys() > 0) {
+        hud += "   钥匙: " + std::to_string(world_->player().keys());
+    }
+    hud += "   WASD 移动，Space 跳跃，ESC 暂停";
     hudText_.setString(toSf(hud));
 }
 

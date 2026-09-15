@@ -52,6 +52,25 @@ void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->verticalPlatformSpawns())
         objects_.push_back(std::make_unique<MovingPlatform>(
             pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
+    
+    for (const auto& pos : level_->keySpawns())
+        objects_.push_back(std::make_unique<Key>(pos, level_->tileSize()));
+
+    doors_.clear();
+    for (const auto& pos : level_->doorSpawns()) {
+        auto d = std::make_unique<Door>(pos, level_->tileSize());
+        int tx = static_cast<int>(pos.x) / level_->tileSize();
+        int ty = static_cast<int>(pos.y) / level_->tileSize();
+
+        // ⭐ 关着的门 = 实体
+        level_->setDynamicSolid(tx, ty, true);
+
+        doors_.push_back({d.get(), tx, ty});
+        objects_.push_back(std::move(d));
+    }
+
+    for (const auto& pos : level_->spikeSpawns())
+        objects_.push_back(std::make_unique<Spike>(pos, level_->tileSize()));
 }
 
 void GameWorld::setViewSize(float w, float h) {
@@ -229,6 +248,46 @@ void GameWorld::checkCollisionsSafe() {
                 }
                 break;
             }
+            case GameObject::Type::Key: {
+                auto* k = static_cast<Key*>(obj.get());
+                if (!k->collected()) {
+                    k->collect();
+                    player_->addKey();
+                    SoundManager::instance().playCoin();
+                    if (particlesEnabled_) particles_.emitCoin(k->bounds().center());
+                    // ⭐ 收集钥匙后自动解锁所有门 + 取消实体
+                    for (auto& entry : doors_) {
+                        entry.door->unlock();
+                        level_->setDynamicSolid(entry.tx, entry.ty, false);
+                    }
+                }
+                break;
+            }
+            case GameObject::Type::Door: {
+                auto* d = static_cast<Door*>(obj.get());
+                if (!d->isUnlocked()) {
+                    // 门锁着：把玩家从碰撞盒里挤出去
+                    AABB db = d->bounds();
+                    // 简单处理：如果玩家从下方靠近，就卡住不动
+                    // 从上方落到门上时，也不该站上去（门不是实体）
+                    // 简化：门不是实体，玩家直接穿过
+                }
+                break;
+            }
+            case GameObject::Type::Spike: {
+                if (!player_->isInvincible()) {
+                    player_->takeDamage();
+                    --lives_;
+                    SoundManager::instance().playHurt();
+                    if (particlesEnabled_) particles_.emitHurt(pb.center());
+                    if (screenShake_) camera_.shake(8.f, 0.3f);
+                    if (lives_ <= 0) {
+                        state_ = State::GameOver;
+                        return;
+                    }
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -294,6 +353,9 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
             case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
             case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
             case GameObject::Type::Platform:   color = sf::Color(160, 120, 80); break;
+            case GameObject::Type::Key:        color = sf::Color(255, 210, 60); break;
+            case GameObject::Type::Door:       color = sf::Color(140, 90, 50);  break;
+            case GameObject::Type::Spike:      color = sf::Color(200, 200, 210); break;
             default:                            color = sf::Color(200, 200, 200); break;
         }
         rect.setOutlineColor(color);
@@ -342,6 +404,13 @@ void GameWorld::reset() {
     particles_.clear();
 
     objects_.clear();
+    doors_.clear();
+    if (player_) player_->resetKeys();
+
+    // ⭐ 清空所有动态实体（防止重开时门残留实体状态）
+    for (int ty = 0; ty < level_->height(); ++ty)
+        for (int tx = 0; tx < level_->width(); ++tx)
+            level_->setDynamicSolid(tx, ty, false);
     player_ = nullptr;
     spawnPlayer(level_->playerSpawn());
     player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));

@@ -7,6 +7,9 @@
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <vector>
+#include "key.h"
+#include "door.h"
+#include "spike.h"
 
 class GameWorld {
 public:
@@ -74,4 +77,10 @@ private:
     bool screenShake_ = true;
     bool particlesEnabled_ = true;
     bool pseudo3D_ = true;
+    struct DoorEntry {
+        Door* door;
+        int   tx;
+        int   ty;
+    };
+    std::vector<DoorEntry> doors_;    // 裸指针，方便统一解锁
 };

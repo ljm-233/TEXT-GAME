@@ -112,6 +112,9 @@ add_executable(text_game
     src/game/player_sprite_factory.cpp
     src/game/parallax.cpp
     src/game/level_intro.cpp
+    src/game/key.cpp
+    src/game/door.cpp
+    src/game/spike.cpp
     src/scene/main_menu_scene.cpp
     src/scene/save_select_scene.cpp
     src/scene/level_select_scene.cpp
@@ -164,6 +167,30 @@ if(APPLE)
 endif()
 
 install(TARGETS text_game RUNTIME DESTINATION .)
+# ============================================================
+# Windows：把 SFML 的 DLL 一起装到输出目录
+# ============================================================
+if(WIN32)
+    # 找到 SFML 的运行时 DLL 目录
+    # 从 sfml-graphics 的 IMPORTED_LOCATION 推导
+    get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION_RELEASE)
+    if(NOT _sfml_graphics_loc)
+        get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION)
+    endif()
+
+    if(_sfml_graphics_loc)
+        get_filename_component(_sfml_dll_dir "${_sfml_graphics_loc}" DIRECTORY)
+
+        # 把所有 sfml-*.dll 和 openal32.dll 一起安装
+        install(DIRECTORY "${_sfml_dll_dir}/"
+                DESTINATION .
+                FILES_MATCHING
+                PATTERN "sfml-*.dll"
+                PATTERN "openal32.dll"
+                PATTERN "*.dll"
+                )
+    endif()
+endif()
 install(DIRECTORY assets/    DESTINATION assets)
 install(DIRECTORY wallpaper/ DESTINATION wallpaper)
 install(FILES README.md LICENSE DESTINATION .)
