@@ -1,5 +1,5 @@
 #include "save_manager.h"
-#include "strings.h"
+#include "text_strings.h"
 #include <filesystem>
 #include <fstream>
 #include <chrono>

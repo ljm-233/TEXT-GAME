@@ -1,6 +1,7 @@
 #include "save_select_scene.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "focus_group.h"
+#include "utf8.h"
 
 SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
                                  std::shared_ptr<SaveManager> saveManager,
@@ -11,9 +12,9 @@ SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
       logger_(std::move(logger)),
       font_(font) {
 
-    newButton_  = std::make_unique<Button>(Str::NewSave, font_,
+    newButton_  = std::make_unique<Button>(Str::T(Str::NewSave), font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{520.f, 60.f}, 26);
-    backButton_ = std::make_unique<Button>(Str::Back, font_,
+    backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 50.f}, 22);
 
     rebuildButtons();
@@ -27,14 +28,20 @@ void SaveSelectScene::rebuildButtons() {
     deleteButtons_.clear();
 
     for (const auto& s : saves_) {
+        // 存档名是用户数据，不翻译
         saveButtons_.push_back(std::make_unique<Button>(
             s.name, font_, sf::Vector2f{0.f, 0.f},
             sf::Vector2f{440.f, 55.f}, 22));
 
+        // 删除按钮是 ×，不翻译
         deleteButtons_.push_back(std::make_unique<Button>(
             Str::DeleteMark, font_, sf::Vector2f{0.f, 0.f},
             sf::Vector2f{60.f, 55.f}, 26));
     }
+
+    // 刷新固定按钮的文字（语言可能已变）
+    newButton_->setText(Str::T(Str::NewSave));
+    backButton_->setText(Str::T(Str::Back));
 }
 
 void SaveSelectScene::onEnter() {
@@ -43,7 +50,7 @@ void SaveSelectScene::onEnter() {
 
 void SaveSelectScene::onResume() {
     nextScene_ = SceneId::None;
-    // 存档列表可能变化（例如从 Game 回来后进度更新），刷新按钮
+    // 语言可能变了，重建按钮刷新文字
     rebuildButtons();
 }
 
@@ -75,7 +82,7 @@ void SaveSelectScene::update(float /*dt*/) {
         auto r = newSaveDialog_->consumeResult();
         if (r == NewSaveDialog::Result::Created) {
             std::string name = newSaveDialog_->getName();
-            if (name.empty()) name = Str::NewSavePlaceholder;
+            if (name.empty()) name = Str::T(Str::NewSavePlaceholder);
             auto info = saveManager_->createSave(name);
             saveManager_->setPendingSave(info);
             newSaveDialog_.reset();
@@ -115,18 +122,17 @@ void SaveSelectScene::update(float /*dt*/) {
     for (size_t i = 0; i < deleteButtons_.size(); ++i) {
         if (deleteButtons_[i]->consumeClick()) {
             pendingDeleteIndex_ = static_cast<int>(i);
+            std::string msg = Str::T(Str::DeleteConfirmHead) + saves_[i].name
+                            + Str::T(Str::DeleteConfirmTail);
             confirm_ = std::make_unique<ConfirmDialog>(
-                font_,
-                std::string(Str::DeleteConfirmHead) + saves_[i].name
-                    + Str::DeleteConfirmTail,
-                sf::Vector2f(1280.f, 720.f));
+                font_, msg, sf::Vector2f(1280.f, 720.f));
             logger_->info("请求删除存档: " + saves_[i].filename);
             return;
         }
     }
 
     if (newButton_->consumeClick()) {
-        std::string defName = Str::NewSavePlaceholder;
+        std::string defName = Str::T(Str::NewSavePlaceholder);
         newSaveDialog_ = std::make_unique<NewSaveDialog>(
             font_, defName, sf::Vector2f(1280.f, 720.f));
         return;
@@ -179,11 +185,7 @@ void SaveSelectScene::render(Window& window) {
         newSaveDialog_->render(window.native());
     }
 
-    // ============================================================
-    // ⭐ 注册焦点
-    // ============================================================
     if (confirm_ || newSaveDialog_) {
-        // 弹窗打开时不处理（弹窗的按钮暂不支持手柄）
         FocusGroup::instance().clear();
     } else {
         std::vector<Button*> items;

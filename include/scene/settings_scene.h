@@ -35,6 +35,7 @@ private:
     static constexpr int kTabCount = 6;
 
     // ===== 应用状态 =====
+    void refreshLabels();
     void refreshSelection();
     void applyResolution();
     void applyFullscreen();
@@ -42,6 +43,7 @@ private:
     void applyAntiAliasing();
     void applyLogLevel();
     void applyTheme();
+    void applyLanguage();
     void applyWallpaper();
     void applyFpsPosition();
     void applyFpsFormat();
@@ -99,6 +101,7 @@ private:
     std::vector<std::unique_ptr<Button>> fpsFormatButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
+    std::vector<std::unique_ptr<Button>> languageButtons_;
     std::unique_ptr<Button> wallpaperButton_;
     std::unique_ptr<Button> clockOn_, clockOff_;
     std::vector<std::unique_ptr<Button>> clockPosButtons_;
@@ -160,7 +163,7 @@ private:
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
 
     sf::Text labelFps_, labelFpsPos_, labelFpsFormat_, labelUiScale_;
-    sf::Text labelTheme_, labelWallpaper_;
+    sf::Text labelTheme_, labelLanguage_, labelWallpaper_;
     sf::Text labelClock_, labelClockPos_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelConsoleFont_, labelConsoleHistory_;
@@ -196,6 +199,7 @@ private:
     int     fpsFormat_;
     float   uiScale_;
     ThemeId themeId_;
+    int     languageIdx_ = 0;
     bool    showClock_;
     int     clockPosition_;
     int     consoleMask_;
@@ -234,4 +238,7 @@ private:
     int     logKeepIndex_;
 
     SceneId nextScene_ = SceneId::None;
+
+    // 语言版本追踪：语言变化时刷新所有 UI 文字
+    int lastLangVersion_ = -1;
 };

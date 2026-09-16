@@ -1,5 +1,6 @@
 #include "game_scene.h"
-#include "strings.h"
+#include "text_strings.h"
+#include "focus_group.h"
 #include "utf8.h"
 #include "notification.h"
 #include "sound_manager.h"
@@ -53,7 +54,7 @@ void GameScene::onEnter() {
 
     if (!loadLevel(levelIndex_)) {
         logger_->error("加载关卡 " + std::to_string(levelIndex_) + " 失败");
-        NotificationSystem::instance().push("关卡加载失败",
+        NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
                                             NotificationType::Error, 5.f);
     }
 
@@ -112,7 +113,9 @@ void GameScene::subscribeWorldEvents() {
                                              world_->coins(), levelIndex_);
                 SoundManager::instance().playLevelComplete();
                 NotificationSystem::instance().push(
-                    "关卡完成！获得 " + std::to_string(finalStars_) + " 星",
+                    Str::T(Str::NotifLevelCompleteStars) +
+                        std::to_string(finalStars_) +
+                        Str::T(Str::NotifStarSuffix),
                     NotificationType::Success, 5.f);
             } else if constexpr (std::is_same_v<T, EvGameOver>) {
                 finalCoins_      = world_->coins();
@@ -120,7 +123,7 @@ void GameScene::subscribeWorldEvents() {
                 finalStars_      = 0;
                 SoundManager::instance().playGameOver();
                 NotificationSystem::instance().push(
-                    "游戏失败，按 R 重试", NotificationType::Error, 5.f);
+                    Str::T(Str::NotifGameOverRetry), NotificationType::Error, 5.f);
             }
         }, e);
     });
@@ -193,17 +196,17 @@ void GameScene::refreshHud() {
     std::snprintf(timeBuf, sizeof(timeBuf), "%.1f", levelTime_);
 
     std::string hud =
-        "存档: " + save_.name +
-        "   关卡: " + std::to_string(levelIndex_) +
-        "   生命: " + std::to_string(lives) +
-        "   金币: " + std::to_string(coins) +
+        Str::T(Str::HudSave) + save_.name +
+        "   " + Str::T(Str::HudLevel) + std::to_string(levelIndex_) +
+        "   " + Str::T(Str::HudLives) + std::to_string(lives) +
+        "   " + Str::T(Str::HudCoins) + std::to_string(coins) +
         " / " + std::to_string(world_->totalCoins()) +
-        "   时间: " + timeBuf + "s";
+        "   " + Str::T(Str::HudTime) + timeBuf + "s";
 
     if (world_->player().keys() > 0) {
-        hud += "   钥匙: " + std::to_string(world_->player().keys());
+        hud += "   " + Str::T(Str::HudKeys) + std::to_string(world_->player().keys());
     }
-    hud += "   WASD 移动，Space 跳跃，ESC 暂停";
+    hud += "   " + Str::T(Str::HudHelp);
     hudText_.setString(toSf(hud));
 }
 
@@ -233,6 +236,45 @@ void GameScene::applyStars() {
     saveManager_->setLevelStar(save_.filename, levelIndex_, finalStars_);
 }
 
+void GameScene::rebuildOverlayButtons() {
+    overlayButtons_.clear();
+
+    const float winW = lastOverlayWinW_;
+    const float winH = lastOverlayWinH_;
+    const auto  state = world_->state();
+
+    const float bw = 180.f;
+    const float bh = 50.f;
+    const float gap = 15.f;
+
+    if (state == GameWorld::State::LevelComplete) {
+        const float totalW = bw * 3.f + gap * 2.f;
+        const float x0 = (winW - totalW) * 0.5f;
+        const float y  = winH * 0.5f + 130.f;
+
+        overlayButtons_.push_back(std::make_unique<Button>(
+            Str::T(Str::BtnNextLevel), *font_,
+            sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
+        overlayButtons_.push_back(std::make_unique<Button>(
+            Str::T(Str::BtnReplay), *font_,
+            sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
+        overlayButtons_.push_back(std::make_unique<Button>(
+            Str::T(Str::Back), *font_,
+            sf::Vector2f{x0 + (bw + gap) * 2.f, y}, sf::Vector2f{bw, bh}, 22));
+    } else if (state == GameWorld::State::GameOver) {
+        const float totalW = bw * 2.f + gap;
+        const float x0 = (winW - totalW) * 0.5f;
+        const float y  = winH * 0.5f + 60.f;
+
+        overlayButtons_.push_back(std::make_unique<Button>(
+            Str::T(Str::BtnRetry), *font_,
+            sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
+        overlayButtons_.push_back(std::make_unique<Button>(
+            Str::T(Str::Back), *font_,
+            sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
+    }
+}
+
 void GameScene::refreshOverlayLayout(float winW, float winH) {
     auto state = world_->state();
     if (winW == lastOverlayWinW_ &&
@@ -244,16 +286,24 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
     lastOverlayWinH_ = winH;
     lastOverlayState_ = state;
 
-    if (state == GameWorld::State::Playing) return;
+    if (state == GameWorld::State::Playing) {
+        overlayButtons_.clear();
+        FocusGroup::instance().clear();
+        return;
+    }
+
+    // ⭐ 状态变化时重建按钮
+    rebuildOverlayButtons();
 
     overlayBg_.setSize({winW, winH});
     overlayBg_.setFillColor(sf::Color(0, 0, 0, 180));
 
     std::string title;
     if (state == GameWorld::State::LevelComplete) {
-        title = "关卡 " + std::to_string(levelIndex_) + " 完成！";
+        title = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex_) +
+                " " + Str::T(Str::LevelCompleteTitle);
     } else {
-        title = "游戏失败";
+        title = Str::T(Str::GameOverTitle);
     }
     overlayTitle_.setString(toSf(title));
     overlayTitle_.setFillColor(
@@ -265,7 +315,7 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                              tb.position.y + tb.size.y / 2.f});
     overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
 
-    std::string stats = "金币: " + std::to_string(finalCoins_) +
+    std::string stats = Str::T(Str::OverlayCoins) + std::to_string(finalCoins_) +
                         " / " + std::to_string(finalTotalCoins_);
     overlayHint_.setString(toSf(stats));
     overlayHint_.setFillColor(sf::Color(200, 200, 220));
@@ -274,10 +324,15 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                             hb.position.y + hb.size.y / 2.f});
     overlayHint_.setPosition({winW / 2.f, winH / 2.f - 60.f});
 
-    char timeBuf[64];
+    char timeBuf[128];
     std::snprintf(timeBuf, sizeof(timeBuf),
-                  "时间: %.1f 秒  /  目标: %d 秒",
-                  levelTime_, targetTime());
+                  "%s%.1f%s  /  %s%d%s",
+                  Str::T(Str::OverlayTime).c_str(),
+                  levelTime_,
+                  Str::T(Str::OverlaySeconds).c_str(),
+                  Str::T(Str::OverlayTarget).c_str(),
+                  targetTime(),
+                  Str::T(Str::OverlaySeconds).c_str());
     overlayTime_.setString(toSf(timeBuf));
     auto tb2 = overlayTime_.getLocalBounds();
     overlayTime_.setOrigin({tb2.position.x + tb2.size.x / 2.f,
@@ -301,15 +356,18 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
 
     std::string hint;
     if (state == GameWorld::State::LevelComplete) {
-        hint = "Enter 继续    R 重玩本关    ESC 返回";
+        hint = Str::T(Str::OverlayHintComplete);
     } else {
-        hint = "R 重试    ESC 返回";
+        hint = Str::T(Str::OverlayHintFailed);
     }
     overlaySubHint_.setString(toSf(hint));
     auto sb2 = overlaySubHint_.getLocalBounds();
     overlaySubHint_.setOrigin({sb2.position.x + sb2.size.x / 2.f,
                                sb2.position.y + sb2.size.y / 2.f});
-    overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 140.f});
+
+    float hintY = winH / 2.f + 140.f;
+    if (state == GameWorld::State::LevelComplete) hintY = winH / 2.f + 210.f;
+    overlaySubHint_.setPosition({winW / 2.f, hintY});
 }
 
 void GameScene::handleEvent(const sf::Event& event) {
@@ -330,6 +388,9 @@ void GameScene::handleEvent(const sf::Event& event) {
     auto state = world_->state();
 
     if (state != GameWorld::State::Playing) {
+        // ⭐ 先转发给 overlay 按钮
+        for (auto& b : overlayButtons_) b->handleEvent(event);
+
         if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
             if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
                 nextScene_ = SceneId::Back;
@@ -350,13 +411,16 @@ void GameScene::handleEvent(const sf::Event& event) {
                     if (levelIndex_ + 1 <= kMaxLevels &&
                         loadLevel(levelIndex_ + 1)) {
                         NotificationSystem::instance().push(
-                            "进入第 " + std::to_string(levelIndex_) + " 关",
+                            Str::T(Str::NotifEnterLevel) +
+                                std::to_string(levelIndex_) +
+                                Str::T(Str::NotifLevelSuffix),
                             NotificationType::Info);
                         saveManager_->updateProgress(
                             save_.filename, world_->coins(), levelIndex_);
                     } else {
                         NotificationSystem::instance().push(
-                            "全部通关！", NotificationType::Success, 5.f);
+                            Str::T(Str::NotifAllClear),
+                            NotificationType::Success, 5.f);
                     }
                 }
             }
@@ -376,7 +440,7 @@ void GameScene::handleEvent(const sf::Event& event) {
             levelTime_ = 0.f;
             hitstopTimer_ = 0.f;
             lastOverlayState_ = GameWorld::State::Playing;
-            NotificationSystem::instance().push("已重生",
+            NotificationSystem::instance().push(Str::T(Str::NotifRespawned),
                                                 NotificationType::Info);
             return;
         }
@@ -406,7 +470,56 @@ void GameScene::update(float dt) {
         return;
     }
 
-    if (world_->state() != GameWorld::State::Playing) return;
+    auto state = world_->state();
+    if (state != GameWorld::State::Playing) {
+        // ⭐ 处理 overlay 按钮点击
+        if (state == GameWorld::State::LevelComplete && overlayButtons_.size() >= 3) {
+            if (overlayButtons_[0]->consumeClick()) {
+                // 下一关
+                if (levelIndex_ + 1 <= kMaxLevels && loadLevel(levelIndex_ + 1)) {
+                    NotificationSystem::instance().push(
+                        Str::T(Str::NotifEnterLevel) +
+                            std::to_string(levelIndex_) +
+                            Str::T(Str::NotifLevelSuffix),
+                        NotificationType::Info);
+                    saveManager_->updateProgress(
+                        save_.filename, world_->coins(), levelIndex_);
+                } else {
+                    NotificationSystem::instance().push(
+                        Str::T(Str::NotifAllClear),
+                        NotificationType::Success, 5.f);
+                }
+                return;
+            }
+            if (overlayButtons_[1]->consumeClick()) {
+                // 重玩
+                world_->reset();
+                levelTime_ = 0.f;
+                finalStars_ = 0;
+                finalCoins_ = 0;
+                finalTotalCoins_ = 0;
+                lastOverlayState_ = GameWorld::State::Playing;
+                return;
+            }
+            if (overlayButtons_[2]->consumeClick()) {
+                nextScene_ = SceneId::Back;
+                return;
+            }
+        } else if (state == GameWorld::State::GameOver && overlayButtons_.size() >= 2) {
+            if (overlayButtons_[0]->consumeClick()) {
+                // 重试
+                world_->reset();
+                levelTime_ = 0.f;
+                lastOverlayState_ = GameWorld::State::Playing;
+                return;
+            }
+            if (overlayButtons_[1]->consumeClick()) {
+                nextScene_ = SceneId::Back;
+                return;
+            }
+        }
+        return;
+    }
 
     // 受击停顿：冻结游戏逻辑和计时
     if (hitstopTimer_ > 0.f) {
@@ -436,6 +549,13 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
         rt.draw(overlayStars_);
     }
     rt.draw(overlaySubHint_);
+
+    // ⭐ 渲染按钮 + 注册焦点（手柄导航）
+    for (auto& b : overlayButtons_) b->render(rt);
+
+    std::vector<Button*> items;
+    for (auto& b : overlayButtons_) items.push_back(b.get());
+    FocusGroup::instance().setItems(items);
 }
 
 void GameScene::render(Window& window) {

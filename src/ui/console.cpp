@@ -1,5 +1,5 @@
 #include "console.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "ui_scale.h"
 #include <algorithm>
 #include <iostream>

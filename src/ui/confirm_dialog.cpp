@@ -1,5 +1,5 @@
 #include "confirm_dialog.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
@@ -18,12 +18,12 @@ ConfirmDialog::ConfirmDialog(const sf::Font& font, const std::string& message,
     message_.setFillColor(getTheme().textPrimary);
 
     if (mode_ == Mode::Info) {
-        yesButton_ = std::make_unique<Button>("确定", font, sf::Vector2f{0.f, 0.f},
+        yesButton_ = std::make_unique<Button>(Str::T("确定"), font, sf::Vector2f{0.f, 0.f},
                                               sf::Vector2f{140.f, 50.f}, 22);
     } else {
-        yesButton_ = std::make_unique<Button>(Str::Yes, font, sf::Vector2f{0.f, 0.f},
+        yesButton_ = std::make_unique<Button>(Str::T(Str::Yes), font, sf::Vector2f{0.f, 0.f},
                                               sf::Vector2f{120.f, 50.f}, 22);
-        noButton_ = std::make_unique<Button>(Str::No, font, sf::Vector2f{0.f, 0.f},
+        noButton_ = std::make_unique<Button>(Str::T(Str::No), font, sf::Vector2f{0.f, 0.f},
                                              sf::Vector2f{120.f, 50.f}, 22);
     }
 
@@ -34,7 +34,6 @@ void ConfirmDialog::relayout(sf::Vector2f windowSize) {
     windowSize_ = windowSize;
     backdrop_.setSize(windowSize_);
 
-    // 面板尺寸：Info 模式更高，因为要多行文本
     const float panelW = 520.f;
     const float panelH = (mode_ == Mode::Info) ? 340.f : 200.f;
     float px = (windowSize.x - panelW) / 2.f;
@@ -43,12 +42,10 @@ void ConfirmDialog::relayout(sf::Vector2f windowSize) {
     panel_.setSize({panelW, panelH});
     panel_.setPosition({px, py});
 
-    // 文字：水平居中，垂直从面板顶部固定偏移（不再垂直居中）
     auto b = message_.getLocalBounds();
     message_.setOrigin({b.position.x + b.size.x / 2.f, b.position.y});
     message_.setPosition({windowSize.x / 2.f, py + 40.f});
 
-    // 按钮：固定在面板底部内边距 30
     float btnY = py + panelH - 80.f;
     if (mode_ == Mode::Info) {
         float bw = 140.f;

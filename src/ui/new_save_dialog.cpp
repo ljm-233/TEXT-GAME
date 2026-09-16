@@ -1,13 +1,13 @@
 #include "new_save_dialog.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
 
 NewSaveDialog::NewSaveDialog(const sf::Font& font, const std::string& defaultName,
                              sf::Vector2f windowSize)
-      : title_(font, toSf(Str::NewSaveTitle), scaledFontSize(26)),
-        hint_(font, toSf(Str::NewSaveHint), scaledFontSize(20)),
+      : title_(font, toSf(Str::T(Str::NewSaveTitle)), scaledFontSize(26)),
+        hint_(font, toSf(Str::T(Str::NewSaveHint)), scaledFontSize(20)),
         windowSize_(windowSize) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 160));
     backdrop_.setSize(windowSize_);
@@ -21,13 +21,15 @@ NewSaveDialog::NewSaveDialog(const sf::Font& font, const std::string& defaultNam
 
     input_ = std::make_unique<TextInput>(font, sf::Vector2f{0.f, 0.f},
                                          sf::Vector2f{380.f, 46.f},
-                                         Str::NewSavePlaceholder, 20, 24);
+                                         Str::T(Str::NewSavePlaceholder), 20, 24);
     input_->setText(defaultName);
-    input_->setFocused(true); // 打开对话框即聚焦
+    input_->setFocused(true);
 
-    createButton_ = std::make_unique<Button>(Str::BtnCreate, font, sf::Vector2f{0.f, 0.f},
+    createButton_ = std::make_unique<Button>(Str::T(Str::BtnCreate), font,
+                                             sf::Vector2f{0.f, 0.f},
                                              sf::Vector2f{140.f, 48.f}, 22);
-    cancelButton_ = std::make_unique<Button>(Str::BtnCancel, font, sf::Vector2f{0.f, 0.f},
+    cancelButton_ = std::make_unique<Button>(Str::T(Str::BtnCancel), font,
+                                             sf::Vector2f{0.f, 0.f},
                                              sf::Vector2f{140.f, 48.f}, 22);
 
     relayout(windowSize_);
@@ -45,19 +47,15 @@ void NewSaveDialog::relayout(sf::Vector2f windowSize) {
     panel_.setSize({panelW, panelH});
     panel_.setPosition({px, py});
 
-    // 标题居中
     auto tb = title_.getLocalBounds();
     title_.setOrigin({tb.position.x + tb.size.x / 2.f, tb.position.y});
     title_.setPosition({windowSize.x / 2.f, py + 30.f});
 
-    // 提示文字
     hint_.setPosition({px + 60.f, py + 100.f});
 
-    // 输入框
     input_->setPosition({px + 60.f, py + 140.f});
     input_->setSize({panelW - 120.f, 46.f});
 
-    // 按钮：底部居中并排
     const float gap = 40.f;
     float btnW = 140.f;
     float totalW = btnW * 2 + gap;
@@ -72,7 +70,6 @@ void NewSaveDialog::handleEvent(const sf::Event& event) {
     createButton_->handleEvent(event);
     cancelButton_->handleEvent(event);
 
-    // Enter 键提交
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Enter && input_->isFocused()) {
             result_ = Result::Created;

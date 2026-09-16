@@ -1,7 +1,7 @@
 #include "console_scene.h"
 #include "calculator.h"
 #include "sound_manager.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "theme.h"
 #include "utf8.h"
 #include <algorithm>
@@ -69,8 +69,8 @@ ConsoleScene::~ConsoleScene() {
 }
 
 void ConsoleScene::printWelcome() {
-    std::cout << "TEXT-GAME 控制台\n";
-    std::cout << "输入 help 查看可用命令\n";
+    std::cout << Str::T(Str::ConsoleWelcomeTitle) << "\n";
+    std::cout << Str::T(Str::ConsoleWelcomeHint) << "\n";
     std::cout << "\n";
 }
 
@@ -117,17 +117,7 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
 
     // ===== help =====
     if (cmd == "help") {
-        std::cout << "可用命令:\n";
-        std::cout << "  help              显示帮助\n";
-        std::cout << "  clear             清空屏幕\n";
-        std::cout << "  echo <text>       回显文本\n";
-        std::cout << "  version           显示版本\n";
-        std::cout << "  calc              启动计算器\n";
-        std::cout << "  scene <name>      切换场景 (main/save/settings/quit)\n";
-        std::cout << "  log <level>       设置日志级别 (trace/debug/info/warn/error)\n";
-        std::cout << "  theme <name>      切换主题 (dark/blue/light)\n";
-        std::cout << "  save list         列出所有存档\n";
-        std::cout << "  exit              关闭控制台\n";
+        std::cout << Str::T(Str::ConsoleHelpText);
         std::cout << "\n";
     }
 
@@ -155,16 +145,16 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
 
     // ===== calc =====
     else if (cmd == "calc") {
-        std::cout << "[启动计算器...]\n";
+        std::cout << Str::T(Str::ConsoleCalcStart) << "\n";
         Calculator calc(logger_);
         calc.run();
-        std::cout << "[计算器已退出]\n";
+        std::cout << Str::T(Str::ConsoleCalcEnd) << "\n";
     }
 
     // ===== scene =====
     else if (cmd == "scene") {
         if (tokens.size() < 2) {
-            std::cout << "用法: scene <main|save|settings|quit>\n";
+            std::cout << Str::T(Str::ConsoleUsageScene) << "\n";
             return;
         }
         const std::string& name = tokens[1];
@@ -177,14 +167,14 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         else if (name == "quit")
             pendingScene_ = static_cast<int>(SceneId::Exit);
         else {
-            std::cout << "未知场景: " << name << '\n';
+            std::cout << Str::T(Str::ConsoleUnknownScene) << name << '\n';
         }
     }
 
     // ===== log =====
     else if (cmd == "log") {
         if (tokens.size() < 2) {
-            std::cout << "用法: log <trace|debug|info|warn|error>\n";
+            std::cout << Str::T(Str::ConsoleUsageLog) << "\n";
             return;
         }
         const std::string& level = tokens[1];
@@ -200,18 +190,18 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         else if (level == "error")
             lv = LogLevel::Error;
         else {
-            std::cout << "未知级别: " << level << '\n';
+            std::cout << Str::T(Str::ConsoleUnknownLevel) << level << '\n';
             return;
         }
         logger_->setMinLevel(lv);
         preferences_->setInt("log_level", static_cast<int>(lv));
-        std::cout << "日志级别已切换: " << level << '\n';
+        std::cout << Str::T(Str::ConsoleLogLevelChanged) << level << '\n';
     }
 
     // ===== theme =====
     else if (cmd == "theme") {
         if (tokens.size() < 2) {
-            std::cout << "用法: theme <dark|blue|light>\n";
+            std::cout << Str::T(Str::ConsoleUsageTheme) << "\n";
             return;
         }
         const std::string& name = tokens[1];
@@ -223,12 +213,12 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         else if (name == "light")
             id = ThemeId::Light;
         else {
-            std::cout << "未知主题: " << name << '\n';
+            std::cout << Str::T(Str::ConsoleUnknownTheme) << name << '\n';
             return;
         }
         setTheme(id);
         preferences_->setInt("theme", static_cast<int>(id));
-        std::cout << "主题已切换。返回主菜单再进入生效。\n";
+        std::cout << Str::T(Str::ConsoleThemeChanged) << "\n";
     }
 
     // ===== save =====
@@ -236,16 +226,17 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
         if (tokens.size() < 2 || tokens[1] == "list") {
             auto saves = saveManager_->listSaves();
             if (saves.empty()) {
-                std::cout << "没有存档。\n";
+                std::cout << Str::T(Str::ConsoleNoSaves) << "\n";
             } else {
-                std::cout << "共 " << saves.size() << " 个存档:\n";
+                std::cout << Str::T(Str::ConsoleSavesPrefix) << saves.size()
+                          << Str::T(Str::ConsoleSavesSuffix) << "\n";
                 for (size_t i = 0; i < saves.size(); ++i) {
                     std::cout << "  " << (i + 1) << ". " << saves[i].name << "  ("
                               << saves[i].filename << ")\n";
                 }
             }
         } else {
-            std::cout << "用法: save list\n";
+            std::cout << Str::T(Str::ConsoleUsageSave) << "\n";
         }
     }
 
@@ -256,7 +247,8 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
 
     // ===== 未知命令 =====
     else {
-        std::cout << "未知命令: " << cmd << "。输入 help 查看帮助。\n";
+        std::cout << Str::T(Str::ConsoleUnknownCmd1) << cmd
+                  << Str::T(Str::ConsoleUnknownCmd2) << "\n";
         SoundManager::instance().playHurt();
         return;
     }

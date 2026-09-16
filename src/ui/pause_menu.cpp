@@ -1,7 +1,7 @@
 #include "pause_menu.h"
 #include "animation.h"
 #include "notification.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
 #include "utf8.h"
@@ -9,7 +9,7 @@
 #include "focus_group.h"
 
 namespace {
-const char* kThemeNames[] = {"深色", "蓝色", "浅色"};
+const char* kThemeKeys[] = {"深色", "蓝色", "浅色"};
 }
 
 PauseMenu::PauseMenu(const sf::Font& font,
@@ -18,13 +18,13 @@ PauseMenu::PauseMenu(const sf::Font& font,
     : font_(font),
       prefs_(std::move(prefs)),
       windowSize_(windowSize),
-      title_(font, toSf("已暂停"), scaledFontSize(32)),
-      settingsTitle_(font, toSf("设置"), scaledFontSize(28)),
-      labelTheme_(font, toSf("主题"), scaledFontSize(20)),
-      labelAnim_(font, toSf("动画效果"), scaledFontSize(20)),
-      labelNotif_(font, toSf("屏幕通知"), scaledFontSize(20)),
-      labelGamepad_(font, toSf("手柄支持"), scaledFontSize(20)),
-      hintText_(font, toSf("* 部分设置返回主菜单后完全生效"), scaledFontSize(14)) {
+      title_(font, sf::String(), scaledFontSize(32)),
+      settingsTitle_(font, sf::String(), scaledFontSize(28)),
+      labelTheme_(font, sf::String(), scaledFontSize(20)),
+      labelAnim_(font, sf::String(), scaledFontSize(20)),
+      labelNotif_(font, sf::String(), scaledFontSize(20)),
+      labelGamepad_(font, sf::String(), scaledFontSize(20)),
+      hintText_(font, sf::String(), scaledFontSize(14)) {
     backdrop_.setFillColor(sf::Color(0, 0, 0, 180));
     backdrop_.setSize(windowSize_);
 
@@ -41,34 +41,61 @@ PauseMenu::PauseMenu(const sf::Font& font,
 
     // ===== 主菜单按钮 =====
     mainButtons_.push_back(std::make_unique<Button>(
-        "回到游戏", font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
-    mainButtons_.push_back(std::make_unique<Button>("设置", font_, sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{280.f, 52.f}, 22));
+        Str::T("回到游戏"), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
     mainButtons_.push_back(std::make_unique<Button>(
-        "保存并退出游戏", font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
+        Str::T(Str::Settings), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
+    mainButtons_.push_back(std::make_unique<Button>(
+        Str::T("保存并退出游戏"), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{280.f, 52.f}, 22));
 
     // ===== 设置面板 =====
     for (int i = 0; i < 3; ++i) {
         themeButtons_.push_back(std::make_unique<Button>(
-            kThemeNames[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 40.f}, 18));
+            Str::T(kThemeKeys[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 40.f}, 18));
     }
-    animOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+    animOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
                                        sf::Vector2f{80.f, 40.f}, 18);
-    animOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+    animOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
                                         sf::Vector2f{80.f, 40.f}, 18);
-    notifOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+    notifOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
                                         sf::Vector2f{80.f, 40.f}, 18);
-    notifOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+    notifOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
                                          sf::Vector2f{80.f, 40.f}, 18);
-    gamepadOn_ = std::make_unique<Button>("开", font_, sf::Vector2f{0.f, 0.f},
+    gamepadOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
                                           sf::Vector2f{80.f, 40.f}, 18);
-    gamepadOff_ = std::make_unique<Button>("关", font_, sf::Vector2f{0.f, 0.f},
+    gamepadOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
                                            sf::Vector2f{80.f, 40.f}, 18);
-    backButton_ = std::make_unique<Button>("返回", font_, sf::Vector2f{0.f, 0.f},
+    backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_, sf::Vector2f{0.f, 0.f},
                                            sf::Vector2f{160.f, 44.f}, 20);
 
+    refreshLabels();
     relayout(windowSize_);
     refreshSelection();
+}
+
+void PauseMenu::refreshLabels() {
+    title_.setString(toSf(Str::T("已暂停")));
+    settingsTitle_.setString(toSf(Str::T(Str::Settings)));
+    labelTheme_.setString(toSf(Str::T(Str::LabelTheme)));
+    labelAnim_.setString(toSf(Str::T(Str::LabelAnimation)));
+    labelNotif_.setString(toSf(Str::T(Str::LabelNotification)));
+    labelGamepad_.setString(toSf(Str::T(Str::LabelGamepad)));
+    hintText_.setString(toSf(Str::T("* 部分设置返回主菜单后完全生效")));
+
+    if (mainButtons_.size() >= 3) {
+        mainButtons_[0]->setText(Str::T("回到游戏"));
+        mainButtons_[1]->setText(Str::T(Str::Settings));
+        mainButtons_[2]->setText(Str::T("保存并退出游戏"));
+    }
+    for (int i = 0; i < 3 && i < static_cast<int>(themeButtons_.size()); ++i) {
+        themeButtons_[i]->setText(Str::T(kThemeKeys[i]));
+    }
+    if (animOn_)    animOn_->setText(Str::T(Str::On));
+    if (animOff_)   animOff_->setText(Str::T(Str::Off));
+    if (notifOn_)   notifOn_->setText(Str::T(Str::On));
+    if (notifOff_)  notifOff_->setText(Str::T(Str::Off));
+    if (gamepadOn_) gamepadOn_->setText(Str::T(Str::On));
+    if (gamepadOff_)gamepadOff_->setText(Str::T(Str::Off));
+    if (backButton_)backButton_->setText(Str::T(Str::Back));
 }
 
 void PauseMenu::relayout(sf::Vector2f windowSize) {
@@ -158,12 +185,14 @@ void PauseMenu::refreshSelection() {
 
 void PauseMenu::switchToSettings() {
     view_ = View::Settings;
+    refreshLabels();
     relayout(windowSize_);
     refreshSelection();
 }
 
 void PauseMenu::switchToMain() {
     view_ = View::Main;
+    refreshLabels();
     relayout(windowSize_);
 }
 
@@ -181,7 +210,7 @@ void PauseMenu::applyNotification(bool enabled) {
     NotificationSystem::instance().setEnabled(enabled);
     prefs_->setBool("notification_enabled", enabled);
     if (enabled)
-        NotificationSystem::instance().push("通知已开启", NotificationType::Info);
+        NotificationSystem::instance().push(Str::T("通知已开启"), NotificationType::Info);
 }
 
 void PauseMenu::applyGamepad(bool enabled) {
@@ -292,6 +321,9 @@ PauseMenu::Action PauseMenu::consumeAction() {
 }
 
 void PauseMenu::render(sf::RenderTarget& target) {
+    // ⭐ 每帧刷新字符串（廉价且保证语言切换生效）
+    refreshLabels();
+
     target.draw(backdrop_);
     target.draw(panel_);
 

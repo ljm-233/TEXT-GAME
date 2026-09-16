@@ -18,6 +18,7 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "window.h"
+#include "lang.h"
 
 #include <algorithm>
 
@@ -71,6 +72,21 @@ void Application::registerDependencies() {
             prefs->getBool("notification_enabled", true));
         NotificationSystem::instance().setPosition(static_cast<NotificationPos>(
             std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
+
+        // 多语言
+        {
+            auto& lang = Lang::instance();
+            lang.setLangDir((container_.resolve<Paths>()->assetsDir() / "lang").string());
+            lang.scanAvailable();
+
+            std::string code = prefs->get("language", "zh");
+            // 校验是否在可用列表里
+            const auto& avail = lang.available();
+            if (std::find(avail.begin(), avail.end(), code) == avail.end()) {
+                code = "zh";
+            }
+            lang.load(code);
+        }
 
         // 键位
         {

@@ -1,5 +1,5 @@
 #include "theme.h"
-#include "strings.h"
+#include "text_strings.h"
 
 namespace {
 const Theme kThemes[kThemeCount] = {

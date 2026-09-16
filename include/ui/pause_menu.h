@@ -23,6 +23,7 @@ public:
 private:
     enum class View { Main, Settings };
 
+    void refreshLabels();
     void switchToSettings();
     void switchToMain();
     void applyTheme(int idx);

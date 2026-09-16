@@ -1,8 +1,9 @@
 #include "level_select_scene.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "utf8.h"
 #include "focus_group.h"
 #include <algorithm>
+#include <iostream>
 
 LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
                                    std::shared_ptr<SaveManager> saveManager,
@@ -12,7 +13,7 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
       saveManager_(std::move(saveManager)),
       logger_(std::move(logger)),
       font_(font),
-      titleText_(font, toSf(Str::LevelSelectTitle), 48),
+      titleText_(font, sf::String(), 48),
       saveNameText_(font, sf::String(), 22),
       hintText_(font, sf::String(), 20),
       starText_(font, sf::String(), 22) {
@@ -28,14 +29,10 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
         save_ = saves[0];
         currentLevel_ = std::max(1, save_.currentLevel);
 
-        std::string line = std::string(Str::SaveLabel) + save_.name;
-        saveNameText_.setString(toSf(line));
-
         logger_->info("关卡选择: 存档=" + save_.filename +
                       " 当前进度=" + std::to_string(currentLevel_));
     } else {
         hasSave_ = false;
-        hintText_.setString(toSf(Str::NoSaveHint));
         logger_->warn("关卡选择: 没有存档");
     }
 
@@ -45,10 +42,28 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{120.f, 120.f}, 40));
     }
 
-    backButton_ = std::make_unique<Button>(Str::Back, font_,
+    backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 52.f}, 22);
 
     refreshSelection();
+}
+
+void LevelSelectScene::onEnter() {
+    nextScene_ = SceneId::None;
+}
+
+void LevelSelectScene::onResume() {
+    nextScene_ = SceneId::None;
+}
+
+void LevelSelectScene::refreshLabels() {
+    titleText_.setString(toSf(Str::T(Str::LevelSelectTitle)));
+    if (hasSave_) {
+        saveNameText_.setString(toSf(Str::T(Str::SaveLabel) + save_.name));
+    } else {
+        hintText_.setString(toSf(Str::T(Str::NoSaveHint)));
+    }
+    backButton_->setText(Str::T(Str::Back));
 }
 
 void LevelSelectScene::refreshSelection() {
@@ -62,14 +77,6 @@ void LevelSelectScene::refreshSelection() {
         }
         levelButtons_[i]->setSelected(false);
     }
-}
-
-void LevelSelectScene::onEnter() {
-    nextScene_ = SceneId::None;
-}
-
-void LevelSelectScene::onResume() {
-    nextScene_ = SceneId::None;
 }
 
 void LevelSelectScene::handleEvent(const sf::Event& event) {
@@ -107,6 +114,19 @@ void LevelSelectScene::update(float /*dt*/) {
 }
 
 void LevelSelectScene::render(Window& window) {
+    // ⭐ 每帧刷新字符串，保证语言切换后立即生效
+    refreshLabels();
+
+    // 一次性诊断日志
+    static bool logged = false;
+    if (!logged) {
+        std::cerr << "[LevelSelect] title=\""
+                  << Str::T(Str::LevelSelectTitle)
+                  << "\" saveLabel=\"" << Str::T(Str::SaveLabel)
+                  << "\" hasSave=" << hasSave_ << "\n";
+        logged = true;
+    }
+
     window.clear();
     if (background_) background_->render(window.native());
 
@@ -115,7 +135,6 @@ void LevelSelectScene::render(Window& window) {
     float h = static_cast<float>(size.y);
     float cx = w / 2.f;
 
-    // ===== 标题 =====
     {
         auto b = titleText_.getLocalBounds();
         titleText_.setOrigin({b.position.x + b.size.x / 2.f,
@@ -124,7 +143,6 @@ void LevelSelectScene::render(Window& window) {
         window.native().draw(titleText_);
     }
 
-    // ===== 存档名 =====
     {
         auto b = saveNameText_.getLocalBounds();
         saveNameText_.setOrigin({b.position.x + b.size.x / 2.f,
@@ -140,10 +158,9 @@ void LevelSelectScene::render(Window& window) {
         hintText_.setPosition({cx, h / 2.f});
         window.native().draw(hintText_);
     } else {
-        // ===== 关卡按钮 =====
         const float btnSize  = 120.f;
         const float gapX     = 30.f;
-        const float gapY     = 60.f;   // ⭐ 从 40 加到 60，给星星留位置
+        const float gapY     = 60.f;
         const int   perRow   = 5;
 
         for (int i = 0; i < kMaxLevels; ++i) {
@@ -160,7 +177,6 @@ void LevelSelectScene::render(Window& window) {
             levelButtons_[i]->setPosition({x, y});
             levelButtons_[i]->render(window.native());
 
-            // ===== ⭐ 星级显示 =====
             int stars = 0;
             if (i < static_cast<int>(save_.levelStars.size())) {
                 stars = save_.levelStars[i];
@@ -169,7 +185,6 @@ void LevelSelectScene::render(Window& window) {
             int level = i + 1;
             bool unlocked = level <= currentLevel_;
 
-            // 只对已解锁的关卡显示星级
             if (unlocked) {
                 std::string starStr;
                 for (int s = 0; s < 3; ++s) {
@@ -177,7 +192,6 @@ void LevelSelectScene::render(Window& window) {
                 }
                 starText_.setString(toSf(starStr));
 
-                // 有星的用金色，没星的用灰色
                 if (stars > 0) {
                     starText_.setFillColor(sf::Color(255, 210, 60));
                 } else {
@@ -196,11 +210,9 @@ void LevelSelectScene::render(Window& window) {
         }
     }
 
-    // ===== 返回按钮 =====
     backButton_->setPosition({cx - 90.f, h - 100.f});
     backButton_->render(window.native());
 
-    // ===== 注册焦点 =====
     std::vector<Button*> items;
     for (int i = 0; i < kMaxLevels; ++i) {
         int level = i + 1;

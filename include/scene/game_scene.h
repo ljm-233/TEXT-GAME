@@ -7,7 +7,9 @@
 #include "pause_menu.h"
 #include "parallax.h"
 #include "level_intro.h"
+#include "button.h"
 #include <memory>
+#include <vector>
 
 class GameScene : public Scene {
 public:
@@ -33,6 +35,7 @@ private:
     void subscribeWorldEvents();
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
+    void rebuildOverlayButtons();
     void renderStateOverlay(sf::RenderTarget& rt, float winW, float winH);
 
     int  calcStars() const;
@@ -79,6 +82,8 @@ private:
     float     lastOverlayWinW_ = 0.f;
     float     lastOverlayWinH_ = 0.f;
     GameWorld::State lastOverlayState_ = GameWorld::State::Playing;
+
+    std::vector<std::unique_ptr<Button>> overlayButtons_;
 
     SceneId   nextScene_ = SceneId::None;
 

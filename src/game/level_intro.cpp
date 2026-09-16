@@ -1,4 +1,5 @@
 #include "level_intro.h"
+#include "text_strings.h"
 #include "utf8.h"
 #include <algorithm>
 #include <cstdint>
@@ -8,18 +9,19 @@ LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
       : title_(font, sf::String(), 72),
         subtitle_(font, sf::String(), 24) {
 
-    // 标题：有自定义关卡名就用它，否则用"关卡 N"
+    // 标题：有自定义关卡名就用它，否则用 "关卡 N"
     std::string titleText;
     if (!levelName.empty()) {
         titleText = levelName;
     } else {
-        titleText = "关卡 " + std::to_string(levelIndex);
+        titleText = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex);
     }
     title_.setString(toSf(titleText));
     title_.setFillColor(sf::Color(255, 255, 255));
 
     std::string sub =
-        "收集 " + std::to_string(static_cast<int>(totalCoins)) + " 个金币，到达终点";
+        Str::T(Str::IntroCollect) + std::to_string(static_cast<int>(totalCoins))
+        + Str::T(Str::IntroCollectTail);
     subtitle_.setString(toSf(sub));
     subtitle_.setFillColor(sf::Color(200, 220, 255));
 }

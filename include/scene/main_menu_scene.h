@@ -21,6 +21,8 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
+    void refreshLabels();
+
     std::shared_ptr<Background> background_;
     std::shared_ptr<Logger> logger_;
     Button startButton_;

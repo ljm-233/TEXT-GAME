@@ -1,5 +1,6 @@
 #include "settings_scene.h"
 #include "strings.h"
+#include "text_strings.h"
 #include "utf8.h"
 #include "ui_scale.h"
 #include "button_style.h"
@@ -11,6 +12,7 @@
 #include "keybindings.h"
 #include <algorithm>
 #include <cmath>
+#include "lang.h"
 
 namespace {
 // ===== 常量表 =====
@@ -172,6 +174,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelFpsFormat_      (font, toSf(Str::LabelFpsFormat),      scaledFontSize(20)),
       labelUiScale_        (font, toSf(Str::LabelUiScale),        scaledFontSize(20)),
       labelTheme_          (font, toSf(Str::LabelTheme),          scaledFontSize(20)),
+      labelLanguage_       (font, toSf(Str::LabelLanguage),       scaledFontSize(20)),
       labelWallpaper_      (font, toSf(Str::LabelWallpaper),      scaledFontSize(20)),
       labelClock_          (font, toSf(Str::LabelClock),          scaledFontSize(20)),
       labelClockPos_       (font, toSf(Str::LabelClockPos),       scaledFontSize(20)),
@@ -225,6 +228,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     fpsFormat_           = indexOfFpsFormat(preferences_->getInt("fps_format", 1));
     uiScale_             = static_cast<float>(preferences_->getDouble("ui_scale", 1.0));
     themeId_             = static_cast<ThemeId>(preferences_->getInt("theme", 0));
+    {
+        std::string langCode = preferences_->get("language", "zh");
+        const auto& avail = Lang::instance().available();
+        languageIdx_ = 0;
+        for (std::size_t i = 0; i < avail.size(); ++i) {
+            if (avail[i] == langCode) { languageIdx_ = static_cast<int>(i); break; }
+        }
+    }
     showClock_           = preferences_->getBool("show_clock", false);
     clockPosition_       = preferences_->getInt("clock_position", 0);
     consoleMask_         = std::clamp(preferences_->getInt("console_mask", 160), 0, 255);
@@ -282,7 +293,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (auto* t : {&labelResolution_, &labelFullscreen_, &labelVsync_,
                     &labelAntiAliasing_, &labelLogLevel_, &labelFpsLimit_,
                     &labelFps_, &labelFpsPos_, &labelFpsFormat_, &labelUiScale_,
-                    &labelTheme_, &labelWallpaper_, &labelClock_, &labelClockPos_,
+                    &labelTheme_, &labelLanguage_, &labelWallpaper_, &labelClock_, &labelClockPos_,
                     &labelConsoleMask_, &labelConsolePanelAlpha_,
                     &labelConsoleFont_, &labelConsoleHistory_,
                     &labelConsoleLineHeight_, &labelConsoleAutoScroll_,
@@ -352,6 +363,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         themeButtons_.push_back(std::make_unique<Button>(
             themeName(static_cast<ThemeId>(i)), font_,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+    for (const auto& code : Lang::instance().available()) {
+        std::string label = code;
+        if (code == "zh") label = "中文";
+        else if (code == "en") label = "English";
+        languageButtons_.push_back(std::make_unique<Button>(
+            label, font_,
+            sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+    }
     wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
     { auto [on, off] = makeToggle(Str::On, Str::Off); clockOn_ = std::move(on); clockOff_ = std::move(off); }
@@ -456,6 +475,163 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
 // 选中状态
 // ============================================================
 
+void SettingsScene::refreshLabels() {
+    // 只在语言变化时刷新
+    int v = Lang::instance().version();
+    if (v == lastLangVersion_) return;
+    lastLangVersion_ = v;
+
+    auto setLabel = [](sf::Text& t, const char* key) {
+        t.setString(toSf(Str::T(key)));
+    };
+
+    // ===== Heading =====
+    setLabel(headingDisplay_,   Str::TabDisplay);
+    setLabel(headingInterface_, Str::TabInterface);
+    setLabel(headingGraphics_,  Str::TabGraphics);
+    setLabel(headingAudio_,     Str::TabAudioLog);
+    setLabel(headingKeys_,      Str::TabKeys);
+    setLabel(headingOther_,     Str::TabOther);
+
+    // ===== Display tab =====
+    setLabel(labelResolution_,   Str::LabelResolution);
+    setLabel(labelFullscreen_,   Str::LabelFullscreen);
+    setLabel(labelVsync_,        Str::LabelVsync);
+    setLabel(labelAntiAliasing_, Str::LabelAntiAliasing);
+    setLabel(labelLogLevel_,     Str::LabelLogLevel);
+    setLabel(labelFpsLimit_,     Str::LabelFpsLimit);
+
+    // ===== Interface tab =====
+    setLabel(labelFps_,                  Str::LabelFps);
+    setLabel(labelFpsPos_,               Str::LabelFpsPos);
+    setLabel(labelFpsFormat_,            Str::LabelFpsFormat);
+    setLabel(labelUiScale_,              Str::LabelUiScale);
+    setLabel(labelTheme_,                Str::LabelTheme);
+    setLabel(labelLanguage_,             Str::LabelLanguage);
+    setLabel(labelWallpaper_,            Str::LabelWallpaper);
+    setLabel(labelClock_,                Str::LabelClock);
+    setLabel(labelClockPos_,             Str::LabelClockPos);
+    setLabel(labelConsoleMask_,          Str::LabelConsoleMask);
+    setLabel(labelConsolePanelAlpha_,    Str::LabelConsolePanelAlpha);
+    setLabel(labelConsoleFont_,          Str::LabelConsoleFont);
+    setLabel(labelConsoleHistory_,       Str::LabelConsoleHistory);
+    setLabel(labelConsoleLineHeight_,    Str::LabelConsoleLineHeight);
+    setLabel(labelConsoleAutoScroll_,    Str::LabelConsoleAutoScroll);
+    setLabel(labelConsoleBlink_,         Str::LabelConsoleBlink);
+    setLabel(labelConsolePrompt_,        Str::LabelConsolePrompt);
+
+    // ===== Graphics tab =====
+    setLabel(labelAnimation_,       Str::LabelAnimation);
+    setLabel(labelAnimationSpeed_,  Str::LabelAnimationSpeed);
+    setLabel(labelPseudo3D_,        Str::LabelPseudo3D);
+    setLabel(labelParallax_,        Str::LabelParallax);
+    setLabel(labelPlayerAnim_,      Str::LabelPlayerAnimation);
+    setLabel(labelLevelIntro_,      Str::LabelLevelIntro);
+    setLabel(labelParticles_,       Str::LabelParticles);
+    setLabel(labelScreenShake_,     Str::LabelScreenShake);
+    setLabel(labelNotification_,    Str::LabelNotification);
+    setLabel(labelNotificationPos_, Str::LabelNotificationPos);
+    setLabel(labelButtonCorner_,    Str::LabelButtonCorner);
+    setLabel(labelButtonOutline_,   Str::LabelButtonOutline);
+    setLabel(labelShowColliders_,   Str::LabelShowColliders);
+
+    // ===== Audio tab =====
+    setLabel(labelMasterVolume_, Str::LabelMasterVolume);
+    setLabel(labelSound_,        Str::LabelSound);
+    setLabel(labelSoundVolume_,  Str::LabelSoundVolume);
+    setLabel(labelBGM_,          Str::LabelBGM);
+    setLabel(labelBGMVolume_,    Str::LabelBGMVolume);
+    setLabel(labelGamepad_,      Str::LabelGamepad);
+
+    // ===== Other tab =====
+    setLabel(labelRememberSize_, Str::LabelRememberSize);
+    setLabel(labelAutoPause_,    Str::LabelAutoPause);
+    setLabel(labelLogRotate_,    Str::LabelLogRotate);
+    setLabel(labelLogKeep_,      Str::LabelLogKeep);
+    setLabel(labelPlayerName_,   Str::LabelPlayerName);
+    setLabel(hintUiScale_,       Str::HintUiScale);
+
+    // ===== Tab 按钮 =====
+    if (tabButtons_.size() >= 6) {
+        tabButtons_[0]->setText(Str::T(Str::TabDisplay));
+        tabButtons_[1]->setText(Str::T(Str::TabInterface));
+        tabButtons_[2]->setText(Str::T(Str::TabGraphics));
+        tabButtons_[3]->setText(Str::T(Str::TabAudioLog));
+        tabButtons_[4]->setText(Str::T(Str::TabKeys));
+        tabButtons_[5]->setText(Str::T(Str::TabOther));
+    }
+
+    // ===== On / Off 按钮 =====
+    auto setOn  = [](std::unique_ptr<Button>& b) { if (b) b->setText(Str::T(Str::On)); };
+    auto setOff = [](std::unique_ptr<Button>& b) { if (b) b->setText(Str::T(Str::Off)); };
+
+    setOn(fullscreenOn_);  setOff(fullscreenOff_);
+    setOn(vsyncOn_);       setOff(vsyncOff_);
+    setOn(fpsOn_);         setOff(fpsOff_);
+    setOn(clockOn_);       setOff(clockOff_);
+    setOn(consoleAutoScrollOn_); setOff(consoleAutoScrollOff_);
+    setOn(consoleBlinkOn_);      setOff(consoleBlinkOff_);
+    setOn(animationOn_);   setOff(animationOff_);
+    setOn(notificationOn_);setOff(notificationOff_);
+    setOn(pseudo3DOn_);    setOff(pseudo3DOff_);
+    setOn(parallaxOn_);    setOff(parallaxOff_);
+    setOn(playerAnimOn_);  setOff(playerAnimOff_);
+    setOn(levelIntroOn_);  setOff(levelIntroOff_);
+    setOn(particlesOn_);   setOff(particlesOff_);
+    setOn(screenShakeOn_); setOff(screenShakeOff_);
+    setOn(showCollidersOn_); setOff(showCollidersOff_);
+    setOn(soundOn_);       setOff(soundOff_);
+    setOn(bgmOn_);         setOff(bgmOff_);
+    setOn(gamepadOn_);     setOff(gamepadOff_);
+    setOn(rememberOn_);    setOff(rememberOff_);
+    setOn(autoPauseOn_);   setOff(autoPauseOff_);
+
+    // ===== 主题按钮 =====
+    for (int i = 0; i < kThemeCount && i < static_cast<int>(themeButtons_.size()); ++i) {
+        themeButtons_[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
+    }
+
+    // ===== 其他按钮 =====
+    if (wallpaperButton_) wallpaperButton_->setText(Str::T(Str::NextWallpaper));
+    if (aboutButton_)     aboutButton_->setText(Str::T(Str::ButtonAbout));
+    if (resetButton_)     resetButton_->setText(Str::T(Str::ResetDefault));
+    if (backButton_)      backButton_->setText(Str::T(Str::Back));
+
+    // ===== 下拉选项按钮 =====
+    for (int i = 0; i < kAACount && i < static_cast<int>(antiAliasingButtons_.size()); ++i)
+        antiAliasingButtons_[i]->setText(Str::T(kAALabels[i]));
+    for (int i = 0; i < kLogCount && i < static_cast<int>(logLevelButtons_.size()); ++i)
+        logLevelButtons_[i]->setText(Str::T(kLogLabels[i]));
+    for (int i = 0; i < kFpsLimitCount && i < static_cast<int>(fpsLimitButtons_.size()); ++i)
+        fpsLimitButtons_[i]->setText(Str::T(kFpsLimitLabels[i]));
+
+    for (int i = 0; i < kPosCount; ++i) {
+        if (i < static_cast<int>(fpsPosButtons_.size()))
+            fpsPosButtons_[i]->setText(Str::T(kPosLabels[i]));
+        if (i < static_cast<int>(clockPosButtons_.size()))
+            clockPosButtons_[i]->setText(Str::T(kPosLabels[i]));
+        if (i < static_cast<int>(notificationPosButtons_.size()))
+            notificationPosButtons_[i]->setText(Str::T(kPosLabels[i]));
+    }
+
+    for (int i = 0; i < kFpsFormatCount && i < static_cast<int>(fpsFormatButtons_.size()); ++i)
+        fpsFormatButtons_[i]->setText(Str::T(kFpsFormatLabels[i]));
+    for (int i = 0; i < kConsoleFontCount && i < static_cast<int>(consoleFontButtons_.size()); ++i)
+        consoleFontButtons_[i]->setText(Str::T(kConsoleFontLabels[i]));
+    for (int i = 0; i < kConsoleLineHeightCount && i < static_cast<int>(consoleLineHeightButtons_.size()); ++i)
+        consoleLineHeightButtons_[i]->setText(Str::T(kConsoleLineHeightLabels[i]));
+    for (int i = 0; i < kAnimSpeedCount && i < static_cast<int>(animationSpeedButtons_.size()); ++i)
+        animationSpeedButtons_[i]->setText(Str::T(kAnimSpeedLabels[i]));
+    for (int i = 0; i < kButtonCornerCount && i < static_cast<int>(buttonCornerButtons_.size()); ++i)
+        buttonCornerButtons_[i]->setText(Str::T(kButtonCornerLabels[i]));
+    for (int i = 0; i < kButtonOutlineCount && i < static_cast<int>(buttonOutlineButtons_.size()); ++i)
+        buttonOutlineButtons_[i]->setText(Str::T(kButtonOutlineLabels[i]));
+    for (int i = 0; i < kLogRotateCount && i < static_cast<int>(logRotateButtons_.size()); ++i)
+        logRotateButtons_[i]->setText(Str::T(kLogRotateLabels[i]));
+
+    // 语言按钮保持"中文"/"English"字样（不翻译，否则用户无法识别）
+}
+
 void SettingsScene::refreshSelection() {
     for (int i = 0; i < kTabCount; ++i)
         tabButtons_[i]->setSelected(i == static_cast<int>(currentTab_));
@@ -488,6 +664,8 @@ void SettingsScene::refreshSelection() {
         uiScaleButtons_[i]->setSelected(i == uiIdx);
     for (int i = 0; i < kThemeCount; ++i)
         themeButtons_[i]->setSelected(i == static_cast<int>(themeId_));
+    for (int i = 0; i < static_cast<int>(languageButtons_.size()); ++i)
+        languageButtons_[i]->setSelected(i == languageIdx_);
     clockOn_->setSelected(showClock_);
     clockOff_->setSelected(!showClock_);
     for (int i = 0; i < kPosCount; ++i)
@@ -584,6 +762,19 @@ void SettingsScene::applyTheme() {
     setTheme(themeId_);
     preferences_->setInt("theme", static_cast<int>(themeId_));
 }
+void SettingsScene::applyLanguage() {
+    const auto& avail = Lang::instance().available();
+    if (languageIdx_ < 0 || languageIdx_ >= static_cast<int>(avail.size())) return;
+
+    const std::string& code = avail[languageIdx_];
+    Lang::instance().load(code);
+    preferences_->set("language", code);
+
+    // 提示用户切换场景后生效
+    NotificationSystem::instance().push(
+        Str::T(Str::NotifLanguageChanged), NotificationType::Info, 4.f);
+}
+
 void SettingsScene::applyWallpaper() {
     if (!background_) return;
     if (background_->next()) {
@@ -693,6 +884,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             for (auto& b : fpsFormatButtons_) b->handleEvent(event);
             for (auto& b : uiScaleButtons_)   b->handleEvent(event);
             for (auto& b : themeButtons_)     b->handleEvent(event);
+            for (auto& b : languageButtons_)  b->handleEvent(event);
             wallpaperButton_->handleEvent(event);
             clockOn_->handleEvent(event); clockOff_->handleEvent(event);
             for (auto& b : clockPosButtons_) b->handleEvent(event);
@@ -897,6 +1089,14 @@ void SettingsScene::update(float /*dt*/) {
                     if (static_cast<int>(themeId_) != i) {
                         themeId_ = static_cast<ThemeId>(i);
                         refreshSelection(); applyTheme();
+                    }
+                    return;
+                }
+            for (int i = 0; i < static_cast<int>(languageButtons_.size()); ++i)
+                if (languageButtons_[i]->consumeClick()) {
+                    if (languageIdx_ != i) {
+                        languageIdx_ = i;
+                        refreshSelection(); applyLanguage();
                     }
                     return;
                 }
@@ -1148,10 +1348,10 @@ void SettingsScene::update(float /*dt*/) {
                 }
             if (aboutButton_->consumeClick()) {
                 std::string msg =
-                    std::string(Str::AboutTitle) + "\n\n"
-                    + "版本: " + PROJECT_VERSION + "\n"
-                    + "构建: " + BUILD_DATE + "\n"
-                    + "作者: ljm-233";
+                    std::string(Str::T(Str::AboutTitle)) + "\n\n"
+                    + Str::T(Str::AboutVersion) + PROJECT_VERSION + "\n"
+                    + Str::T(Str::AboutBuild)   + BUILD_DATE + "\n"
+                    + Str::T(Str::AboutAuthor)  + "ljm-233";
                 aboutDialog_ = std::make_unique<ConfirmDialog>(
                     font_, msg, sf::Vector2f(1280.f, 720.f),
                     ConfirmDialog::Mode::Info);
@@ -1159,7 +1359,7 @@ void SettingsScene::update(float /*dt*/) {
             }
             if (resetButton_->consumeClick()) {
                 resetConfirm_ = std::make_unique<ConfirmDialog>(
-                    font_, Str::ResetConfirm,
+                    font_, Str::T(Str::ResetConfirm),
                     sf::Vector2f(1280.f, 720.f));
                 return;
             }
@@ -1264,6 +1464,7 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     window.native().draw(hintUiScale_);
 
     r.multi (labelTheme_,     themeButtons_, 110.f);
+    r.multi (labelLanguage_,  languageButtons_, 110.f);
     if (background_) {
         labelWallpaper_.setString(toSf(
             std::string(Str::LabelWallpaper) + "  ("
@@ -1402,6 +1603,8 @@ void SettingsScene::renderBackButton(Window& window) {
 }
 
 void SettingsScene::render(Window& window) {
+    refreshLabels();
+
     window.clear();
     if (background_) background_->render(window.native());
 
@@ -1471,6 +1674,7 @@ void SettingsScene::render(Window& window) {
                 for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
                 for (auto& b : uiScaleButtons_)     items.push_back(b.get());
                 for (auto& b : themeButtons_)       items.push_back(b.get());
+                for (auto& b : languageButtons_)    items.push_back(b.get());
                 items.push_back(wallpaperButton_.get());
                 items.push_back(clockOn_.get());
                 items.push_back(clockOff_.get());

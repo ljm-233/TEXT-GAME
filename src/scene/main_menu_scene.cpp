@@ -1,5 +1,5 @@
 #include "main_menu_scene.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "animation.h"
 #include "focus_group.h"
 #include <algorithm>
@@ -9,20 +9,31 @@ MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
                              std::shared_ptr<Logger> logger)
     : background_(std::move(background)),
       logger_(std::move(logger)),
-      startButton_       (Str::StartGame,  font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      levelSelectButton_ (Str::LevelSelect, font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      editorButton_      (Str::LevelEditor, font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      calculatorButton_  (Str::Calculator, font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      settingsButton_    (Str::Settings,   font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      exitButton_        (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
+      startButton_       (Str::T(Str::StartGame),  font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      levelSelectButton_ (Str::T(Str::LevelSelect), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      editorButton_      (Str::T(Str::LevelEditor), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      calculatorButton_  (Str::T(Str::Calculator), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      settingsButton_    (Str::T(Str::Settings),   font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      exitButton_        (Str::T(Str::ExitGame),   font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
+
+void MainMenuScene::refreshLabels() {
+    startButton_.setText(Str::T(Str::StartGame));
+    levelSelectButton_.setText(Str::T(Str::LevelSelect));
+    editorButton_.setText(Str::T(Str::LevelEditor));
+    calculatorButton_.setText(Str::T(Str::Calculator));
+    settingsButton_.setText(Str::T(Str::Settings));
+    exitButton_.setText(Str::T(Str::ExitGame));
+}
 
 void MainMenuScene::onEnter() {
     nextScene_ = SceneId::None;
     elapsed_ = 0.f;
+    refreshLabels();
 }
 
 void MainMenuScene::onResume() {
     nextScene_ = SceneId::None;
+    refreshLabels();
 }
 
 void MainMenuScene::handleEvent(const sf::Event& event) {

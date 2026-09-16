@@ -23,6 +23,7 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
+    void refreshLabels();
     void refreshSelection();
 
     std::shared_ptr<Background>  background_;

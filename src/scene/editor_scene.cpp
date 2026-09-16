@@ -1,5 +1,5 @@
 #include "editor_scene.h"
-#include "strings.h"
+#include "text_strings.h"
 #include "utf8.h"
 #include <algorithm>
 #include <cmath>
@@ -351,7 +351,7 @@ void EditorScene::switchToNextFile() {
     currentFileIdx_ = (currentFileIdx_ + 1) % static_cast<int>(levelFiles_.size());
     savePath_ = levelFiles_[currentFileIdx_];
     loadFile();
-    showFlash("切换到 " + currentFileName(), 1.5f);
+    showFlash(Str::T(Str::EditorSwitchTo) + currentFileName(), 1.5f);
 }
 
 // ============================================================
@@ -368,14 +368,14 @@ void EditorScene::pushUndo() {
 
 void EditorScene::undo() {
     if (undoStack_.empty()) {
-        showFlash("无可撤销", 0.8f);
+        showFlash(Str::T(Str::EditorNoUndo), 0.8f);
         return;
     }
     lines_ = undoStack_.back();
     undoStack_.pop_back();
     refreshDimensions();
     geometryDirty_ = true;
-    showFlash("已撤销", 0.8f);
+    showFlash(Str::T(Str::EditorUndone), 0.8f);
 }
 
 void EditorScene::refreshDimensions() {
@@ -417,7 +417,7 @@ void EditorScene::resizeLevel(int newW, int newH) {
     height_ = newH;
     geometryDirty_ = true;
 
-    showFlash("尺寸: " + std::to_string(newW) + " x " + std::to_string(newH), 1.0f);
+    showFlash(Str::T(Str::EditorHudSize) + std::to_string(newW) + " x " + std::to_string(newH), 1.0f);
 }
 
 // ============================================================
@@ -464,7 +464,7 @@ void EditorScene::saveFile() {
     std::ofstream out(savePath_);
     if (!out) {
         logger_->error("编辑器：无法写入 " + savePath_);
-        showFlash("保存失败！", 2.0f);
+        showFlash(Str::T(Str::EditorSaveFailed), 2.0f);
         return;
     }
     for (const auto& line : lines_)
@@ -472,7 +472,7 @@ void EditorScene::saveFile() {
     out.flush();
 
     logger_->info("编辑器：已保存到 " + savePath_);
-    showFlash("✓ 已保存", 1.2f);
+    showFlash(Str::T(Str::EditorSaved), 1.2f);
 }
 
 void EditorScene::showFlash(const std::string& text, float duration) {
@@ -660,7 +660,8 @@ void EditorScene::handleEvent(const sf::Event& event) {
         // 网格开关
         if (kp->code == sf::Keyboard::Key::G && !kp->control) {
             showGrid_ = !showGrid_;
-            showFlash(showGrid_ ? "网格: 开" : "网格: 关", 0.8f);
+            showFlash(showGrid_ ? Str::T(Str::EditorGridOn)
+                                : Str::T(Str::EditorGridOff), 0.8f);
             return;
         }
 
@@ -668,7 +669,7 @@ void EditorScene::handleEvent(const sf::Event& event) {
         if (kp->code == sf::Keyboard::Key::Num0 &&
             (kp->control || kp->system)) {
             zoom_ = 1.0f;
-            showFlash("缩放: 100%", 0.8f);
+            showFlash(Str::T(Str::EditorZoomReset), 0.8f);
             return;
         }
 
@@ -925,28 +926,28 @@ void EditorScene::render(Window& window) {
     int zoomPct = static_cast<int>(zoom_ * 100.f + 0.5f);
 
     std::ostringstream h1;
-    h1 << "文件: " << currentFileName()
-       << "    笔刷: " << brushName
-       << "    尺寸: " << width_ << " x " << height_
-       << "    缩放: " << zoomPct << "%"
-       << "    网格: " << (showGrid_ ? "开" : "关")
-       << "    撤销: " << undoStack_.size();
+    h1 << Str::T(Str::EditorHudFile)  << currentFileName()
+       << "    " << Str::T(Str::EditorHudBrush) << Str::T(brushName)
+       << "    " << Str::T(Str::EditorHudSize)  << width_ << " x " << height_
+       << "    " << Str::T(Str::EditorHudZoom)  << zoomPct << "%"
+       << "    " << Str::T(Str::EditorHudGrid)  << (showGrid_ ? Str::T(Str::On) : Str::T(Str::Off))
+       << "    " << Str::T(Str::EditorHudUndo)  << undoStack_.size();
     hudText_.setString(toSf(h1.str()));
     hudText_.setPosition({20.f, 10.f});
     rt.draw(hudText_);
 
     // 元素统计（第二行）
     std::ostringstream h2;
-    h2 << "玩家 " << statPlayer
-       << " | 敌人 " << statEnemy
-       << " | 金币 " << statCoin
-       << " | 终点 " << statGoal
-       << " | 尖刺 " << statSpike
-       << " | 跳台 " << statJump
-       << " | 存档 " << statCheckpoint
-       << " | 钥匙 " << statKey
-       << " | 门 " << statDoor
-       << " | 移动平台 " << statPlatform;
+    h2 << Str::T(Str::BrushPlayer)     << " " << statPlayer
+       << " | " << Str::T(Str::BrushEnemy)      << " " << statEnemy
+       << " | " << Str::T(Str::BrushCoin)       << " " << statCoin
+       << " | " << Str::T(Str::BrushGoal)       << " " << statGoal
+       << " | " << Str::T(Str::BrushSpike)      << " " << statSpike
+       << " | " << Str::T(Str::BrushJumpPad)    << " " << statJump
+       << " | " << Str::T(Str::BrushCheckpoint) << " " << statCheckpoint
+       << " | " << Str::T(Str::BrushKey)        << " " << statKey
+       << " | " << Str::T(Str::BrushDoor)       << " " << statDoor
+       << " | " << Str::T(Str::StatPlatform)    << " " << statPlatform;
     hudText_.setString(toSf(h2.str()));
     hudText_.setPosition({20.f, 46.f});
     rt.draw(hudText_);
@@ -957,8 +958,7 @@ void EditorScene::render(Window& window) {
     hintBar.setFillColor(sf::Color(0, 0, 0, 140));
     rt.draw(hintBar);
 
-    hintText_.setString(toSf(
-        "左键画/右键擦  Ctrl+滚轮缩放  滚轮上下  WASD移动  G网格  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+0重置缩放"));
+    hintText_.setString(toSf(Str::T(Str::EditorHint)));
     hintText_.setPosition({20.f, winH - kBrushBarHeight - 22.f});
     rt.draw(hintText_);
 
@@ -996,7 +996,7 @@ void EditorScene::render(Window& window) {
             drawTileIcon(rt, b.ch, iconX, iconY, iconSize);
         }
 
-        sf::Text nameText(*font_, toSf(b.name), 14);
+        sf::Text nameText(*font_, toSf(Str::T(b.name)), 14);
         nameText.setFillColor(sf::Color(255, 255, 255));
         nameText.setOutlineThickness(2.f);
         nameText.setOutlineColor(sf::Color(0, 0, 0, 220));

@@ -1,0 +1,292 @@
+# ============================================================
+# English translation
+# 格式：中文=译文（用中文原文作为 key，一字不差）
+# ============================================================
+
+# ===== 通用 =====
+是=Yes
+否=No
+返回=Back
+开=ON
+关=OFF
+确定=OK
+
+# ===== 主菜单 =====
+启动游戏=Start Game
+选关=Level Select
+关卡编辑器=Level Editor
+控制台=Console
+设置=Settings
+退出游戏=Quit
+
+# ===== 设置：Tab 名 =====
+显示=Display
+界面=Interface
+画面=Graphics
+音频=Audio
+按键=Key Bindings
+其他=Other
+
+# ===== 存档 =====
+＋ 新建存档=+ New Save
+未命名存档=Unnamed Save
+存档 =Save 
+确定删除存档「=Delete save "
+」？=" ?
+存档选择=Save Select
+
+# ===== 新建存档对话框 =====
+新建存档=New Save
+输入存档名：=Enter save name:
+我的存档=My Save
+创建=Create
+取消=Cancel
+
+# ===== 选关页 =====
+选择关卡=Select Level
+当前存档: =Current Save: 
+没有存档，请先创建存档=No save found. Create one first.
+未解锁=Locked
+
+# ===== 暂停菜单 =====
+已暂停=Paused
+回到游戏=Resume
+保存并退出游戏=Save & Quit
+主题=Theme
+动画效果=Animation
+屏幕通知=Notifications
+手柄支持=Gamepad
+* 部分设置返回主菜单后完全生效=* Some settings take effect after returning to main menu
+通知已开启=Notifications enabled
+
+# ===== 主题名 =====
+深色=Dark
+蓝色=Blue
+浅色=Light
+
+# ===== 设置页：显示 Tab =====
+分辨率=Resolution
+全屏=Fullscreen
+垂直同步=VSync
+抗锯齿=Anti-Aliasing
+日志级别=Log Level
+帧率上限=FPS Limit
+
+# ===== 设置页：界面 Tab =====
+帧率显示=FPS Display
+FPS 位置=FPS Position
+FPS 格式=FPS Format
+界面缩放=UI Scale
+语言=Language
+壁纸=Wallpaper
+时间显示=Clock
+时钟位置=Clock Position
+控制台遮罩=Console Mask
+面板透明度=Panel Alpha
+控制台字号=Console Font
+控制台历史=Console History
+控制台行高=Console Line Height
+自动滚动=Auto Scroll
+光标闪烁=Blink Cursor
+控制台提示符=Console Prompt
+下一张 →=Next →
+* 修改后返回主菜单再进入生效=* Takes effect after returning to main menu
+
+# ===== 设置页：画面 Tab =====
+动画速度=Animation Speed
+伪 3D 效果=Pseudo 3D
+视差背景=Parallax
+玩家动画=Player Animation
+关卡开场=Level Intro
+粒子效果=Particles
+屏幕震动=Screen Shake
+通知位置=Notification Position
+按钮圆角=Button Corner
+按钮边框=Button Outline
+显示碰撞盒=Show Colliders
+
+# ===== 设置页：音频 Tab =====
+总音量=Master Volume
+音效=Sound
+音效音量=Sound Volume
+背景音乐=BGM
+BGM 音量=BGM Volume
+
+# ===== 设置页：其他 Tab =====
+记住窗口大小=Remember Window Size
+失焦自动暂停=Auto Pause on Blur
+日志轮转=Log Rotation
+日志保留=Log Keep
+玩家名=Player Name
+关于=About
+恢复默认设置=Reset Defaults
+
+# ===== 设置页：Tab 扩展 =====
+画面=Graphics
+音频=Audio
+按键=Key Bindings
+
+# ===== 主题名（设置页额外用）=====
+深色=Dark
+蓝色=Blue
+浅色=Light
+
+# ===== 游戏场景 HUD =====
+存档: =Save: 
+关卡: =Level: 
+生命: =Lives: 
+金币: =Coins: 
+时间: =Time: 
+钥匙: =Keys: 
+WASD 移动，Space 跳跃，ESC 暂停=WASD move, Space jump, ESC pause
+
+# ===== 关卡完成 / 游戏失败 =====
+完成！=Complete!
+游戏失败=Game Over
+目标: =Target: 
+ 秒= s
+Enter 继续    R 重玩本关    ESC 返回=Enter next    R replay    ESC back
+R 重试    ESC 返回=R retry    ESC back
+
+# ===== 通知 =====
+关卡加载失败=Failed to load level
+关卡完成！获得 =Level complete! Got 
+ 星= stars
+游戏失败，按 R 重试=Game over. Press R to retry
+进入第 =Entering level 
+ 关=
+全部通关！=All levels cleared!
+已重生=Respawned
+
+# ===== 关卡开场 =====
+关卡 =Level 
+收集 =Collect 
+ 个金币，到达终点= coins and reach the goal
+
+ # ===== 关卡编辑器 HUD =====
+文件: =File: 
+笔刷: =Brush: 
+尺寸: =Size: 
+缩放: =Zoom: 
+网格: =Grid: 
+撤销: =Undo: 
+左键画/右键擦  Ctrl+滚轮缩放  滚轮上下  WASD移动  G网格  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+0重置缩放=LMB draw / RMB erase  Ctrl+Wheel zoom  Wheel scroll  WASD move  G grid  Ctrl+S save  Ctrl+Z undo  Ctrl+N next file  Ctrl+0 reset zoom
+✓ 已保存=✓ Saved
+保存失败！=Save failed!
+已撤销=Undone
+无可撤销=Nothing to undo
+网格: 开=Grid: ON
+网格: 关=Grid: OFF
+缩放: 100%=Zoom: 100%
+切换到 =Switched to 
+
+# ===== 编辑器笔刷名 =====
+墙=Wall
+橡皮=Erase
+玩家=Player
+敌人=Enemy
+金币=Coin
+终点=Goal
+尖刺=Spike
+跳台=JumpPad
+存档=Checkpoint
+钥匙=Key
+门=Door
+横台=Platform H
+竖台=Platform V
+
+# ===== 编辑器元素统计 =====
+移动平台=Platform
+
+# ===== 控制台 =====
+TEXT-GAME 控制台=TEXT-GAME Console
+输入 help 查看可用命令=Type "help" to list commands
+可用命令:
+  help              显示帮助
+  clear             清空屏幕
+  echo <text>       回显文本
+  version           显示版本
+  calc              启动计算器
+  scene <name>      切换场景 (main/save/settings/quit)
+  log <level>       设置日志级别 (trace/debug/info/warn/error)
+  theme <name>      切换主题 (dark/blue/light)
+  save list         列出所有存档
+  exit              关闭控制台
+=Commands:
+  help              Show help
+  clear             Clear screen
+  echo <text>       Echo text
+  version           Show version
+  calc              Launch calculator
+  scene <name>      Switch scene (main/save/settings/quit)
+  log <level>       Set log level (trace/debug/info/warn/error)
+  theme <name>      Switch theme (dark/blue/light)
+  save list         List all saves
+  exit              Close console
+
+用法: scene <main|save|settings|quit>=Usage: scene <main|save|settings|quit>
+未知场景: =Unknown scene: 
+用法: log <trace|debug|info|warn|error>=Usage: log <trace|debug|info|warn|error>
+未知级别: =Unknown level: 
+日志级别已切换: =Log level changed: 
+用法: theme <dark|blue|light>=Usage: theme <dark|blue|light>
+未知主题: =Unknown theme: 
+主题已切换。返回主菜单再进入生效。=Theme changed. Takes effect after returning to main menu.
+没有存档。=No saves.
+共 =Total 
+ 个存档: = saves:
+用法: save list=Usage: save list
+未知命令: =Unknown command: 
+。输入 help 查看帮助。=. Type "help" for help.
+[启动计算器...]=[Launching calculator...]
+[计算器已退出]=[Calculator exited]
+
+# ===== Calculator =====
+请输入第一个数字·Enter 1st number:=Enter 1st number:
+请输入第二个数字·Enter 2nd number:=Enter 2nd number:
+你想要什么·What do you want?
+1+ 2- 3x 4/ 5幂函数
+=What do you want?
+1+ 2- 3x 4/ 5pow
+
+不能除以零·Cannot divide by zero!=Cannot divide by zero!
+结果过大，无法显示!=Result too large to display!
+结果·End Number: =Result: 
+[再试·Retry]=[Retry]
+输入无效=Invalid input
+ Fail! :( = Fail! :(
+
+# ===== 设置页下拉选项 =====
+无=None
+慢=Slow
+正常=Normal
+快=Fast
+左上=TL
+右上=TR
+左下=BL
+右下=BR
+纯数字=Number
+小=Small
+中=Medium
+大=Large
+特大=XL
+紧凑=Tight
+宽松=Loose
+直角=Sharp
+小圆=Small Round
+大圆=Large Round
+细=Thin
+粗=Thick
+无限=Inf
+
+# ===== 设置页对话框 =====
+语言已切换，返回主菜单后生效=Language changed. Takes effect after returning to main menu.
+版本: =Version: 
+构建: =Build: 
+作者: =Author: 
+恢复默认设置？所有自定义将被清除=Reset all settings? All customizations will be cleared.
+
+# ===== 关卡完成 / 失败按钮 =====
+下一关=Next Level
+重玩=Replay
+重试=Retry
