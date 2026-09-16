@@ -35,6 +35,7 @@ constexpr const char* EscToSaveSelect = "按 ESC 返回存档选择";
 constexpr const char* TabDisplay = "显示";
 constexpr const char* TabInterface = "界面";
 constexpr const char* TabOther = "其他";
+constexpr const char* TabKeys = "按键";
 
 constexpr const char* LabelResolution = "分辨率";
 constexpr const char* LabelFullscreen = "全屏";
@@ -118,6 +119,7 @@ constexpr const char* LabelNotificationPos = "通知位置";
 constexpr const char* LabelMasterVolume = "总音量";
 constexpr const char* LabelSound = "音效";
 constexpr const char* LabelSoundVolume = "音效音量";
+constexpr const char* LabelBGMVolume = "BGM 音量";
 constexpr const char* LabelAutoPause = "失焦自动暂停";
 constexpr const char* LabelFpsFormat = "FPS 格式";
 constexpr const char* LabelConsolePrompt = "控制台提示符";

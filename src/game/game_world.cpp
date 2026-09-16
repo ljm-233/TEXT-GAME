@@ -182,7 +182,8 @@ void GameWorld::update(float dt) {
             }),
         objects_.end());
 
-    if (player_) camera_.follow(player_->bounds().center(), dt);
+    if (player_) camera_.follow(player_->bounds().center(),
+                                player_->velocity(), dt);
     camera_.updateShake(dt);
     if (particlesEnabled_) particles_.update(dt);
     else                    particles_.clear();

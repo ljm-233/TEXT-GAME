@@ -5,6 +5,7 @@
 #include "button_style.h"
 #include "font_holder.h"
 #include "game.h"
+#include "keybindings.h"
 #include "logging.h"
 #include "notification.h"
 #include "paths.h"
@@ -70,6 +71,21 @@ void Application::registerDependencies() {
             prefs->getBool("notification_enabled", true));
         NotificationSystem::instance().setPosition(static_cast<NotificationPos>(
             std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
+
+        // 键位
+        {
+            auto& kb = KeyBindings::instance();
+            auto loadKey = [&](KeyBindings::Action a, const char* prefKey,
+                               sf::Keyboard::Key defVal) {
+                int v = prefs->getInt(prefKey, static_cast<int>(defVal));
+                kb.set(a, static_cast<sf::Keyboard::Key>(v));
+            };
+            loadKey(KeyBindings::MoveLeft,  "key_left",    sf::Keyboard::Key::A);
+            loadKey(KeyBindings::MoveRight, "key_right",   sf::Keyboard::Key::D);
+            loadKey(KeyBindings::Jump,      "key_jump",    sf::Keyboard::Key::Space);
+            loadKey(KeyBindings::Pause,     "key_pause",   sf::Keyboard::Key::Escape);
+            loadKey(KeyBindings::Restart,   "key_restart", sf::Keyboard::Key::R);
+        }
 
         // 音效
         SoundManager::instance().init();

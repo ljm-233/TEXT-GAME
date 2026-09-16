@@ -3,11 +3,19 @@
 #include <algorithm>
 #include <cstdint>
 
-LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins)
+LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
+                       const std::string& levelName)
       : title_(font, sf::String(), 72),
         subtitle_(font, sf::String(), 24) {
-    title_.setString(sf::String::fromUtf8(("关卡 " + std::to_string(levelIndex)).begin(),
-                                          ("关卡 " + std::to_string(levelIndex)).end()));
+
+    // 标题：有自定义关卡名就用它，否则用"关卡 N"
+    std::string titleText;
+    if (!levelName.empty()) {
+        titleText = levelName;
+    } else {
+        titleText = "关卡 " + std::to_string(levelIndex);
+    }
+    title_.setString(toSf(titleText));
     title_.setFillColor(sf::Color(255, 255, 255));
 
     std::string sub =
@@ -35,12 +43,10 @@ void LevelIntro::render(sf::RenderTarget& target, float winW, float winH) {
 
     auto a8 = static_cast<std::uint8_t>(alpha * 255.f);
 
-    // 半透明黑底
     sf::RectangleShape bg({winW, winH});
     bg.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(alpha * 140.f)));
     target.draw(bg);
 
-    // 标题
     {
         auto c = title_.getFillColor();
         title_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
@@ -50,7 +56,6 @@ void LevelIntro::render(sf::RenderTarget& target, float winW, float winH) {
         target.draw(title_);
     }
 
-    // 副标题
     {
         auto c = subtitle_.getFillColor();
         subtitle_.setFillColor(sf::Color(c.r, c.g, c.b, a8));

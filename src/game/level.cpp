@@ -29,6 +29,8 @@ bool Level::loadFromString(const std::string& text) {
     doorSpawns_.clear();
     spikeSpawns_.clear();
     hasGoal_ = false;
+    name_.clear();
+    author_.clear();
 
     std::istringstream iss(text);
     std::string line;
@@ -38,6 +40,31 @@ bool Level::loadFromString(const std::string& text) {
         lines.push_back(line);
     }
     if (lines.empty()) return false;
+
+    // 解析头部元数据：以 "# " 开头的行，支持 "# name: xxx" / "# author: xxx"
+    // 注意: "####" 是墙，不是元数据（"#" 后是空格才算）
+    {
+        auto trim = [](const std::string& s) {
+            std::size_t a = s.find_first_not_of(" \t");
+            if (a == std::string::npos) return std::string{};
+            std::size_t b = s.find_last_not_of(" \t");
+            return s.substr(a, b - a + 1);
+        };
+        for (const auto& l : lines) {
+            if (l.size() < 2 || l[0] != '#' || l[1] != ' ') break;
+            // 匹配 "# name: xxx" / "# name = xxx" / "# author: xxx"
+            const std::string body = l.substr(2);
+            if (body.rfind("name:", 0) == 0) {
+                name_ = trim(body.substr(5));
+            } else if (body.rfind("name =", 0) == 0) {
+                name_ = trim(body.substr(6));
+            } else if (body.rfind("author:", 0) == 0) {
+                author_ = trim(body.substr(7));
+            } else if (body.rfind("author =", 0) == 0) {
+                author_ = trim(body.substr(8));
+            }
+        }
+    }
 
     height_ = static_cast<int>(lines.size());
     width_ = 0;

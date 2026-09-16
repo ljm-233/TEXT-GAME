@@ -3,6 +3,7 @@
 #include "utf8.h"
 #include "notification.h"
 #include "sound_manager.h"
+#include "keybindings.h"
 #include "game_constants.h"
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,13 @@ void GameScene::onResume() {
     nextScene_ = SceneId::None;
 }
 
+std::string GameScene::windowTitleHint() const {
+    if (paused_) {
+        return "第 " + std::to_string(levelIndex_) + " 关 (已暂停)";
+    }
+    return "第 " + std::to_string(levelIndex_) + " 关";
+}
+
 void GameScene::subscribeWorldEvents() {
     if (!world_) return;
 
@@ -84,9 +92,11 @@ void GameScene::subscribeWorldEvents() {
             } else if constexpr (std::is_same_v<T, EvStomped>) {
                 SoundManager::instance().playStomp();
                 if (particlesOn) world_->particles().emitStomp(ev.pos);
+                hitstopTimer_ = 0.06f;   // 60ms 冻结
             } else if constexpr (std::is_same_v<T, EvHurt>) {
                 SoundManager::instance().playHurt();
                 if (particlesOn) world_->particles().emitHurt(ev.pos);
+                hitstopTimer_ = 0.04f;   // 40ms 冻结
             } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
                 SoundManager::instance().playCheckpoint();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
@@ -143,13 +153,15 @@ bool GameScene::loadLevel(int index) {
     levelIndex_ = index;
 
     levelTime_ = 0.f;
+    hitstopTimer_ = 0.f;
     finalStars_ = 0;
     finalCoins_ = 0;
     finalTotalCoins_ = 0;
 
     if (preferences_->getBool("level_intro", true)) {
         intro_ = std::make_unique<LevelIntro>(
-            *font_, index, static_cast<float>(world_->totalCoins()));
+            *font_, index, static_cast<float>(world_->totalCoins()),
+            world_->level().name());
     } else {
         intro_.reset();
     }
@@ -319,11 +331,11 @@ void GameScene::handleEvent(const sf::Event& event) {
 
     if (state != GameWorld::State::Playing) {
         if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-            if (kp->code == sf::Keyboard::Key::Escape) {
+            if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
                 nextScene_ = SceneId::Back;
                 return;
             }
-            if (kp->code == sf::Keyboard::Key::R) {
+            if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
                 world_->reset();
                 levelTime_ = 0.f;
                 finalStars_ = 0;
@@ -353,15 +365,16 @@ void GameScene::handleEvent(const sf::Event& event) {
     }
 
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (kp->code == sf::Keyboard::Key::Escape) {
+        if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
             paused_ = true;
             pauseMenu_ = std::make_unique<PauseMenu>(
                 *font_, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
             return;
         }
-        if (kp->code == sf::Keyboard::Key::R) {
+        if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
             world_->reset();
             levelTime_ = 0.f;
+            hitstopTimer_ = 0.f;
             lastOverlayState_ = GameWorld::State::Playing;
             NotificationSystem::instance().push("已重生",
                                                 NotificationType::Info);
@@ -394,6 +407,12 @@ void GameScene::update(float dt) {
     }
 
     if (world_->state() != GameWorld::State::Playing) return;
+
+    // 受击停顿：冻结游戏逻辑和计时
+    if (hitstopTimer_ > 0.f) {
+        hitstopTimer_ -= dt;
+        return;
+    }
 
     levelTime_ += dt;
 

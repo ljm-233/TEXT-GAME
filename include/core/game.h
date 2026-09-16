@@ -31,6 +31,7 @@ private:
     void saveWindowState();
     void renderOverlays();
     void flushConfigs();
+    void updateWindowTitle(const Scene& scene);
 
     std::shared_ptr<Window>        window_;
     std::shared_ptr<Logger>        logger_;
@@ -52,4 +53,6 @@ private:
     float    clockTimer_    = 0.f;
 
     bool     autoPaused_    = false;
+
+    std::string lastWindowTitle_;
 };

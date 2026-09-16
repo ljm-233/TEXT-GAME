@@ -9,8 +9,6 @@ TEST_CASE("Camera - 初始化") {
     cam.snapTo({500.f, 500.f});
 
     Vec2 p = cam.position();
-    // 目标在屏幕中心：(500 - 640, 500 - 360) = (-140, 140)
-    // 但 x 会被 clamp 到 [0, 3000-1280=1720]，所以 x = 0
     CHECK(p.x == 0.f);
     CHECK(p.y == 140.f);
 }
@@ -23,7 +21,6 @@ TEST_CASE("Camera - 边界夹紧（右边界）") {
     cam.snapTo({2900.f, 500.f});
 
     Vec2 p = cam.position();
-    // 目标在右边界，应该夹到 3000 - 1280 = 1720
     CHECK(p.x == 1720.f);
 }
 
@@ -35,8 +32,6 @@ TEST_CASE("Camera - 关卡比视口小（居中）") {
     cam.snapTo({400.f, 200.f});
 
     Vec2 p = cam.position();
-    // (800 - 1280) / 2 = -240
-    // (400 - 720) / 2 = -160
     CHECK(p.x == -240.f);
     CHECK(p.y == -160.f);
 }
@@ -58,14 +53,72 @@ TEST_CASE("Camera - 震动衰减") {
     cam.setLevelBounds(3000.f, 1000.f);
     cam.snapTo({1000.f, 500.f});
 
-    // 触发震动
     cam.shake(10.f, 0.3f);
     cam.updateShake(0.01f);
-    // 震动中，effectivePosition 可能偏离 position，但不做精确断言（有随机性）
 
-    // 时间过去足够久，震动应完全结束
     cam.updateShake(1.f);
     Vec2 eff = cam.effectivePosition();
     CHECK(eff.x == cam.position().x);
     CHECK(eff.y == cam.position().y);
+}
+
+TEST_CASE("Camera - 死区：小移动不触发镜头跟随") {
+    Camera cam;
+    cam.setViewSize(1280.f, 720.f);
+    cam.setLevelBounds(3000.f, 1000.f);
+    cam.snapTo({1000.f, 500.f});
+
+    // 目标静止
+    for (int i = 0; i < 30; ++i) {
+        cam.follow({1000.f, 500.f}, {0.f, 0.f}, 0.1f);
+    }
+    Vec2 p0 = cam.position();
+
+    // 目标移动 50 像素（小于死区宽度 192/2 = 96）
+    for (int i = 0; i < 30; ++i) {
+        cam.follow({1050.f, 500.f}, {0.f, 0.f}, 0.1f);
+    }
+    Vec2 p1 = cam.position();
+
+    // 死区内的移动不应该导致镜头大幅移动
+    CHECK(std::abs(p1.x - p0.x) < 20.f);
+}
+
+TEST_CASE("Camera - 前瞻：向右跑镜头右偏") {
+    Camera cam;
+    cam.setViewSize(1280.f, 720.f);
+    cam.setLevelBounds(3000.f, 1000.f);
+    cam.snapTo({1000.f, 500.f});
+
+    // 目标向右移动，速度 300
+    for (int i = 0; i < 60; ++i) {
+        cam.follow({1000.f + i * 5.f, 500.f}, {300.f, 0.f}, 0.05f);
+    }
+    float xRight = cam.position().x;
+
+    // 重置
+    cam.snapTo({1000.f, 500.f});
+
+    // 目标向左移动
+    for (int i = 0; i < 60; ++i) {
+        cam.follow({1000.f - i * 5.f, 500.f}, {-300.f, 0.f}, 0.05f);
+    }
+    float xLeft = cam.position().x;
+
+    // 向右跑时镜头比向左跑时靠右
+    CHECK(xRight > xLeft);
+}
+
+TEST_CASE("Camera - follow 不崩") {
+    Camera cam;
+    cam.setViewSize(1280.f, 720.f);
+    cam.setLevelBounds(3000.f, 1000.f);
+    cam.snapTo({1000.f, 500.f});
+
+    for (int i = 0; i < 100; ++i) {
+        cam.follow({1000.f + static_cast<float>(i), 500.f},
+                   {100.f, 0.f}, 0.016f);
+    }
+    // 不崩就算过
+    CHECK(true);
 }

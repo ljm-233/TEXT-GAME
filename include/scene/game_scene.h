@@ -20,6 +20,8 @@ public:
     void onEnter() override;
     void onResume() override;
 
+    std::string windowTitleHint() const override;
+
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
     void render(Window& window) override;
@@ -51,6 +53,7 @@ private:
     bool paused_ = false;
 
     float levelTime_ = 0.f;
+    float hitstopTimer_ = 0.f;   // 受击停顿时长（秒）
     int   finalStars_ = 0;
     int   finalCoins_ = 0;
     int   finalTotalCoins_ = 0;

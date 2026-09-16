@@ -35,6 +35,10 @@ public:
     Vec2 goalPos() const { return goalPos_; }
     bool hasGoal() const { return hasGoal_; }
 
+    // 关卡元数据（从头部 `# name: xxx` 注释行读取）
+    const std::string& name()   const { return name_; }
+    const std::string& author() const { return author_; }
+
     void setFont(const sf::Font* f) { font_ = f; }
     void setPseudo3D(bool b);
     bool isPseudo3D() const { return pseudo3D_; }
@@ -61,6 +65,9 @@ private:
     std::vector<Vec2> spikeSpawns_;
     Vec2 goalPos_{0.f, 0.f};
     bool hasGoal_ = false;
+
+    std::string name_;
+    std::string author_;
 
     mutable sf::Clock animClock_;
     const sf::Font* font_ = nullptr;

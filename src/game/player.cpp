@@ -4,6 +4,7 @@
 #include "game_constants.h"
 #include "player_sprite_factory.h"
 #include "gamepad.h"
+#include "keybindings.h"
 #include <algorithm>
 #include <cmath>
 
@@ -71,32 +72,22 @@ void Player::bounce() {
 }
 
 void Player::handleEvent(const sf::Event& event) {
+    const auto kbLeft  = KeyBindings::instance().get(KeyBindings::MoveLeft);
+    const auto kbRight = KeyBindings::instance().get(KeyBindings::MoveRight);
+    const auto kbJump  = KeyBindings::instance().get(KeyBindings::Jump);
+
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        switch (kp->code) {
-            case sf::Keyboard::Key::A:
-            case sf::Keyboard::Key::Left:  keyboardLeft_  = true; break;
-            case sf::Keyboard::Key::D:
-            case sf::Keyboard::Key::Right: keyboardRight_ = true; break;
-            case sf::Keyboard::Key::W:
-            case sf::Keyboard::Key::Up:
-            case sf::Keyboard::Key::Space:
-                if (!keyboardJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
-                keyboardJump_ = true;
-                break;
-            default: break;
+        if (kp->code == kbLeft)  keyboardLeft_  = true;
+        if (kp->code == kbRight) keyboardRight_ = true;
+        if (kp->code == kbJump) {
+            if (!keyboardJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+            keyboardJump_ = true;
         }
     }
     if (const auto* kr = event.getIf<sf::Event::KeyReleased>()) {
-        switch (kr->code) {
-            case sf::Keyboard::Key::A:
-            case sf::Keyboard::Key::Left:  keyboardLeft_  = false; break;
-            case sf::Keyboard::Key::D:
-            case sf::Keyboard::Key::Right: keyboardRight_ = false; break;
-            case sf::Keyboard::Key::W:
-            case sf::Keyboard::Key::Up:
-            case sf::Keyboard::Key::Space: keyboardJump_ = false; break;
-            default: break;
-        }
+        if (kr->code == kbLeft)  keyboardLeft_  = false;
+        if (kr->code == kbRight) keyboardRight_ = false;
+        if (kr->code == kbJump)  keyboardJump_ = false;
     }
 }
 

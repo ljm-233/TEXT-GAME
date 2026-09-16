@@ -22,6 +22,9 @@ public:
 
     void recreate(unsigned width, unsigned height, bool fullscreen);
 
+    void setTitle(const std::string& title);
+    const std::string& getTitle() const { return title_; }
+
     void setVsync(bool enabled);
     bool getVsync() const { return vsync_; }
 
@@ -36,6 +39,7 @@ public:
 
 private:
     void applyView();
+    void applyIcon();
 
     sf::RenderWindow window_;
     std::string title_;

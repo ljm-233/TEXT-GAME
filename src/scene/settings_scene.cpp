@@ -8,6 +8,7 @@
 #include "sound_manager.h"
 #include "focus_group.h"
 #include "gamepad.h"
+#include "keybindings.h"
 #include <algorithm>
 #include <cmath>
 
@@ -156,6 +157,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       headingInterface_(font, toSf(Str::TabInterface), scaledFontSize(24)),
       headingGraphics_ (font, toSf(Str::TabGraphics),  scaledFontSize(24)),
       headingAudio_    (font, toSf(Str::TabAudioLog),  scaledFontSize(24)),
+      headingKeys_     (font, toSf(Str::TabKeys),            scaledFontSize(24)),
       headingOther_    (font, toSf(Str::TabOther),     scaledFontSize(24)),
 
       labelResolution_     (font, toSf(Str::LabelResolution),     scaledFontSize(20)),
@@ -201,7 +203,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelSound_          (font, toSf(Str::LabelSound),          scaledFontSize(20)),
       labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    scaledFontSize(20)),
       labelBGM_            (font, toSf(Str::LabelBGM),            scaledFontSize(20)),
-      labelBGMVolume_      (font, toSf("BGM 音量"),               scaledFontSize(20)),
+      labelBGMVolume_      (font, toSf(Str::LabelBGMVolume),               scaledFontSize(20)),
       labelGamepad_        (font, toSf(Str::LabelGamepad),        scaledFontSize(20)),
 
       labelRememberSize_   (font, toSf(Str::LabelRememberSize),   scaledFontSize(20)),
@@ -273,6 +275,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     headingInterface_.setFillColor(headingColor);
     headingGraphics_.setFillColor(headingColor);
     headingAudio_.setFillColor(headingColor);
+    headingKeys_.setFillColor(headingColor);
     headingOther_.setFillColor(headingColor);
 
     auto labelColor = sf::Color(230, 230, 230);
@@ -301,7 +304,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
 
     const char* tabLabels[] = {
         Str::TabDisplay, Str::TabInterface, Str::TabGraphics,
-        Str::TabAudioLog, Str::TabOther
+        Str::TabAudioLog, Str::TabKeys, Str::TabOther
     };
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
@@ -435,6 +438,15 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         bs.cornerRadius = buttonCorner_;
         bs.outlineThickness = buttonOutline_;
         setButtonStyle(bs);
+    }
+
+    // 按键绑定按钮
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        auto btn = std::make_unique<Button>(
+            KeyBindings::keyToString(KeyBindings::instance().get(
+                static_cast<KeyBindings::Action>(i))),
+            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 40.f}, 18);
+        keyBindingButtons_.push_back(std::move(btn));
     }
 
     refreshSelection();
@@ -718,6 +730,40 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             bgmVolumeSlider_->handleEvent(event);
             gamepadOn_->handleEvent(event); gamepadOff_->handleEvent(event);
             break;
+        case Tab::Keys: {
+            // 监听模式：下一个非 ESC 键被绑定
+            if (listeningAction_ >= 0) {
+                if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+                    if (kp->code == sf::Keyboard::Key::Escape) {
+                        listeningAction_ = -1;
+                    } else {
+                        auto act = static_cast<KeyBindings::Action>(listeningAction_);
+                        KeyBindings::instance().set(act, kp->code);
+
+                        // 保存到 preferences
+                        const char* prefKey = nullptr;
+                        switch (act) {
+                            case KeyBindings::MoveLeft:  prefKey = "key_left"; break;
+                            case KeyBindings::MoveRight: prefKey = "key_right"; break;
+                            case KeyBindings::Jump:      prefKey = "key_jump"; break;
+                            case KeyBindings::Pause:     prefKey = "key_pause"; break;
+                            case KeyBindings::Restart:   prefKey = "key_restart"; break;
+                            default: break;
+                        }
+                        if (prefKey) {
+                            preferences_->setInt(prefKey,
+                                static_cast<int>(kp->code));
+                        }
+                        listeningAction_ = -1;
+                        refreshSelection();
+                    }
+                    return;
+                }
+            } else {
+                for (auto& b : keyBindingButtons_) b->handleEvent(event);
+            }
+            break;
+        }
         case Tab::Other:
             rememberOn_->handleEvent(event); rememberOff_->handleEvent(event);
             autoPauseOn_->handleEvent(event); autoPauseOff_->handleEvent(event);
@@ -1058,6 +1104,17 @@ void SettingsScene::update(float /*dt*/) {
             }
             break;
         }
+        case Tab::Keys: {
+            if (listeningAction_ >= 0) break;   // 监听模式下不响应点击
+            for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
+                if (keyBindingButtons_[i]->consumeClick()) {
+                    listeningAction_ = i;
+                    keyBindingButtons_[i]->setText("按下新键...");
+                    return;
+                }
+            }
+            break;
+        }
         case Tab::Other: {
             if (rememberOn_->consumeClick() && !rememberSize_) {
                 rememberSize_ = true; refreshSelection();
@@ -1275,6 +1332,40 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
     r.toggle(labelGamepad_,      gamepadOn_, gamepadOff_);
 }
 
+void SettingsScene::renderKeysTab(Window& window, float contentX,
+                                  float ctrlX, float y) {
+    headingKeys_.setPosition({contentX, y});
+    window.native().draw(headingKeys_);
+    y += 36.f;
+
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        auto act = static_cast<KeyBindings::Action>(i);
+
+        // 动作名
+        sf::Text label(font_, toSf(KeyBindings::actionName(act)),
+                       scaledFontSize(20));
+        label.setFillColor(sf::Color(230, 230, 230));
+        label.setPosition({contentX, y + 8.f});
+        window.native().draw(label);
+
+        // 当前键名
+        if (i != listeningAction_) {
+            keyBindingButtons_[i]->setText(
+                KeyBindings::keyToString(KeyBindings::instance().get(act)));
+        }
+        keyBindingButtons_[i]->setPosition({ctrlX, y});
+        keyBindingButtons_[i]->render(window.native());
+
+        y += 50.f;
+    }
+
+    sf::Text hint(font_, toSf("点击按钮后按新键绑定，Esc 取消"),
+                  scaledFontSize(14));
+    hint.setFillColor(sf::Color(180, 180, 200));
+    hint.setPosition({contentX, y + 8.f});
+    window.native().draw(hint);
+}
+
 void SettingsScene::renderOtherTab(Window& window, float contentX,
                                    float ctrlX, float y) {
     headingOther_.setPosition({contentX, y});
@@ -1332,6 +1423,9 @@ void SettingsScene::render(Window& window) {
             break;
         case Tab::Audio:
             renderAudioTab(window, kContentX, kCtrlX, 60.f);
+            break;
+        case Tab::Keys:
+            renderKeysTab(window, kContentX, kCtrlX, 60.f);
             break;
         case Tab::Other:
             renderOtherTab(window, kContentX, kCtrlX, 60.f);
@@ -1421,6 +1515,9 @@ void SettingsScene::render(Window& window) {
                 items.push_back(bgmOff_.get());
                 items.push_back(gamepadOn_.get());
                 items.push_back(gamepadOff_.get());
+                break;
+            case Tab::Keys:
+                for (auto& b : keyBindingButtons_) items.push_back(b.get());
                 break;
             case Tab::Other:
                 items.push_back(rememberOn_.get());

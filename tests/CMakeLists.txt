@@ -33,6 +33,7 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/ui/animator.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/animation.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/gamepad.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybindings.cpp
     ${CMAKE_SOURCE_DIR}/src/game/moving_platform.cpp
     ${CMAKE_SOURCE_DIR}/src/game/jump_pad.cpp
     ${CMAKE_SOURCE_DIR}/src/game/player.cpp

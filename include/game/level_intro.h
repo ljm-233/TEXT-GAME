@@ -5,7 +5,8 @@
 // 关卡开场文字：淡入 → 停留 → 淡出
 class LevelIntro {
 public:
-    LevelIntro(const sf::Font& font, int levelIndex, float totalCoins);
+    LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
+               const std::string& levelName = "");
 
     void update(float dt);
     void render(sf::RenderTarget& target, float winW, float winH);

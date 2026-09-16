@@ -2,6 +2,7 @@
 #include "scene_id.h"
 #include "window.h"
 #include <SFML/Window/Event.hpp>
+#include <string>
 
 class Scene {
 public:
@@ -22,4 +23,7 @@ public:
     virtual void render(Window& window) = 0;
 
     virtual SceneId nextScene() const { return SceneId::None; }
+
+    // 窗口标题后缀（返回空 = 使用默认 "TEXT-GAME"）
+    virtual std::string windowTitleHint() const { return {}; }
 };

@@ -9,6 +9,7 @@
 #include "notification.h"
 #include "sound_manager.h"
 #include "gamepad.h"
+#include "keybindings.h"
 #include "focus_group.h"
 #include <SFML/System/Clock.hpp>
 #include <algorithm>
@@ -87,6 +88,9 @@ void Game::switchScene(SceneId next) {
         sceneManager_->push(next);
     }
     FocusGroup::instance().clear();
+
+    // 场景切换后立刻更新标题
+    updateWindowTitle(sceneManager_->current());
 }
 
 void Game::saveWindowState() {
@@ -95,6 +99,31 @@ void Game::saveWindowState() {
     auto size = window_->native().getSize();
     runtimeConfig_->setInt("last_window_width",  static_cast<int>(size.x));
     runtimeConfig_->setInt("last_window_height", static_cast<int>(size.y));
+}
+
+void Game::updateWindowTitle(const Scene& scene) {
+    std::string hint = scene.windowTitleHint();
+
+    if (hint.empty()) {
+        switch (sceneManager_->currentId()) {
+            case SceneId::MainMenu:    hint = "";          break;
+            case SceneId::SaveSelect:  hint = "存档选择";   break;
+            case SceneId::LevelSelect: hint = "选关";       break;
+            case SceneId::Settings:    hint = "设置";       break;
+            case SceneId::Console:     hint = "控制台";     break;
+            case SceneId::Editor:      hint = "关卡编辑器"; break;
+            default: break;
+        }
+    }
+
+    std::string title = "TEXT-GAME";
+    if (!hint.empty()) title += " - " + hint;
+
+    if (title != lastWindowTitle_) {
+        window_->setTitle(title);
+        lastWindowTitle_ = title;
+        logger_->info("窗口标题: " + title);
+    }
 }
 
 void Game::renderOverlays() {
@@ -179,6 +208,9 @@ void Game::run() {
         return;
     }
 
+    // 主菜单初始标题
+    updateWindowTitle(sceneManager_->current());
+
     SoundManager::instance().playBGM();
 
     sf::Clock clock;
@@ -234,6 +266,10 @@ void Game::run() {
         }
 
         scene.update(dt);
+
+        // 每帧检测标题变化
+        updateWindowTitle(scene);
+
         scene.render(*window_);
 
         renderOverlays();

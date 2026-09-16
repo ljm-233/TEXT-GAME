@@ -31,8 +31,8 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
-    enum class Tab { Display = 0, Interface = 1, Graphics = 2, Audio = 3, Other = 4 };
-    static constexpr int kTabCount = 5;
+    enum class Tab { Display = 0, Interface = 1, Graphics = 2, Audio = 3, Keys = 4, Other = 5 };
+    static constexpr int kTabCount = 6;
 
     // ===== 应用状态 =====
     void refreshSelection();
@@ -70,6 +70,7 @@ private:
     void renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
     void renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
     void renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
+    void renderKeysTab      (Window& window, float contentX, float ctrlX, float y);
     void renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
     void renderBackButton   (Window& window);
 
@@ -134,6 +135,10 @@ private:
     std::unique_ptr<Slider> bgmVolumeSlider_;
     std::unique_ptr<Button> gamepadOn_, gamepadOff_;
 
+    // ================= Keys =================
+    std::vector<std::unique_ptr<Button>> keyBindingButtons_;   // 5 个动作的按钮
+    int listeningAction_ = -1;                                 // -1 = 不在监听
+
     // ================= Other =================
     std::unique_ptr<Button> rememberOn_, rememberOff_;
     std::unique_ptr<Button> autoPauseOn_, autoPauseOff_;
@@ -149,7 +154,7 @@ private:
 
     // ================= 标签 =================
     sf::Text headingDisplay_, headingInterface_, headingGraphics_;
-    sf::Text headingAudio_, headingOther_;
+    sf::Text headingAudio_, headingKeys_, headingOther_;
 
     sf::Text labelResolution_, labelFullscreen_, labelVsync_;
     sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
