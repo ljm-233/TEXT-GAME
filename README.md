@@ -5,7 +5,7 @@
 
 一个用 C++20 和 SFML 3 **从零构建**的 2D 平台跳跃游戏。
 
-不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、场景管理、配置系统、日志、UI 组件、动画、通知、音效）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点）。
+不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景管理、配置系统、日志、UI 组件、动画、通知、音效、多语言）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器）。
 
 ## 🚧 当前状态
 
@@ -13,30 +13,29 @@
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| 引擎层 | ✅ 完成 | DI 容器 / 场景管理 / 配置 / 日志 / UI 组件 / 动画 / 通知 / 音效 |
-| 场景流程 | ✅ 完成 | 主菜单 → 存档选择 → 选关 → 游戏 → 结算 |
-| 玩家控制 | ✅ 完成 | 土狼时间 / 跳跃缓冲 / 长按跳更高 / 手柄支持 |
+| 引擎层 | ✅ 完成 | DI 容器 / 事件总线 / 场景管理 / 配置 / 日志 / UI 组件 / 动画 / 通知 / 音效 |
+| 场景流程 | ✅ 完成 | 主菜单 → 存档选择 → 选关 → 游戏 → 结算，支持场景栈返回 |
+| 玩家控制 | ✅ 完成 | 土狼时间 / 跳跃缓冲 / 长按跳更高 / 手柄支持 / 键位重映射 |
 | 物理系统 | ✅ 完成 | AABB 瓦片扫描 / 固定时间步长 |
+| 摄像机 | ✅ 完成 | 前瞻 / 死区 / 屏幕震动 |
 | 存档系统 | ✅ 完成 | 创建 / 删除 / 星级 / 进度 |
-| 设置系统 | ✅ 完成 | 5 个 Tab / 40+ 项 |
+| 设置系统 | ✅ 完成 | 6 个 Tab / 50+ 项 |
 | 控制台 | ✅ 完成 | streambuf 重定向 / 命令系统 / 计算器 |
+| 关卡编辑器 | ✅ 完成 | 绘制 / 撤销 / 缩放 / 尺寸调整 / 文件切换 / 元素统计 |
+| **多语言** | ✅ 完成 | 中文 / 繁體中文 / English / 日本語 / 한국어 |
 | **关卡内容** | ⚠️ **进行中** | 5 个第一版关卡，1~4 关存在可达性问题，待重做 |
-| **关卡编辑器** | ❌ 未开始 | 目前手工编辑 ASCII 文件 |
-| **测试覆盖** | ⚠️ **部分** | 纯逻辑模块覆盖较好，游戏对象（Player / Enemy）无测试 |
-| **音频资源** | ⚠️ **程序化** | 音效和 BGM 全部代码生成，无外部资源 |
+| **测试覆盖** | ⚠️ **部分** | 62 个单元测试用例，纯逻辑覆盖较好，游戏对象部分覆盖 |
+| 开发工具 | ✅ 完成 | Sanitizer / clang-tidy / CMake Presets / 覆盖率 / 关卡验证器 / 硬编码检测 |
 
 ### 已知问题
 
 - `level1` / `level3` 存在平台垂直距离超过玩家跳跃上限的问题，可能导致不可通过
-- `Player` 未做单元测试，因为 `player.cpp` 依赖 sprite factory 无法独立链接
-- 部分 UI 控件（PauseMenu / SettingsScene）的回归测试靠手动
+- 部分 UI 控件（SettingsScene / EditorScene）的回归测试靠手动
 
 ### 短期路线
 
 1. 重做 `level1` 作为教学关，验证设计流程
-2. 写关卡可达性检查器（BFS 从出生点出发，报告孤立平台）
-3. 让 `Player` 可被单元测试（无 sprite 模式）
-4. 依次重做 `level2~5`
+2. 依次重做 `level2~5`
 
 ## 🎮 游戏玩法
 
@@ -51,13 +50,16 @@
 | **ESC** | B 键 | 暂停 / 返回 |
 | **Enter** | Start 键 | 确认 / 下一关 |
 
+> 以上键位可在 **设置 → 按键** 中自定义。
+
 ### 平台跳跃特性
 
 - **土狼时间**：走出平台边缘 0.1 秒内还能跳
 - **跳跃缓冲**：落地前 0.12 秒按跳，落地瞬间自动起跳
 - **长按跳更高**：松手立刻给上升速度减半
 - **固定时间步长物理**：1/120 秒为单位更新，任何 FPS 下手感一致
-- **摄像机跟随**：玩家走到边缘时镜头自动跟随，边界锁定
+- **摄像机前瞻**：跑动时镜头朝移动方向偏移，提前露出前方
+- **摄像机死区**：小幅移动时镜头不动，减少眩晕
 
 ### 游戏元素
 
@@ -75,6 +77,17 @@
 | `L` | 门 | 关着时是实体，解锁后消失 |
 | `^` | 尖刺 | 碰到受伤 |
 | `G` | 终点 | 红色旗帜，到达通关 |
+
+### 关卡元数据
+
+关卡文件顶部可选加元数据（不占瓦片）：
+
+```
+# name: 关卡名
+# author: 作者名
+########################################
+#  ...
+```
 
 ## 🗺 关卡设计规范
 
@@ -101,21 +114,25 @@
 - [ ] 钥匙 `K` 和门 `L` 之间有绕路，不是直线
 - [ ] 存档点 `S` 放在关卡中段，且玩家会自然路过
 
-### 常见错误
+### 验证关卡
 
-- ❌ 出生点周围没平台 → 玩家直接掉图
-- ❌ 平台垂直差 4 格 → 跳不上去
-- ❌ 平台水平差 6 格 → 跨不过去
-- ❌ 终点悬空 → 到不了
-- ❌ 尖刺放在玩家必经且无预警处 → 不公平
-- ❌ 一行放 10 个敌人 → 不是设计，是堆砌
+```bash
+# 用关卡验证器检查所有关卡
+./build/debug/validate_levels assets/levels
+```
 
-### 设计原则
+输出示例：
 
-1. **教学优先**：新机制第一次出现时，给玩家安全的空间练习
-2. **递进节奏**：机制 A → 机制 A 应用 → 机制 A + B 组合 → 高潮
-3. **最少元素**：能用 3 种元素表达的设计，不要用 5 种
-4. **可预览**：玩家在跳跃之前，能看到目标平台的位置
+```
+[ OK ] level1.txt: OK (5/5 platforms reachable)
+[FAIL] level3.txt: FAIL | goal unreachable | platforms 2/8 reachable
+  3 unreachable items:
+    - coin @ (42,6)
+    - enemy @ (55,8)
+    - goal @ (98,4)
+
+Total: 5 levels, 1 failed, 0 unloadable
+```
 
 ## 📁 项目结构
 
@@ -123,6 +140,11 @@
 TEXT-GAME/
 ├── assets/
 │   ├── font.otf              # 字体（需自己提取，见下文）
+│   ├── lang/                 # 翻译文件
+│   │   ├── en.txt
+│   │   ├── ja.txt
+│   │   ├── ko.txt
+│   │   └── zh-TW.txt
 │   └── levels/               # ASCII 关卡文件
 │       ├── level1.txt
 │       ├── level2.txt
@@ -131,36 +153,47 @@ TEXT-GAME/
 │       └── level5.txt
 ├── include/
 │   ├── config/               # 配置类（Bootstrap / Runtime / Preferences）
-│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Platform）
+│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、EventBus）
 │   ├── game/                 # 游戏本体
 │   │   ├── vec2.h            # 二维向量
 │   │   ├── aabb.h            # 碰撞盒
 │   │   ├── game_constants.h  # 物理常量
 │   │   ├── game_object.h     # 对象基类
+│   │   ├── event_bus.h       # 事件总线
 │   │   ├── level.h           # ASCII 关卡
-│   │   ├── camera.h          # 摄像机 + 屏幕震动
+│   │   ├── level_validator.h # 关卡可达性验证
+│   │   ├── camera.h          # 摄像机
 │   │   ├── player.h          # 玩家
 │   │   ├── enemy.h           # 敌人
 │   │   ├── coin.h            # 金币
 │   │   ├── jump_pad.h        # 弹跳板
 │   │   ├── checkpoint.h      # 存档点
 │   │   ├── moving_platform.h # 移动平台
+│   │   ├── key.h / door.h    # 钥匙 / 门
+│   │   ├── spike.h           # 尖刺
 │   │   ├── parallax.h        # 视差背景
 │   │   ├── level_intro.h     # 关卡开场文字
 │   │   └── game_world.h      # 游戏世界
 │   ├── scene/                # 场景
 │   └── ui/                   # UI 组件
 ├── scripts/
+│   ├── check_hardcoded.py    # 中文硬编码检测
 │   ├── test.sh               # 一键跑单元测试
 │   └── gen_levels.py         # 关卡生成器
+├── src/                      # 对应 include 的实现
 ├── tests/                    # 单元测试（doctest）
+├── tools/
+│   └── validate_levels.cpp   # 关卡验证器（命令行）
 ├── wallpaper/                # 壁纸资源
 ├── .clang-format
+├── .clang-tidy               # 静态分析配置
 ├── .editorconfig
 ├── .gitignore
 ├── CMakeLists.txt
+├── CMakePresets.json         # 构建预设
 ├── LICENSE
-└── README.md
+├── README.md
+└── CLAUDE.md                 # 给 AI 助手的项目说明
 ```
 
 ## 🧩 核心架构
@@ -170,9 +203,11 @@ TEXT-GAME/
 | 模块 | 职责 |
 | :--- | :--- |
 | **DI 容器** | 统一注册/解析所有依赖，自动缓存单例 |
-| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台，支持返回栈 |
+| **事件总线** | GameWorld 发出游戏事件，GameScene 订阅处理音效/粒子，解耦 game 层和 ui 层 |
+| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器，支持返回栈（保留场景状态） |
 | **配置分层** | Bootstrap / Runtime / Preferences，延迟落盘 |
 | **日志** | 彩色终端 + 文件 + 多级别 + 轮转 + 保留份数 |
+| **多语言** | 用中文原文作 key，运行时查表；支持中/繁中/英/日/韩 |
 | **虚拟终端** | 用 `streambuf` 重定向 `cin`/`cout`，支持命令系统 |
 | **UI 组件** | Button / Slider / TextInput / ConfirmDialog / PauseMenu |
 | **主题** | 深色 / 蓝色 / 浅色，所有组件自动跟随 |
@@ -189,18 +224,23 @@ TEXT-GAME/
 | :--- | :--- |
 | **物理** | 自写 AABB 瓦片扫描，先水平后垂直 |
 | **关卡** | ASCII 加载 + 视锥裁剪 + 顶点批处理 |
+| **关卡验证** | BFS 从出生点出发，报告孤立平台 / 不可达元素 |
 | **伪 3D** | 瓦片顶面高光 + 侧面阴影 + 对象投影 |
-| **玩家** | 苦力怕精灵动画 + 弹性变形 + 无敌闪烁 |
+| **玩家** | 苦力怕精灵动画 + 弹性变形 + 无敌闪烁 + 受击闪白 |
+| **摄像机** | 前瞻 + 死区 + 屏幕震动 + 受击停顿 |
 
 ## 🛠 技术栈
 
 - **语言**：C++20
-- **构建**：CMake ≥ 3.20 + Ninja
+- **构建**：CMake ≥ 3.23 + Ninja + CMake Presets
 - **图形/音频**：SFML 3
 - **依赖注入**：自研简易 `Container`
 - **物理**：自写 AABB（不依赖 Box2D）
-- **测试**：doctest（单头文件）
-- **CI**：GitHub Actions（Arch / Ubuntu / macOS / Windows）
+- **测试**：doctest（单头文件，62 个用例）
+- **静态分析**：clang-tidy
+- **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
+- **覆盖率**：gcov + lcov
+- **CI**：GitHub Actions（Arch / Ubuntu / macOS / Windows / 关卡验证）
 - **跨平台**：Linux / Windows / macOS
 
 ## 🚀 构建与运行
@@ -209,18 +249,18 @@ TEXT-GAME/
 
 **Arch Linux**：
 ```bash
-sudo pacman -S base-devel cmake ninja sfml python-fonttools
+sudo pacman -S base-devel cmake ninja sfml python-fonttools lcov clang
 ```
 
 **Ubuntu / Debian**：
 ```bash
-sudo apt install build-essential cmake ninja-build libsfml-dev
+sudo apt install build-essential cmake ninja-build libsfml-dev lcov clang-tidy
 ```
 > ⚠️ Ubuntu 24.04 的 `libsfml-dev` 可能是 SFML 2.6。需要从源码编译 SFML 3，见 CI 配置。
 
 **macOS**：
 ```bash
-brew install cmake ninja sfml
+brew install cmake ninja sfml lcov
 ```
 
 **Windows**：Visual Studio 2022 + vcpkg
@@ -243,39 +283,98 @@ ttc.fonts[2].save('assets/font.otf')
 
 或者从 [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Sans+SC) 下载 `NotoSansSC-Regular.otf` 重命名为 `font.otf`。
 
-### 编译运行
+### 编译运行（推荐用 Preset）
 
 ```bash
 git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
 
-mkdir -p build && cd build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j
-./text_game
+# 查看所有可用预设
+cmake --list-presets
+
+# Debug 构建
+cmake --preset debug
+cmake --build --preset debug
+./build/debug/text_game
+
+# Release 构建
+cmake --preset release
+cmake --build --preset release
+./build/release/text_game
 ```
+
+**可用的 Preset**：
+
+| Preset | 用途 |
+| :--- | :--- |
+| `debug` | 标准 Debug 构建 |
+| `release` | 发布构建 |
+| `tests` | Debug + 单元测试 |
+| `asan` | Debug + 测试 + Sanitizer |
+| `coverage` | Debug + 测试 + 覆盖率 |
+| `clang-tidy` | Debug + 静态分析 |
+| `release-package` | 用于 cpack 的发布构建 |
 
 ### 打包发布
 
 ```bash
-cd build
+cmake --preset release-package
+cmake --build --preset release-package
+cd build/release-package
 cpack
 # 生成 TEXT-GAME-0.1.0-Linux.tar.gz 和 .zip
 ```
 
-### 跑单元测试
+### 单元测试
 
 ```bash
-./scripts/test.sh
+cmake --preset tests
+cmake --build --preset tests
+ctest --preset tests
 ```
 
-或手动：
+### 内存检测
 
 ```bash
-cmake -S . -B build -DBUILD_TESTS=ON
-cmake --build build -j
-./build/tests/unit_tests
+cmake --preset asan
+cmake --build --preset asan
+./build/asan/tests/unit_tests
+./build/asan/text_game
 ```
+
+ASan 会在内存越界、悬垂指针、UB 时立即报错，精确到文件和行号。
+
+### 代码覆盖率
+
+```bash
+cmake --preset coverage
+cmake --build --preset coverage
+cmake --build build/coverage --target coverage
+# 报告生成在 build/coverage/coverage_html/index.html
+```
+
+### 静态分析
+
+```bash
+cmake --preset clang-tidy
+cmake --build --preset clang-tidy -j
+```
+
+### 关卡验证
+
+```bash
+./build/debug/validate_levels assets/levels
+```
+
+检查每关的出生点、终点可达性、金币/敌人是否在可达平台上。
+
+### 检查硬编码中文
+
+```bash
+python3 scripts/check_hardcoded.py
+```
+
+扫描所有 C++ 源文件，报告未经过 `Str::T()` 的中文字符串字面量。
 
 ## 🎛 功能一览
 
@@ -283,21 +382,39 @@ cmake --build build -j
 
 - **启动游戏**：选择 / 创建 / 删除存档
 - **选关**：直接跳到已解锁的关卡
+- **关卡编辑器**：可视化编辑 ASCII 关卡
 - **控制台**：内嵌虚拟终端，支持命令和计算器
-- **设置**：5 个 Tab，40+ 项
+- **设置**：6 个 Tab，50+ 项
 - **退出游戏**
 
 ### 设置
 
 **显示**：分辨率 / 全屏 / 垂直同步 / 抗锯齿 / 日志级别 / 帧率上限
 
-**界面**：FPS 显示 / 界面缩放 / 主题 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
+**界面**：FPS 显示 / 界面缩放 / 主题 / 语言 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
 
 **画面**：动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒
 
-**音频**：音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持
+**音频**：总音量 / 音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持
+
+**按键**：左移 / 右移 / 跳跃 / 暂停 / 重开（可重映射）
 
 **其他**：记住窗口大小 / 失焦自动暂停 / 日志轮转 / 保留份数 / 玩家名 / 关于 / 恢复默认
+
+### 关卡编辑器
+
+- 底部笔刷面板（13 种元素，图标预览）
+- 左键画 / 右键擦
+- `Ctrl+Z` 撤销（100 步栈）
+- `Ctrl+S` 保存
+- `Ctrl+N` 切换文件
+- `Ctrl+0` 重置缩放
+- `Ctrl+滚轮` 缩放（以鼠标为中心）
+- `WASD` / 方向键移动摄像机
+- `[` `]` `-` `=` 调整关卡尺寸
+- `G` 开关网格
+- 顶部 HUD：文件名 / 笔刷 / 尺寸 / 缩放 / 网格状态 / 撤销栈深度
+- 第二行：元素统计（玩家 / 敌人 / 金币 / ...）
 
 ### 控制台命令
 
@@ -314,6 +431,25 @@ save list         列出所有存档
 exit              关闭控制台
 ```
 
+## 🌏 多语言
+
+支持 5 种语言，运行时在 **设置 → 界面 → 语言** 中切换：
+
+| 语言 | 文件 |
+| :--- | :--- |
+| 中文 | `assets/lang/zh.txt`（隐含，key 即原文） |
+| 繁體中文 | `assets/lang/zh-TW.txt` |
+| English | `assets/lang/en.txt` |
+| 日本語 | `assets/lang/ja.txt` |
+| 한국어 | `assets/lang/ko.txt` |
+
+### 添加新语言
+
+1. 复制 `assets/lang/en.txt` 为 `assets/lang/xx.txt`（xx 是语言代码）
+2. 逐行翻译（key 是中文原文，一字不差）
+3. 在 `settings_scene.cpp` 的 `refreshLabels` 里给语言按钮加显示名
+4. 重新编译，运行
+
 ## 🧭 开发约定
 
 1. **新增 `src/` 一级子目录时，需要在 `CMakeLists.txt` 的 GLOB 列表里加一行**（`.cpp` 文件本身会被自动扫描）。
@@ -327,14 +463,12 @@ exit              关闭控制台
 9. **渲染用世界坐标**，平移交给 `sf::View`。
 10. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
 11. **新场景加 `FocusGroup::instance().setItems({...})`** 以支持手柄。
+12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/core/text_strings.h`。
+13. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem。
 
 ### 代码格式化
 
 ```bash
-# 装 clang-format
-sudo pacman -S clang
-
-# 格式化所有源码
 find src include -name "*.cpp" -o -name "*.h" | xargs clang-format -i
 ```
 
@@ -344,28 +478,6 @@ find src include -name "*.cpp" -o -name "*.h" | xargs clang-format -i
 cd ~/coding
 git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
-```
-
-## 📤 推送
-
-```bash
-git add .
-git commit -m "描述改动"
-git push
-```
-
-## 👥 多人协作
-
-```bash
-# 推送前先拉取
-git pull --rebase
-
-# 有冲突就手动解决后
-git add .
-git rebase --continue
-
-# 再推送
-git push
 ```
 
 ## 📜 License
