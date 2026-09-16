@@ -2,6 +2,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "build-asan",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/text_game",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "CMake Build"
+        },
+        {
             "name": "Debug (LLDB)",
             "type": "cppdbg",
             "request": "launch",

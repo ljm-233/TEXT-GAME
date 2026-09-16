@@ -6,27 +6,27 @@
 
 namespace {
 
-Level makeFlatLevel() {
+// 开阔的测试关卡：80 宽 × 10 高，中间一片空地
+Level makeWideLevel() {
     const char* text =
-        "##########\n"
-        "#P       #\n"
-        "##########";
+        "################################################################################\n"
+        "#                                                                              #\n"
+        "#                                                                              #\n"
+        "#                                                                              #\n"
+        "#                                                                              #\n"
+        "#            P                                                                 #\n"
+        "#                                                                              #\n"
+        "#                                                                              #\n"
+        "#                                                                              #\n"
+        "################################################################################";
     Level level;
     level.loadFromString(text);
     return level;
 }
 
-Level makeTowerLevel() {
-    const char* text =
-        "##########\n"
-        "#P       #\n"
-        "#        #\n"
-        "#        #\n"
-        "#        #\n"
-        "#        #\n"
-        "##########";
+// 空关卡：玩家悬空，用于纯物理测试
+Level makeEmptyLevel() {
     Level level;
-    level.loadFromString(text);
     return level;
 }
 
@@ -65,6 +65,13 @@ void pressA(Player& p) {
     p.handleEvent(e);
 }
 
+void releaseA(Player& p) {
+    sf::Event e(sf::Event::KeyReleased{
+        sf::Keyboard::Key::A, sf::Keyboard::Scan::A,
+        false, false, false, false});
+    p.handleEvent(e);
+}
+
 } // namespace
 
 TEST_CASE("Player - 初始状态") {
@@ -78,8 +85,9 @@ TEST_CASE("Player - 初始状态") {
 }
 
 TEST_CASE("Player - 重力使速度向下") {
-    Level level = makeFlatLevel();
-    Player p(level.playerSpawn());
+    // 空关卡，玩家悬空自由落体
+    Level level = makeEmptyLevel();
+    Player p({100.f, 100.f});
 
     p.update(1.f / 120.f, level);
 
@@ -87,10 +95,11 @@ TEST_CASE("Player - 重力使速度向下") {
 }
 
 TEST_CASE("Player - 落地后停止下落") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    for (int i = 0; i < 120; ++i)
+    // 玩家会落到下方地板上
+    for (int i = 0; i < 240; ++i)
         p.update(1.f / 120.f, level);
 
     CHECK(p.onGround());
@@ -98,7 +107,7 @@ TEST_CASE("Player - 落地后停止下落") {
 }
 
 TEST_CASE("Player - 按 D 向右移动") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
     for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
@@ -110,10 +119,11 @@ TEST_CASE("Player - 按 D 向右移动") {
     for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
 
     CHECK(p.position().x > x0);
+    releaseD(p);
 }
 
 TEST_CASE("Player - 按 A 向左移动") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
     for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
@@ -125,10 +135,11 @@ TEST_CASE("Player - 按 A 向左移动") {
     for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
 
     CHECK(p.position().x < x0);
+    releaseA(p);
 }
 
 TEST_CASE("Player - 松开方向键后停下") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
     for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
@@ -143,7 +154,7 @@ TEST_CASE("Player - 松开方向键后停下") {
 }
 
 TEST_CASE("Player - 按跳离地") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
     for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
@@ -154,21 +165,23 @@ TEST_CASE("Player - 按跳离地") {
 
     CHECK_FALSE(p.onGround());
     CHECK(p.velocity().y < 0.f);
+    releaseSpace(p);
 }
 
 TEST_CASE("Player - 长按跳更高") {
-    Level level = makeTowerLevel();
+    Level level = makeWideLevel();
 
     // 场景 A：按住跳不放
     Player pa(level.playerSpawn());
-    for (int i = 0; i < 60; ++i) pa.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i) pa.update(1.f / 120.f, level);
     pressSpace(pa);
     for (int i = 0; i < 30; ++i) pa.update(1.f / 120.f, level);
     const float longY = pa.position().y;
+    releaseSpace(pa);
 
     // 场景 B：跳起后立刻松手
     Player pb(level.playerSpawn());
-    for (int i = 0; i < 60; ++i) pb.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i) pb.update(1.f / 120.f, level);
     pressSpace(pb);
     pb.update(1.f / 120.f, level);
     releaseSpace(pb);
@@ -180,17 +193,20 @@ TEST_CASE("Player - 长按跳更高") {
 }
 
 TEST_CASE("Player - 跳跃缓冲") {
-    Level level = makeTowerLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    REQUIRE_FALSE(p.onGround());
+    // 先落地
+    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    REQUIRE(p.onGround());
 
-    // 自由下落 30 帧（约 0.25 秒）
-    for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
-    REQUIRE_FALSE(p.onGround());
-
-    // 在空中按跳——应该缓冲，落地瞬间起跳
+    // 跳出
     pressSpace(p);
+    p.update(1.f / 120.f, level);
+    releaseSpace(p);
+
+    // 落地前 0.1 秒内按跳
+    for (int i = 0; i < 20; ++i) p.update(1.f / 120.f, level);
 
     bool jumped = false;
     for (int i = 0; i < 200; ++i) {
@@ -199,6 +215,7 @@ TEST_CASE("Player - 跳跃缓冲") {
             jumped = true;
             break;
         }
+        if (i == 10) pressSpace(p);   // 在空中按跳（模拟缓冲）
     }
 
     CHECK(jumped);
@@ -211,7 +228,7 @@ TEST_CASE("Player - 受伤无敌计时") {
     p.takeDamage();
     CHECK(p.isInvincible());
 
-    Level level;   // 空关卡，不影响物理
+    Level level;   // 空关卡
     for (int i = 0; i < 200; ++i)
         p.update(1.f / 120.f, level);
 
@@ -227,7 +244,7 @@ TEST_CASE("Player - 反弹速度向上") {
 }
 
 TEST_CASE("Player - 掉图触发 fellOut 并回到 spawn") {
-    Level level = makeFlatLevel();
+    Level level = makeWideLevel();
     Player p(level.playerSpawn());
     p.setSpawn({100.f, 200.f});
     p.setKillY(500.f);

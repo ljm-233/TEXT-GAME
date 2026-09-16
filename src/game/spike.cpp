@@ -3,8 +3,6 @@
 
 Spike::Spike(Vec2 pos, int tileSize)
     : pos_(pos), tileSize_(tileSize) {
-    float ts = static_cast<float>(tileSize_);
-
     // 三角形的尖刺
     spike_.setPointCount(3);
     spike_.setFillColor(sf::Color(200, 200, 210));

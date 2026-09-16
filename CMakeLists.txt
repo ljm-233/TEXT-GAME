@@ -52,6 +52,35 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # ============================================================
+# Sanitizer（-DSANITIZE=ON 开启）
+# ============================================================
+option(SANITIZE "Enable AddressSanitizer + UndefinedBehaviorSanitizer + LeakSanitizer" OFF)
+
+if(SANITIZE)
+    if(MSVC)
+        message(WARNING "Sanitizer 不支持 MSVC，已忽略")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(STATUS "=== Sanitizer 已启用 ===")
+        message(STATUS "  ASan  (AddressSanitizer)")
+        message(STATUS "  UBSan (UndefinedBehaviorSanitizer)")
+        message(STATUS "  LSan  (LeakSanitizer, 仅 Linux)")
+        message(STATUS "  运行时可设置 ASAN_OPTIONS 环境变量:")
+        message(STATUS "    禁用泄漏检测: ASAN_OPTIONS=detect_leaks=0")
+        message(STATUS "    关闭 UBSan:   UBSAN_OPTIONS=halt_on_error=0")
+
+        add_compile_options(
+            -fsanitize=address,undefined
+            -fno-omit-frame-pointer
+            -fno-common
+            -g
+        )
+        add_link_options(-fsanitize=address,undefined)
+    else()
+        message(WARNING "Sanitizer 只在 GCC / Clang 上支持，已忽略")
+    endif()
+endif()
+
+# ============================================================
 # SFML 3
 # ============================================================
 find_package(SFML 3 COMPONENTS Graphics Window System Audio QUIET)
@@ -201,7 +230,91 @@ target_link_libraries(validate_levels PRIVATE
 # ============================================================
 # 测试（默认关闭，加 -DBUILD_TESTS=ON 开启）
 # ============================================================
+# ============================================================
+# clang-tidy（-DCLANG_TIDY=ON 开启）
+# ============================================================
+option(CLANG_TIDY "Run clang-tidy during build" OFF)
+
+if(CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+    if(NOT CLANG_TIDY_EXE)
+        message(WARNING "未找到 clang-tidy，CLANG_TIDY 选项被忽略")
+    else()
+        message(STATUS "=== clang-tidy 已启用: ${CLANG_TIDY_EXE} ===")
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+    endif()
+endif()
+
+# ============================================================
+# 测试覆盖率（-DCOVERAGE=ON 开启）
+# ============================================================
+option(COVERAGE "Enable code coverage (gcov/lcov)" OFF)
+
+if(COVERAGE)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(WARNING "覆盖率构建建议使用 Debug 模式（当前: ${CMAKE_BUILD_TYPE}）")
+    endif()
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(STATUS "=== 覆盖率已启用（gcov / lcov）===")
+
+        add_compile_options(--coverage -O0 -g)
+        add_link_options(--coverage)
+
+        find_program(LCOV_EXE NAMES lcov)
+        find_program(GENHTML_EXE NAMES genhtml)
+
+        if(LCOV_EXE AND GENHTML_EXE)
+            add_custom_target(coverage
+                COMMAND ${CMAKE_COMMAND} -E rm -rf coverage.info coverage_html
+                COMMAND ${LCOV_EXE} --zerocounters
+                        --directory ${CMAKE_BINARY_DIR}
+                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                COMMAND ${LCOV_EXE}
+                        --capture
+                        --directory ${CMAKE_BINARY_DIR}
+                        --output-file coverage.info
+                        --rc branch_coverage=1
+                        --ignore-errors mismatch
+                COMMAND ${LCOV_EXE}
+                        --remove coverage.info
+                        '/usr/*'
+                        '*/tests/doctest.h'
+                        '*/tests/*'
+                        '*/_deps/*'
+                        --output-file coverage_filtered.info
+                        --rc branch_coverage=1
+                        --ignore-errors unused
+                COMMAND ${GENHTML_EXE}
+                        coverage_filtered.info
+                        --output-directory coverage_html
+                        --branch-coverage
+                        --legend
+                COMMAND ${CMAKE_COMMAND} -E echo
+                        "覆盖率报告: file://${CMAKE_BINARY_DIR}/coverage_html/index.html"
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "生成覆盖率报告"
+                USES_TERMINAL
+            )
+
+            message(STATUS "  运行: cmake --build ${CMAKE_BINARY_DIR} --target coverage")
+            message(STATUS "  报告: ${CMAKE_BINARY_DIR}/coverage_html/index.html")
+        else()
+            message(WARNING "未找到 lcov / genhtml，coverage target 未创建")
+            message(WARNING "  Arch Linux: sudo pacman -S lcov")
+            message(WARNING "  Ubuntu:     sudo apt install lcov")
+        endif()
+    else()
+        message(WARNING "覆盖率只在 GCC / Clang 上支持，已忽略")
+    endif()
+endif()
+
 option(BUILD_TESTS "Build unit tests" OFF)
+
+if(COVERAGE AND NOT BUILD_TESTS)
+    message(WARNING "COVERAGE=ON 但 BUILD_TESTS=OFF，无法生成有意义覆盖率报告")
+    message(WARNING "  建议同时 -DBUILD_TESTS=ON")
+endif()
 
 if(BUILD_TESTS)
     enable_testing()
