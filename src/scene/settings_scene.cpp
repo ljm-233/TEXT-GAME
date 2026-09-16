@@ -1,6 +1,6 @@
 #include "settings_scene.h"
-#include "strings.h"
 #include "text_strings.h"
+#include <string>
 #include "utf8.h"
 #include "ui_scale.h"
 #include "button_style.h"
@@ -8,7 +8,6 @@
 #include "notification.h"
 #include "sound_manager.h"
 #include "focus_group.h"
-#include "gamepad.h"
 #include "keybindings.h"
 #include <algorithm>
 #include <cmath>
@@ -16,23 +15,23 @@
 
 namespace {
 // ===== 常量表 =====
-const int kAALevels[]     = {0, 4, 8, 16};
-constexpr int kAACount    = 4;
+const int kaaLevels[]     = {0, 4, 8, 16};
+constexpr int kaaCount    = 4;
 const char* kAALabels[]   = {"关", "4x", "8x", "16x"};
 
-const LogLevel kLogLevels[] = {
+const LogLevel klogLevels[] = {
     LogLevel::Trace, LogLevel::Debug, LogLevel::Info,
     LogLevel::Warn,  LogLevel::Error
 };
-constexpr int kLogCount = 5;
+constexpr int klogCount = 5;
 const char* kLogLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
 
-const int kFpsLimits[]  = {0, 30, 60, 120, 144};
-constexpr int kFpsLimitCount = 5;
+const int kfpsLimits[]  = {0, 30, 60, 120, 144};
+constexpr int kfpsLimitCount = 5;
 const char* kFpsLimitLabels[] = {"无", "30", "60", "120", "144"};
 
-const float kAnimSpeeds[] = {0.5f, 1.0f, 2.0f};
-constexpr int kAnimSpeedCount = 3;
+const float kanimSpeeds[] = {0.5f, 1.0f, 2.0f};
+constexpr int kanimSpeedCount = 3;
 const char* kAnimSpeedLabels[] = {"慢", "正常", "快"};
 
 const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
@@ -88,7 +87,7 @@ constexpr float kGapY     = 10.f;
 
 // ===== 索引查找 =====
 int indexOfAA(int level) {
-    for (int i = 0; i < kAACount; ++i) if (kAALevels[i] == level) return i;
+    for (int i = 0; i < kaaCount; ++i) if (kaaLevels[i] == level) return i;
     return 2;
 }
 int indexOfUiScale(float s) {
@@ -112,13 +111,13 @@ int indexOfConsoleLineHeight(int h) {
     return 1;
 }
 int indexOfLogLevel(int l) {
-    for (int i = 0; i < kLogCount; ++i)
-        if (static_cast<int>(kLogLevels[i]) == l) return i;
+    for (int i = 0; i < klogCount; ++i)
+        if (static_cast<int>(klogLevels[i]) == l) return i;
     return 2;
 }
 int indexOfFpsLimit(int l) {
-    for (int i = 0; i < kFpsLimitCount; ++i)
-        if (kFpsLimits[i] == l) return i;
+    for (int i = 0; i < kfpsLimitCount; ++i)
+        if (kfpsLimits[i] == l) return i;
     return 2;
 }
 int indexOfButtonCorner(float c) {
@@ -133,7 +132,7 @@ int indexOfButtonOutline(float o) {
 }
 int indexOfLogRotate(int idx) { if (idx < 0 || idx >= kLogRotateCount) return 0; return idx; }
 int indexOfLogKeep(int idx)   { if (idx < 0 || idx >= kLogKeepCount)   return 1; return idx; }
-int indexOfAnimSpeed(int idx) { if (idx < 0 || idx >= kAnimSpeedCount) return 1; return idx; }
+int indexOfAnimSpeed(int idx) { if (idx < 0 || idx >= kanimSpeedCount) return 1; return idx; }
 int indexOfPos(int idx)       { if (idx < 0 || idx >= kPosCount)       return 1; return idx; }
 int indexOfFpsFormat(int idx) { if (idx < 0 || idx >= kFpsFormatCount) return 1; return idx; }
 int indexOfConsolePrompt(int idx) { if (idx < 0 || idx >= kConsolePromptCount) return 0; return idx; }
@@ -338,13 +337,13 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
     { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
     { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
-    for (int i = 0; i < kAACount; ++i)
+    for (int i = 0; i < kaaCount; ++i)
         antiAliasingButtons_.push_back(std::make_unique<Button>(
             kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kLogCount; ++i)
+    for (int i = 0; i < klogCount; ++i)
         logLevelButtons_.push_back(std::make_unique<Button>(
             kLogLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{96.f, 40.f}, 16));
-    for (int i = 0; i < kFpsLimitCount; ++i)
+    for (int i = 0; i < kfpsLimitCount; ++i)
         fpsLimitButtons_.push_back(std::make_unique<Button>(
             kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
@@ -404,7 +403,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
 
     // Graphics
     { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_ = std::move(on); animationOff_ = std::move(off); }
-    for (int i = 0; i < kAnimSpeedCount; ++i)
+    for (int i = 0; i < kanimSpeedCount; ++i)
         animationSpeedButtons_.push_back(std::make_unique<Button>(
             kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
     { auto [on, off] = makeToggle(Str::On, Str::Off); notificationOn_ = std::move(on); notificationOff_ = std::move(off); }
@@ -601,11 +600,11 @@ void SettingsScene::refreshLabels() {
     if (backButton_)      backButton_->setText(Str::T(Str::Back));
 
     // ===== 下拉选项按钮 =====
-    for (int i = 0; i < kAACount && i < static_cast<int>(antiAliasingButtons_.size()); ++i)
+    for (int i = 0; i < kaaCount && i < static_cast<int>(antiAliasingButtons_.size()); ++i)
         antiAliasingButtons_[i]->setText(Str::T(kAALabels[i]));
-    for (int i = 0; i < kLogCount && i < static_cast<int>(logLevelButtons_.size()); ++i)
+    for (int i = 0; i < klogCount && i < static_cast<int>(logLevelButtons_.size()); ++i)
         logLevelButtons_[i]->setText(Str::T(kLogLabels[i]));
-    for (int i = 0; i < kFpsLimitCount && i < static_cast<int>(fpsLimitButtons_.size()); ++i)
+    for (int i = 0; i < kfpsLimitCount && i < static_cast<int>(fpsLimitButtons_.size()); ++i)
         fpsLimitButtons_[i]->setText(Str::T(kFpsLimitLabels[i]));
 
     for (int i = 0; i < kPosCount; ++i) {
@@ -623,7 +622,7 @@ void SettingsScene::refreshLabels() {
         consoleFontButtons_[i]->setText(Str::T(kConsoleFontLabels[i]));
     for (int i = 0; i < kConsoleLineHeightCount && i < static_cast<int>(consoleLineHeightButtons_.size()); ++i)
         consoleLineHeightButtons_[i]->setText(Str::T(kConsoleLineHeightLabels[i]));
-    for (int i = 0; i < kAnimSpeedCount && i < static_cast<int>(animationSpeedButtons_.size()); ++i)
+    for (int i = 0; i < kanimSpeedCount && i < static_cast<int>(animationSpeedButtons_.size()); ++i)
         animationSpeedButtons_[i]->setText(Str::T(kAnimSpeedLabels[i]));
     for (int i = 0; i < kButtonCornerCount && i < static_cast<int>(buttonCornerButtons_.size()); ++i)
         buttonCornerButtons_[i]->setText(Str::T(kButtonCornerLabels[i]));
@@ -647,13 +646,13 @@ void SettingsScene::refreshSelection() {
     vsyncOff_->setSelected(!vsync_);
 
     int aaIdx = indexOfAA(antiAliasingLevel_);
-    for (int i = 0; i < kAACount; ++i)
+    for (int i = 0; i < kaaCount; ++i)
         antiAliasingButtons_[i]->setSelected(i == aaIdx);
     int lgIdx = indexOfLogLevel(logLevel_);
-    for (int i = 0; i < kLogCount; ++i)
+    for (int i = 0; i < klogCount; ++i)
         logLevelButtons_[i]->setSelected(i == lgIdx);
     int flIdx = indexOfFpsLimit(fpsLimit_);
-    for (int i = 0; i < kFpsLimitCount; ++i)
+    for (int i = 0; i < kfpsLimitCount; ++i)
         fpsLimitButtons_[i]->setSelected(i == flIdx);
 
     fpsOn_->setSelected(showFps_);
@@ -692,7 +691,7 @@ void SettingsScene::refreshSelection() {
 
     animationOn_->setSelected(animationEnabled_);
     animationOff_->setSelected(!animationEnabled_);
-    for (int i = 0; i < kAnimSpeedCount; ++i)
+    for (int i = 0; i < kanimSpeedCount; ++i)
         animationSpeedButtons_[i]->setSelected(i == animationSpeedIndex_);
     notificationOn_->setSelected(notificationEnabled_);
     notificationOff_->setSelected(!notificationEnabled_);
@@ -805,7 +804,7 @@ void SettingsScene::applyLogRotation() {
 }
 void SettingsScene::applyAnimation() {
     Anim::setEnabled(animationEnabled_);
-    Anim::setSpeed(kAnimSpeeds[animationSpeedIndex_]);
+    Anim::setSpeed(kanimSpeeds[animationSpeedIndex_]);
     preferences_->setBool("animation_enabled", animationEnabled_);
     preferences_->setInt("animation_speed_index", animationSpeedIndex_);
 }
@@ -1025,27 +1024,27 @@ void SettingsScene::update(float /*dt*/) {
             if (vsyncOff_->consumeClick() && vsync_) {
                 vsync_ = false; refreshSelection(); applyVsync(); return;
             }
-            for (int i = 0; i < kAACount; ++i)
+            for (int i = 0; i < kaaCount; ++i)
                 if (antiAliasingButtons_[i]->consumeClick()) {
-                    if (antiAliasingLevel_ != kAALevels[i]) {
-                        antiAliasingLevel_ = kAALevels[i];
+                    if (antiAliasingLevel_ != kaaLevels[i]) {
+                        antiAliasingLevel_ = kaaLevels[i];
                         refreshSelection(); applyAntiAliasing();
                     }
                     return;
                 }
-            for (int i = 0; i < kLogCount; ++i)
+            for (int i = 0; i < klogCount; ++i)
                 if (logLevelButtons_[i]->consumeClick()) {
-                    int nl = static_cast<int>(kLogLevels[i]);
+                    int nl = static_cast<int>(klogLevels[i]);
                     if (logLevel_ != nl) {
                         logLevel_ = nl;
                         refreshSelection(); applyLogLevel();
                     }
                     return;
                 }
-            for (int i = 0; i < kFpsLimitCount; ++i)
+            for (int i = 0; i < kfpsLimitCount; ++i)
                 if (fpsLimitButtons_[i]->consumeClick()) {
-                    if (fpsLimit_ != kFpsLimits[i]) {
-                        fpsLimit_ = kFpsLimits[i];
+                    if (fpsLimit_ != kfpsLimits[i]) {
+                        fpsLimit_ = kfpsLimits[i];
                         refreshSelection(); applyFpsLimit();
                     }
                     return;
@@ -1189,7 +1188,7 @@ void SettingsScene::update(float /*dt*/) {
             if (animationOff_->consumeClick() && animationEnabled_) {
                 animationEnabled_ = false; refreshSelection(); applyAnimation(); return;
             }
-            for (int i = 0; i < kAnimSpeedCount; ++i)
+            for (int i = 0; i < kanimSpeedCount; ++i)
                 if (animationSpeedButtons_[i]->consumeClick()) {
                     if (animationSpeedIndex_ != i) {
                         animationSpeedIndex_ = i;

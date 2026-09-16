@@ -157,9 +157,12 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "TEXT-GAME"
     )
+    install(TARGETS text_game
+        BUNDLE DESTINATION .
+        RUNTIME DESTINATION .)
+else()
+    install(TARGETS text_game RUNTIME DESTINATION .)
 endif()
-
-install(TARGETS text_game RUNTIME DESTINATION .)
 
 # ============================================================
 # Windows：把 SFML 的 DLL 一起装到输出目录

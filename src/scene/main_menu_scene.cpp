@@ -1,6 +1,5 @@
 #include "main_menu_scene.h"
 #include "text_strings.h"
-#include "animation.h"
 #include "focus_group.h"
 #include <algorithm>
 

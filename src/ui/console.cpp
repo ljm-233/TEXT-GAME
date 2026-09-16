@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
-#include <ostream>
 #include <streambuf>
 
 namespace {

@@ -1,7 +1,6 @@
 #include "save_select_scene.h"
 #include "text_strings.h"
 #include "focus_group.h"
-#include "utf8.h"
 
 SaveSelectScene::SaveSelectScene(std::shared_ptr<Background>  background,
                                  std::shared_ptr<SaveManager> saveManager,

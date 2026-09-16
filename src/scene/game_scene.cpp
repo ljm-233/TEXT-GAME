@@ -5,17 +5,14 @@
 #include "notification.h"
 #include "sound_manager.h"
 #include "keybindings.h"
-#include "game_constants.h"
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
-#include <sstream>
 #include <type_traits>
 #include <variant>
 
 namespace {
 // ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
-constexpr float kBaseTime = 30.f;
+constexpr float kbaseTime = 30.f;
 constexpr float kPerCoinTime = 3.f;
 }
 
@@ -221,7 +218,7 @@ void GameScene::refreshHud() {
 int GameScene::targetTime() const {
     if (!world_) return 60;
     int totalCoins = world_->totalCoins();
-    return static_cast<int>(kBaseTime + totalCoins * kPerCoinTime);
+    return static_cast<int>(kbaseTime + totalCoins * kPerCoinTime);
 }
 
 int GameScene::calcStars() const {
