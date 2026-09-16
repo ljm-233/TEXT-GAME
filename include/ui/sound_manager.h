@@ -13,8 +13,22 @@ public:
     void setEnabled(bool e) { enabled_ = e; }
     bool isEnabled() const { return enabled_; }
 
-    void setVolume(float v);
-    float volume() const { return volume_; }
+    // ===== 音量通道（三条独立）=====
+    // 实际播放音量 = master * (sfx | music)
+    void setMasterVolume(float v);    // 0~1
+    float masterVolume() const { return masterVolume_; }
+
+    void setSFXVolume(float v);       // 0~1
+    float sfxVolume() const { return sfxVolume_; }
+
+    void setMusicVolume(float v);     // 0~1
+    float musicVolume() const { return musicVolume_; }
+
+    // 兼容旧名（旧代码里 setVolume 就是 SFX 音量）
+    void setVolume(float v) { setSFXVolume(v); }
+    float volume() const { return sfxVolume_; }
+    void setBGMVolume(float v) { setMusicVolume(v); }
+    float bgmVolume() const { return musicVolume_; }
 
     // ===== 音效 =====
     void playJump();
@@ -32,8 +46,6 @@ public:
     void pauseBGM();
     void resumeBGM();
     void setBGMEnabled(bool e);
-    void setBGMVolume(float v);
-    float bgmVolume() const { return bgmVolume_; }
     bool isBGMEnabled() const { return bgmEnabled_; }
 
 private:
@@ -41,6 +53,8 @@ private:
 
     void play(const sf::SoundBuffer& buf);
     void rebuildBGM();
+    void applySFXVolume();
+    void applyMusicVolume();
 
     sf::SoundBuffer bufJump_;
     sf::SoundBuffer bufLand_;
@@ -57,13 +71,16 @@ private:
     sf::SoundBuffer bufBGM_;
     std::unique_ptr<sf::Sound> bgm_;
     bool bgmEnabled_ = true;
-    float bgmVolume_ = 0.4f;
     bool bgmPlaying_ = false;
+
+    // 三条独立音量（0~1）
+    float masterVolume_ = 1.0f;
+    float sfxVolume_    = 0.6f;
+    float musicVolume_  = 0.4f;
 
     std::vector<std::unique_ptr<sf::Sound>> pool_;
     std::size_t nextIndex_ = 0;
 
     bool enabled_ = true;
-    float volume_ = 0.6f;
     bool initialized_ = false;
 };

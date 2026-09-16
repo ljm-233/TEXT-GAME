@@ -9,11 +9,12 @@ MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
                              std::shared_ptr<Logger> logger)
     : background_(std::move(background)),
       logger_(std::move(logger)),
-      startButton_       (Str::StartGame,  font, {0.f, 0.f}, {280.f, 56.f}, 26),
-      levelSelectButton_ (Str::LevelSelect, font, {0.f, 0.f}, {280.f, 56.f}, 26),
-      calculatorButton_  (Str::Calculator, font, {0.f, 0.f}, {280.f, 56.f}, 26),
-      settingsButton_    (Str::Settings,   font, {0.f, 0.f}, {280.f, 56.f}, 26),
-      exitButton_        (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 56.f}, 26) {}
+      startButton_       (Str::StartGame,  font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      levelSelectButton_ (Str::LevelSelect, font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      editorButton_      (Str::LevelEditor, font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      calculatorButton_  (Str::Calculator, font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      settingsButton_    (Str::Settings,   font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      exitButton_        (Str::ExitGame,   font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
 
 void MainMenuScene::onEnter() {
     nextScene_ = SceneId::None;
@@ -27,6 +28,7 @@ void MainMenuScene::onResume() {
 void MainMenuScene::handleEvent(const sf::Event& event) {
     startButton_.handleEvent(event);
     levelSelectButton_.handleEvent(event);
+    editorButton_.handleEvent(event);
     calculatorButton_.handleEvent(event);
     settingsButton_.handleEvent(event);
     exitButton_.handleEvent(event);
@@ -43,8 +45,12 @@ void MainMenuScene::update(float dt) {
         logger_->info("点击: 选关");
         nextScene_ = SceneId::LevelSelect;
     }
+    if (editorButton_.consumeClick()) {
+        logger_->info("点击: 关卡编辑器");
+        nextScene_ = SceneId::Editor;
+    }
     if (calculatorButton_.consumeClick()) {
-        logger_->info("点击: 计算器");
+        logger_->info("点击: 控制台");
         nextScene_ = SceneId::Console;
     }
     if (settingsButton_.consumeClick()) {
@@ -65,14 +71,17 @@ void MainMenuScene::render(Window& window) {
     float cx = static_cast<float>(size.x) / 2.f;
     float cy = static_cast<float>(size.y) / 2.f;
 
-    const float btnW = 280.f, btnH = 56.f, gap = 14.f;
-    float totalH = btnH * 5 + gap * 4;
+    const float btnW = 280.f, btnH = 52.f, gap = 12.f;
+    constexpr int kCount = 6;
+    float totalH = btnH * kCount + gap * (kCount - 1);
     float startY = cy - totalH / 2.f;
 
-    Button* btns[] = {&startButton_, &levelSelectButton_, &calculatorButton_,
-                      &settingsButton_, &exitButton_};
+    Button* btns[kCount] = {
+        &startButton_, &levelSelectButton_, &editorButton_,
+        &calculatorButton_, &settingsButton_, &exitButton_
+    };
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kCount; ++i) {
         float targetY = startY + static_cast<float>(i) * (btnH + gap);
 
         float delay = static_cast<float>(i) * kButtonDelay;
@@ -83,9 +92,8 @@ void MainMenuScene::render(Window& window) {
         btns[i]->render(window.native());
     }
 
-    // ⭐ 注册焦点列表
     FocusGroup::instance().setItems({
-        &startButton_, &levelSelectButton_, &calculatorButton_,
-        &settingsButton_, &exitButton_
+        &startButton_, &levelSelectButton_, &editorButton_,
+        &calculatorButton_, &settingsButton_, &exitButton_
     });
 }

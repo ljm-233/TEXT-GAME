@@ -25,6 +25,7 @@ private:
     std::shared_ptr<Logger> logger_;
     Button startButton_;
     Button levelSelectButton_;
+    Button editorButton_;
     Button calculatorButton_;
     Button settingsButton_;
     Button exitButton_;

@@ -5,6 +5,7 @@
 #include "game_scene.h"
 #include "settings_scene.h"
 #include "console_scene.h"
+#include "editor_scene.h"
 #include "notification.h"
 #include "sound_manager.h"
 #include "gamepad.h"
@@ -62,6 +63,9 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
         case SceneId::Console:
             return std::make_unique<ConsoleScene>(
                 background_, preferences_, saveManager_, font, logger_);
+        case SceneId::Editor:
+            return std::make_unique<EditorScene>(
+                background_, preferences_, font, logger_);
         default:
             return nullptr;
     }

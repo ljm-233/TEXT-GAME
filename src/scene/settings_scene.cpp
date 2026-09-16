@@ -197,6 +197,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelButtonCorner_   (font, toSf(Str::LabelButtonCorner),   scaledFontSize(20)),
       labelButtonOutline_  (font, toSf(Str::LabelButtonOutline),  scaledFontSize(20)),
 
+      labelMasterVolume_   (font, toSf(Str::LabelMasterVolume),   scaledFontSize(20)),
       labelSound_          (font, toSf(Str::LabelSound),          scaledFontSize(20)),
       labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    scaledFontSize(20)),
       labelBGM_            (font, toSf(Str::LabelBGM),            scaledFontSize(20)),
@@ -247,6 +248,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     buttonCorner_        = static_cast<float>(preferences_->getDouble("button_corner", 6.0));
     buttonOutline_       = static_cast<float>(preferences_->getDouble("button_outline", 2.0));
 
+    masterVolume_        = static_cast<float>(preferences_->getDouble("master_volume", 1.0));
     soundEnabled_        = preferences_->getBool("sound_enabled", true);
     soundVolume_         = static_cast<float>(preferences_->getDouble("sound_volume", 0.6));
     bgmEnabled_          = preferences_->getBool("bgm_enabled", true);
@@ -288,6 +290,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelLevelIntro_, &labelParticles_, &labelScreenShake_,
                     &labelShowColliders_,
                     &labelButtonCorner_, &labelButtonOutline_,
+                    &labelMasterVolume_,
                     &labelSound_, &labelSoundVolume_, &labelBGM_, &labelBGMVolume_,
                     &labelGamepad_,
                     &labelRememberSize_, &labelAutoPause_,
@@ -398,6 +401,9 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
 
     // Audio
+    masterVolumeSlider_ = std::make_unique<Slider>(
+        font_, 0.f, 100.f, masterVolume_ * 100.f,
+        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     { auto [on, off] = makeToggle(Str::On, Str::Off); soundOn_ = std::move(on); soundOff_ = std::move(off); }
     soundVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, soundVolume_ * 100.f,
@@ -606,14 +612,14 @@ void SettingsScene::applyNotification() {
 }
 void SettingsScene::applySound() {
     SoundManager::instance().setEnabled(soundEnabled_);
-    SoundManager::instance().setVolume(soundVolume_);
+    SoundManager::instance().setSFXVolume(soundVolume_);
     preferences_->setBool("sound_enabled", soundEnabled_);
     preferences_->setDouble("sound_volume", soundVolume_);
     if (soundEnabled_) SoundManager::instance().playCoin();
 }
 void SettingsScene::applyBGM() {
     SoundManager::instance().setBGMEnabled(bgmEnabled_);
-    SoundManager::instance().setBGMVolume(bgmVolume_);
+    SoundManager::instance().setMusicVolume(bgmVolume_);
     preferences_->setBool("bgm_enabled", bgmEnabled_);
     preferences_->setDouble("bgm_volume", bgmVolume_);
 }
@@ -705,6 +711,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             for (auto& b : buttonOutlineButtons_) b->handleEvent(event);
             break;
         case Tab::Audio:
+            masterVolumeSlider_->handleEvent(event);
             soundOn_->handleEvent(event);  soundOff_->handleEvent(event);
             soundVolumeSlider_->handleEvent(event);
             bgmOn_->handleEvent(event);    bgmOff_->handleEvent(event);
@@ -1016,6 +1023,11 @@ void SettingsScene::update(float /*dt*/) {
             break;
         }
         case Tab::Audio: {
+            if (masterVolumeSlider_->consumeChanged()) {
+                masterVolume_ = masterVolumeSlider_->value() / 100.f;
+                SoundManager::instance().setMasterVolume(masterVolume_);
+                preferences_->setDouble("master_volume", masterVolume_);
+            }
             if (soundOn_->consumeClick() && !soundEnabled_) {
                 soundEnabled_ = true; refreshSelection(); applySound(); return;
             }
@@ -1024,7 +1036,7 @@ void SettingsScene::update(float /*dt*/) {
             }
             if (soundVolumeSlider_->consumeChanged()) {
                 soundVolume_ = soundVolumeSlider_->value() / 100.f;
-                SoundManager::instance().setVolume(soundVolume_);
+                SoundManager::instance().setSFXVolume(soundVolume_);
                 preferences_->setDouble("sound_volume", soundVolume_);
             }
             if (bgmOn_->consumeClick() && !bgmEnabled_) {
@@ -1035,7 +1047,7 @@ void SettingsScene::update(float /*dt*/) {
             }
             if (bgmVolumeSlider_->consumeChanged()) {
                 bgmVolume_ = bgmVolumeSlider_->value() / 100.f;
-                SoundManager::instance().setBGMVolume(bgmVolume_);
+                SoundManager::instance().setMusicVolume(bgmVolume_);
                 preferences_->setDouble("bgm_volume", bgmVolume_);
             }
             if (gamepadOn_->consumeClick() && !gamepadEnabled_) {
@@ -1255,11 +1267,12 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
-    r.toggle(labelSound_,       soundOn_, soundOff_);
-    r.slider(labelSoundVolume_, soundVolumeSlider_.get());
-    r.toggle(labelBGM_,         bgmOn_,   bgmOff_);
-    r.slider(labelBGMVolume_,   bgmVolumeSlider_.get());
-    r.toggle(labelGamepad_,     gamepadOn_, gamepadOff_);
+    r.slider(labelMasterVolume_, masterVolumeSlider_.get());
+    r.toggle(labelSound_,        soundOn_, soundOff_);
+    r.slider(labelSoundVolume_,  soundVolumeSlider_.get());
+    r.toggle(labelBGM_,          bgmOn_,   bgmOff_);
+    r.slider(labelBGMVolume_,    bgmVolumeSlider_.get());
+    r.toggle(labelGamepad_,      gamepadOn_, gamepadOff_);
 }
 
 void SettingsScene::renderOtherTab(Window& window, float contentX,

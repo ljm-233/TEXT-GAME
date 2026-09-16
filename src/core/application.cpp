@@ -74,8 +74,12 @@ void Application::registerDependencies() {
         // 音效
         SoundManager::instance().init();
         SoundManager::instance().setEnabled(prefs->getBool("sound_enabled", true));
-        SoundManager::instance().setVolume(
+        SoundManager::instance().setMasterVolume(
+            static_cast<float>(prefs->getDouble("master_volume", 1.0)));
+        SoundManager::instance().setSFXVolume(
             static_cast<float>(prefs->getDouble("sound_volume", 0.6)));
+        SoundManager::instance().setMusicVolume(
+            static_cast<float>(prefs->getDouble("bgm_volume", 0.4)));
     }
 
     // ===== Logger =====

@@ -44,7 +44,6 @@ std::vector<std::int16_t> generateArpeggio(const std::vector<float>& freqs,
 
 // BGM：一段 8 秒的循环小调（C 大调五声音阶）
 std::vector<std::int16_t> generateBGM() {
-    // 简单和弦进行：C - Am - F - G
     const float chordRoots[4][3] = {
         {261.63f, 329.63f, 392.00f}, // C
         {220.00f, 261.63f, 329.63f}, // Am
@@ -62,21 +61,18 @@ std::vector<std::int16_t> generateBGM() {
             float t = static_cast<float>(i) / kSampleRate;
             float progress = t / chordDuration;
 
-            // 每个和弦的淡入淡出
             float env = 1.f;
             if (progress < 0.1f)
                 env = progress / 0.1f;
             else if (progress > 0.85f)
                 env = (1.f - progress) / 0.15f;
 
-            // 三和弦叠加 + 低音量
             float sample = 0.f;
             for (int n = 0; n < 3; ++n) {
                 sample += std::sin(2.f * kPi * chordRoots[c][n] * t);
             }
             sample /= 3.f;
 
-            // 叠加一个柔和的低音
             float bass = std::sin(2.f * kPi * (chordRoots[c][0] * 0.5f) * t);
             sample = sample * 0.6f + bass * 0.4f;
 
@@ -115,13 +111,10 @@ void SoundManager::init() {
     loadSamples(bufGameOver_, generateArpeggio({392.00f, 311.13f, 261.63f}, 0.25f, 0.5f));
     loadSamples(bufCheckpoint_, generateArpeggio({880.f, 1174.66f}, 0.08f, 0.5f));
 
-    // BGM
     loadSamples(bufBGM_, generateBGM());
     bgm_ = std::make_unique<sf::Sound>(bufBGM_);
     bgm_->setLooping(true);
-    bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 
-    // 声部池：占位 buffer 是 silentBuf_（成员，生命周期覆盖 pool_）
     std::vector<std::int16_t> silent(64, 0);
     (void)silentBuf_.loadFromSamples(silent.data(), silent.size(), 1, kSampleRate,
                                      {sf::SoundChannel::Mono});
@@ -129,14 +122,37 @@ void SoundManager::init() {
     pool_.clear();
     for (int i = 0; i < 16; ++i)
         pool_.push_back(std::make_unique<sf::Sound>(silentBuf_));
+
+    // 应用初始音量
+    applySFXVolume();
+    applyMusicVolume();
 }
 
-void SoundManager::setVolume(float v) {
-    volume_ = std::clamp(v, 0.f, 1.f);
+void SoundManager::setMasterVolume(float v) {
+    masterVolume_ = std::clamp(v, 0.f, 1.f);
+    applySFXVolume();
+    applyMusicVolume();
+}
+
+void SoundManager::setSFXVolume(float v) {
+    sfxVolume_ = std::clamp(v, 0.f, 1.f);
+    applySFXVolume();
+}
+
+void SoundManager::setMusicVolume(float v) {
+    musicVolume_ = std::clamp(v, 0.f, 1.f);
+    applyMusicVolume();
+}
+
+void SoundManager::applySFXVolume() {
+    float v = masterVolume_ * sfxVolume_ * 100.f;
     for (auto& s : pool_)
-        s->setVolume(volume_ * 100.f);
+        s->setVolume(v);
+}
+
+void SoundManager::applyMusicVolume() {
     if (bgm_)
-        bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
+        bgm_->setVolume(masterVolume_ * musicVolume_ * 100.f);
 }
 
 void SoundManager::play(const sf::SoundBuffer& buf) {
@@ -146,7 +162,7 @@ void SoundManager::play(const sf::SoundBuffer& buf) {
     nextIndex_ = (nextIndex_ + 1) % pool_.size();
     slot->stop();
     slot->setBuffer(buf);
-    slot->setVolume(volume_ * 100.f);
+    slot->setVolume(masterVolume_ * sfxVolume_ * 100.f);
     slot->play();
 }
 
@@ -182,12 +198,6 @@ void SoundManager::setBGMEnabled(bool e) {
     if (!bgmEnabled_) {
         stopBGM();
     }
-}
-
-void SoundManager::setBGMVolume(float v) {
-    bgmVolume_ = std::clamp(v, 0.f, 1.f);
-    if (bgm_)
-        bgm_->setVolume(volume_ * bgmVolume_ * 100.f);
 }
 
 void SoundManager::playBGM() {

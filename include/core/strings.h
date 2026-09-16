@@ -14,6 +14,7 @@ constexpr const char* Off = "关";
 // ===== 主菜单 =====
 constexpr const char* StartGame = "启动游戏";
 constexpr const char* Calculator = "控制台";
+constexpr const char* LevelEditor = "关卡编辑器";
 constexpr const char* Settings = "设置";
 constexpr const char* ExitGame = "退出游戏";
 
@@ -114,6 +115,7 @@ constexpr const char* LabelNotification = "屏幕通知";
 constexpr const char* LabelNotificationPos = "通知位置";
 
 // ===== 新设置项 =====
+constexpr const char* LabelMasterVolume = "总音量";
 constexpr const char* LabelSound = "音效";
 constexpr const char* LabelSoundVolume = "音效音量";
 constexpr const char* LabelAutoPause = "失焦自动暂停";

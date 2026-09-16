@@ -127,6 +127,7 @@ private:
     std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
 
     // ================= Audio =================
+    std::unique_ptr<Slider> masterVolumeSlider_;
     std::unique_ptr<Button> soundOn_, soundOff_;
     std::unique_ptr<Slider> soundVolumeSlider_;
     std::unique_ptr<Button> bgmOn_, bgmOff_;
@@ -168,6 +169,7 @@ private:
     sf::Text labelParticles_, labelScreenShake_, labelShowColliders_;
     sf::Text labelButtonCorner_, labelButtonOutline_;
 
+    sf::Text labelMasterVolume_;
     sf::Text labelSound_, labelSoundVolume_;
     sf::Text labelBGM_, labelBGMVolume_;
     sf::Text labelGamepad_;
@@ -214,6 +216,7 @@ private:
     float   buttonCorner_;
     float   buttonOutline_;
 
+    float   masterVolume_;
     bool    soundEnabled_;
     float   soundVolume_;
     bool    bgmEnabled_;
