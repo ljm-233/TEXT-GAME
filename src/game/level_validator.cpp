@@ -214,18 +214,19 @@ std::string ValidationReport::summary() const {
     std::ostringstream oss;
 
     if (ok()) {
-        oss << "通过（" << reachablePlatforms << "/" << totalPlatforms
-            << " 平台可达）";
+        oss << "OK (" << reachablePlatforms << "/" << totalPlatforms
+            << " platforms reachable)";
         return oss.str();
     }
 
-    oss << "失败";
-    if (!spawnValid)          oss << " | 出生点悬空";
-    if (!goalReachable)       oss << " | 终点不可达";
-    oss << " | 平台 " << reachablePlatforms << "/" << totalPlatforms << " 可达";
+    oss << "FAIL";
+    if (!spawnValid)          oss << " | spawn is floating";
+    if (!goalReachable)       oss << " | goal unreachable";
+    oss << " | platforms " << reachablePlatforms << "/" << totalPlatforms
+        << " reachable";
 
     if (!unreachable.empty()) {
-        oss << "\n  不可达元素 " << unreachable.size() << " 个:";
+        oss << "\n  " << unreachable.size() << " unreachable items:";
         for (const auto& u : unreachable) {
             oss << "\n    - " << u.kind << " @ (" << u.tileX << "," << u.tileY << ")";
         }

@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
     if (argc > 1) dir = argv[1];
 
     if (!fs::exists(dir)) {
-        std::cerr << "目录不存在: " << dir << "\n";
+        std::cerr << "目录不存在: " << dir << "\n"; // i18n-skip
         return 1;
     }
 
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         Level level;
         if (!level.loadFromFile(path.string())) {
             std::cerr << "[???] " << path.filename().string()
-                      << ": 无法加载\n";
+                      << ": 无法加载\n"; // i18n-skip
             ++unloadable;
             continue;
         }
@@ -49,9 +49,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cout << "\n合计: " << total << " 个关卡, "
-              << failed << " 个失败, "
-              << unloadable << " 个无法加载\n";
+    std::cout << "\n合计: " << total << " 个关卡, " // i18n-skip
+              << failed << " 个失败, " // i18n-skip
+              << unloadable << " 个无法加载\n"; // i18n-skip
 
     return (failed > 0 || unloadable > 0) ? 1 : 0;
 }

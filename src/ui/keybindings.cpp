@@ -36,11 +36,11 @@ void KeyBindings::set(Action a, sf::Keyboard::Key k) {
 
 const char* KeyBindings::actionName(Action a) {
     switch (a) {
-        case MoveLeft:  return "左移";
-        case MoveRight: return "右移";
-        case Jump:      return "跳跃";
-        case Pause:     return "暂停";
-        case Restart:   return "重开";
+        case MoveLeft:  return "左移"; // i18n-skip
+        case MoveRight: return "右移"; // i18n-skip
+        case Jump:      return "跳跃"; // i18n-skip
+        case Pause:     return "暂停"; // i18n-skip
+        case Restart:   return "重开"; // i18n-skip
         default:        return "?";
     }
 }

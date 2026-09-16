@@ -290,3 +290,21 @@ TEXT-GAME 控制台=TEXT-GAME Console
 下一关=Next Level
 重玩=Replay
 重试=Retry
+
+# ===== 窗口标题 =====
+存档选择=Save Select
+选关=Level Select
+关卡编辑器=Level Editor
+控制台=Console
+第 =Level 
+ 关=
+ 关 (已暂停)= (Paused)
+
+# ===== 按键绑定 =====
+左移=Move Left
+右移=Move Right
+跳跃=Jump
+暂停=Pause
+重开=Restart
+按下新键...=Press new key...
+点击按钮后按新键绑定，Esc 取消=Click then press a key. Esc to cancel.

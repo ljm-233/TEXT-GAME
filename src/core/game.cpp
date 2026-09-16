@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include "text_strings.h"
 
 Game::Game(std::shared_ptr<Window>        window,
            std::shared_ptr<Logger>        logger,
@@ -106,12 +107,12 @@ void Game::updateWindowTitle(const Scene& scene) {
 
     if (hint.empty()) {
         switch (sceneManager_->currentId()) {
-            case SceneId::MainMenu:    hint = "";          break;
-            case SceneId::SaveSelect:  hint = "存档选择";   break;
-            case SceneId::LevelSelect: hint = "选关";       break;
-            case SceneId::Settings:    hint = "设置";       break;
-            case SceneId::Console:     hint = "控制台";     break;
-            case SceneId::Editor:      hint = "关卡编辑器"; break;
+            case SceneId::MainMenu:    hint = "";                              break;
+            case SceneId::SaveSelect:  hint = Str::T(Str::WinTitleSaveSelect);  break;
+            case SceneId::LevelSelect: hint = Str::T(Str::WinTitleLevelSelect); break;
+            case SceneId::Settings:    hint = Str::T(Str::WinTitleSettings);    break;
+            case SceneId::Console:     hint = Str::T(Str::WinTitleConsole);     break;
+            case SceneId::Editor:      hint = Str::T(Str::WinTitleEditor);      break;
             default: break;
         }
     }

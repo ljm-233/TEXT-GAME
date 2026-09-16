@@ -67,9 +67,13 @@ void GameScene::onResume() {
 
 std::string GameScene::windowTitleHint() const {
     if (paused_) {
-        return "第 " + std::to_string(levelIndex_) + " 关 (已暂停)";
+        return Str::T(Str::WinTitleLevelPrefix) +
+               std::to_string(levelIndex_) +
+               Str::T(Str::WinTitlePausedSuffix);
     }
-    return "第 " + std::to_string(levelIndex_) + " 关";
+    return Str::T(Str::WinTitleLevelPrefix) +
+           std::to_string(levelIndex_) +
+           Str::T(Str::WinTitleLevelSuffix);
 }
 
 void GameScene::subscribeWorldEvents() {

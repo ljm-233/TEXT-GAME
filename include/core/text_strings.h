@@ -301,4 +301,23 @@ inline std::string T(const char* key) {
     return Lang::instance().tr(key);
 }
 
+// ===== 窗口标题 =====
+constexpr const char* WinTitleSaveSelect  = "存档选择";
+constexpr const char* WinTitleLevelSelect = "选关";
+constexpr const char* WinTitleSettings    = "设置";
+constexpr const char* WinTitleConsole     = "控制台";
+constexpr const char* WinTitleEditor      = "关卡编辑器";
+constexpr const char* WinTitleLevelPrefix = "第 ";
+constexpr const char* WinTitleLevelSuffix = " 关";
+constexpr const char* WinTitlePausedSuffix = " 关 (已暂停)";
+
+// ===== 按键绑定 =====
+constexpr const char* KeyActionLeft    = "左移";
+constexpr const char* KeyActionRight   = "右移";
+constexpr const char* KeyActionJump    = "跳跃";
+constexpr const char* KeyActionPause   = "暂停";
+constexpr const char* KeyActionRestart = "重开";
+constexpr const char* KeyPressNew      = "按下新键...";
+constexpr const char* KeyBindHint      = "点击按钮后按新键绑定，Esc 取消";
+
 } // namespace Str

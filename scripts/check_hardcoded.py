@@ -15,6 +15,7 @@
     - 前面 30 字符内有 Str::T( 的视为已翻译，标 OK
     - 跳过 text_strings.h（字符串定义中心）
     - 跳过 logger_->info/warn/error 等开发者日志
+    - 行尾带 // i18n-skip 的行直接忽略
 """
 
 import re
@@ -24,6 +25,7 @@ from pathlib import Path
 CN_PATTERN = re.compile(r'[\u4e00-\u9fff]')
 STR_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 INLINE_COMMENT = re.compile(r'//.*$')
+I18N_SKIP = re.compile(r'//\s*i18n-skip')
 
 SKIP_FILES = {
     'text_strings.h',
@@ -43,6 +45,10 @@ SKIP_LINE_PATTERNS = [
 def scan_line(line):
     """返回这行里 (is_hardcoded, content) 的列表"""
     results = []
+
+    # 整行跳过标记
+    if I18N_SKIP.search(line):
+        return results
 
     for pat in SKIP_LINE_PATTERNS:
         if pat.search(line):
@@ -68,7 +74,7 @@ def main():
     found = []
     total_cn = 0
 
-    for base in ('src', 'include'):
+    for base in ('src', 'include', 'tools'):
         for path in (root / base).rglob('*'):
             if not path.is_file():
                 continue
@@ -89,7 +95,7 @@ def main():
                 continue
 
     print("=== 中文硬编码检测 ===")
-    print("扫描目录: src/  include/")
+    print("扫描目录: src/  include/  tools/")
     print(f"中文字符串字面量总数: {total_cn}")
     print(f"疑似硬编码: {len(found)}")
     print()
@@ -111,6 +117,7 @@ def main():
     print("  1. 如果该字符串已经通过 Str::T(Str::XXX) 使用，忽略")
     print("  2. 如果是纯符号/数字/英文标识，忽略")
     print("  3. 如果是新增的 UI 文字，加入 text_strings.h 并走 Str::T()")
+    print("  4. 确定要保留的中文，在该行行尾加 // i18n-skip")
     return 1
 
 

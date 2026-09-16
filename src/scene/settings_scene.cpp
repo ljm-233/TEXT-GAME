@@ -365,8 +365,11 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
     for (const auto& code : Lang::instance().available()) {
         std::string label = code;
-        if (code == "zh") label = "中文";
-        else if (code == "en") label = "English";
+        if (code == "zh")         label = "中文";
+        else if (code == "zh-TW") label = "繁體中文";
+        else if (code == "en")    label = "English";
+        else if (code == "ja")    label = "日本語";
+        else if (code == "ko")    label = "한국어";
         languageButtons_.push_back(std::make_unique<Button>(
             label, font_,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
@@ -1309,7 +1312,7 @@ void SettingsScene::update(float /*dt*/) {
             for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
                 if (keyBindingButtons_[i]->consumeClick()) {
                     listeningAction_ = i;
-                    keyBindingButtons_[i]->setText("按下新键...");
+                    keyBindingButtons_[i]->setText(Str::T(Str::KeyPressNew));
                     return;
                 }
             }
@@ -1543,7 +1546,7 @@ void SettingsScene::renderKeysTab(Window& window, float contentX,
         auto act = static_cast<KeyBindings::Action>(i);
 
         // 动作名
-        sf::Text label(font_, toSf(KeyBindings::actionName(act)),
+        sf::Text label(font_, toSf(Str::T(KeyBindings::actionName(act))),
                        scaledFontSize(20));
         label.setFillColor(sf::Color(230, 230, 230));
         label.setPosition({contentX, y + 8.f});
@@ -1560,7 +1563,7 @@ void SettingsScene::renderKeysTab(Window& window, float contentX,
         y += 50.f;
     }
 
-    sf::Text hint(font_, toSf("点击按钮后按新键绑定，Esc 取消"),
+    sf::Text hint(font_, toSf(Str::T(Str::KeyBindHint)),
                   scaledFontSize(14));
     hint.setFillColor(sf::Color(180, 180, 200));
     hint.setPosition({contentX, y + 8.f});
