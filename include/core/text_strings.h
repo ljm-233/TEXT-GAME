@@ -152,6 +152,9 @@ constexpr const char* LockedHint = "未解锁";
 constexpr const char* LabelGamepad        = "手柄支持";
 constexpr const char* LabelGamepadDeadzone = "摇杆死区";
 
+// ===== 生命值 =====
+constexpr const char* LabelInitialLives = "初始生命";
+
 // ===== 游戏场景 HUD =====
 constexpr const char* HudSave   = "存档: ";
 constexpr const char* HudLevel  = "关卡: ";
@@ -180,6 +183,7 @@ constexpr const char* NotifEnterLevel         = "进入第 ";
 constexpr const char* NotifLevelSuffix        = " 关";
 constexpr const char* NotifAllClear           = "全部通关！";
 constexpr const char* NotifRespawned          = "已重生";
+constexpr const char* NotifLifeExhausted      = "生命耗尽，重新开始";
 
 // ===== 关卡开场 =====
 constexpr const char* IntroLevelPrefix = "关卡 ";

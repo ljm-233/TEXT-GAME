@@ -12,7 +12,8 @@ public:
     AABB bounds() const override;
     Type type() const override { return Type::Checkpoint; }
 
-    void activate() { active_ = true; }
+    void activate()   { active_ = true; }
+    void deactivate() { active_ = false; }
     bool isActive() const { return active_; }
     Vec2 respawnPos() const;
 

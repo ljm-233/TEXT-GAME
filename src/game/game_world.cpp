@@ -162,8 +162,8 @@ void GameWorld::update(float dt) {
         bus_.emit(EvHurt{player_->bounds().center()});
         if (screenShake_) camera_.shake(8.f, 0.3f);
         if (lives_ <= 0) {
-            state_ = State::GameOver;
-            bus_.emit(EvGameOver{});
+            pendingRestart_ = true;
+            respawnDelayTimer_ = 0.5f;
             return;
         }
     }
@@ -172,6 +172,23 @@ void GameWorld::update(float dt) {
     if (checkGoalReached()) {
         state_ = State::LevelComplete;
         bus_.emit(EvLevelComplete{});
+        return;
+    }
+
+    // 生命耗尽 → 延迟 0.5 秒后从最近的存档点重生
+    if (pendingRestart_) {
+        if (respawnDelayTimer_ > 0.f) {
+            respawnDelayTimer_ -= dt;
+            // 冻结游戏逻辑，但保留粒子和摄像机效果
+            if (particlesEnabled_) particles_.update(dt);
+            camera_.updateShake(dt);
+            if (player_) camera_.follow(player_->bounds().center(),
+                                        {0.f, 0.f}, dt);
+            return;
+        }
+        // 延迟结束，触发事件并从存档点重生
+        bus_.emit(EvLifeExhausted{});
+        respawnAtCheckpoint();
         return;
     }
 
@@ -227,8 +244,8 @@ void GameWorld::checkCollisionsSafe() {
                     bus_.emit(EvHurt{pb.center()});
                     if (screenShake_) camera_.shake(8.f, 0.3f);
                     if (lives_ <= 0) {
-                        state_ = State::GameOver;
-                        bus_.emit(EvGameOver{});
+                        pendingRestart_ = true;
+                        respawnDelayTimer_ = 0.5f;
                         return;
                     }
                 }
@@ -246,7 +263,12 @@ void GameWorld::checkCollisionsSafe() {
             case GameObject::Type::Checkpoint: {
                 auto* cp = static_cast<Checkpoint*>(obj.get());
                 if (!cp->isActive()) {
+                    // ⭐ 取消上一个激活的存档点
+                    if (activeCheckpoint_ && activeCheckpoint_ != cp) {
+                        activeCheckpoint_->deactivate();
+                    }
                     cp->activate();
+                    activeCheckpoint_ = cp;
                     player_->setSpawn(cp->respawnPos());
                     bus_.emit(EvCheckpoint{cp->bounds().center()});
                 }
@@ -278,8 +300,8 @@ void GameWorld::checkCollisionsSafe() {
                     bus_.emit(EvHurt{pb.center()});
                     if (screenShake_) camera_.shake(8.f, 0.3f);
                     if (lives_ <= 0) {
-                        state_ = State::GameOver;
-                        bus_.emit(EvGameOver{});
+                        pendingRestart_ = true;
+                        respawnDelayTimer_ = 0.5f;
                         return;
                     }
                 }
@@ -393,13 +415,33 @@ void GameWorld::render(sf::RenderTarget& target) {
     if (showColliders_) renderDebugColliders(target);
 }
 
+void GameWorld::respawnAtCheckpoint() {
+    // ⭐ 从最近的存档点重生：
+    //   - 生命重置为初始值
+    //   - 金币 / 敌人 / 已激活的存档点 保持不变
+    //   - 玩家位置回到 spawn_（激活 checkpoint 时已设为 checkpoint 位置）
+    lives_ = initialLives_;
+    state_ = State::Playing;
+    pendingRestart_ = false;
+    respawnDelayTimer_ = 0.f;
+    accumulator_ = 0.f;
+    particles_.clear();
+
+    if (player_) {
+        player_->respawn(player_->spawn());
+        camera_.snapTo(player_->bounds().center());
+    }
+}
+
 void GameWorld::reset() {
-    lives_ = 3;
+    lives_ = initialLives_;
     coins_ = 0;
     state_ = State::Playing;
     accumulator_ = 0.f;
     particles_.clear();
 
+    // ⭐ 对象即将销毁，先清空指针避免悬垂
+    activeCheckpoint_ = nullptr;
     objects_.clear();
     doors_.clear();
     if (player_) player_->resetKeys();

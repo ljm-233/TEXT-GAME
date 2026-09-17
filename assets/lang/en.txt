@@ -308,3 +308,7 @@ TEXT-GAME 控制台=TEXT-GAME Console
 重开=Restart
 按下新键...=Press new key...
 点击按钮后按新键绑定，Esc 取消=Click then press a key. Esc to cancel.
+
+# ===== 生命值 =====
+初始生命=Initial Lives
+生命耗尽，重新开始=Lives exhausted. Restarting...

@@ -1,18 +1,22 @@
 #include "game_scene.h"
 #include "text_strings.h"
-#include "focus_group.h"
 #include "utf8.h"
 #include "notification.h"
 #include "sound_manager.h"
 #include "keybindings.h"
+#include "game_constants.h"
+#include "focus_group.h"
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
+#include <sstream>
 #include <type_traits>
 #include <variant>
 
 namespace {
 // ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
-constexpr float kbaseTime = 30.f;
+constexpr float kBaseTime = 30.f;
 constexpr float kPerCoinTime = 3.f;
 }
 
@@ -94,11 +98,11 @@ void GameScene::subscribeWorldEvents() {
             } else if constexpr (std::is_same_v<T, EvStomped>) {
                 SoundManager::instance().playStomp();
                 if (particlesOn) world_->particles().emitStomp(ev.pos);
-                hitstopTimer_ = 0.06f;   // 60ms 冻结
+                hitstopTimer_ = 0.06f;
             } else if constexpr (std::is_same_v<T, EvHurt>) {
                 SoundManager::instance().playHurt();
                 if (particlesOn) world_->particles().emitHurt(ev.pos);
-                hitstopTimer_ = 0.04f;   // 40ms 冻结
+                hitstopTimer_ = 0.04f;
             } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
                 SoundManager::instance().playCheckpoint();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
@@ -118,13 +122,19 @@ void GameScene::subscribeWorldEvents() {
                         std::to_string(finalStars_) +
                         Str::T(Str::NotifStarSuffix),
                     NotificationType::Success, 5.f);
-            } else if constexpr (std::is_same_v<T, EvGameOver>) {
-                finalCoins_      = world_->coins();
-                finalTotalCoins_ = world_->totalCoins();
-                finalStars_      = 0;
+
+                screenFlashTimer_    = 0.35f;
+                screenFlashDuration_ = 0.35f;
+                screenFlashColor_    = sf::Color(120, 255, 150);
+            } else if constexpr (std::is_same_v<T, EvLifeExhausted>) {
                 SoundManager::instance().playGameOver();
                 NotificationSystem::instance().push(
-                    Str::T(Str::NotifGameOverRetry), NotificationType::Error, 5.f);
+                    Str::T(Str::NotifLifeExhausted),
+                    NotificationType::Error, 4.f);
+
+                // 不闪屏——延迟由 GameWorld 处理
+                levelTime_ = 0.f;
+                lastOverlayState_ = GameWorld::State::Playing;
             }
         }, e);
     });
@@ -154,10 +164,12 @@ bool GameScene::loadLevel(int index) {
 
     world_ = std::make_unique<GameWorld>(std::move(level), index);
     world_->setViewSize(kLogicalW, kLogicalH);
+    world_->setInitialLives(preferences_->getInt("initial_lives", 3));
     levelIndex_ = index;
 
     levelTime_ = 0.f;
     hitstopTimer_ = 0.f;
+    screenFlashTimer_ = 0.f;
     finalStars_ = 0;
     finalCoins_ = 0;
     finalTotalCoins_ = 0;
@@ -173,7 +185,6 @@ bool GameScene::loadLevel(int index) {
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
 
-    // ⭐ 新建 world 后立即订阅事件（每次 loadLevel 都会重建 world）
     subscribeWorldEvents();
 
     return true;
@@ -211,14 +222,10 @@ void GameScene::refreshHud() {
     hudText_.setString(toSf(hud));
 }
 
-// ============================================================
-// 星级计算
-// ============================================================
-
 int GameScene::targetTime() const {
     if (!world_) return 60;
     int totalCoins = world_->totalCoins();
-    return static_cast<int>(kbaseTime + totalCoins * kPerCoinTime);
+    return static_cast<int>(kBaseTime + totalCoins * kPerCoinTime);
 }
 
 int GameScene::calcStars() const {
@@ -240,40 +247,28 @@ void GameScene::applyStars() {
 void GameScene::rebuildOverlayButtons() {
     overlayButtons_.clear();
 
+    // 现在只有 LevelComplete 需要按钮
+    if (world_->state() != GameWorld::State::LevelComplete) return;
+
     const float winW = lastOverlayWinW_;
     const float winH = lastOverlayWinH_;
-    const auto  state = world_->state();
 
     const float bw = 180.f;
     const float bh = 50.f;
     const float gap = 15.f;
+    const float totalW = bw * 3.f + gap * 2.f;
+    const float x0 = (winW - totalW) * 0.5f;
+    const float y  = winH * 0.5f + 130.f;
 
-    if (state == GameWorld::State::LevelComplete) {
-        const float totalW = bw * 3.f + gap * 2.f;
-        const float x0 = (winW - totalW) * 0.5f;
-        const float y  = winH * 0.5f + 130.f;
-
-        overlayButtons_.push_back(std::make_unique<Button>(
-            Str::T(Str::BtnNextLevel), *font_,
-            sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
-        overlayButtons_.push_back(std::make_unique<Button>(
-            Str::T(Str::BtnReplay), *font_,
-            sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
-        overlayButtons_.push_back(std::make_unique<Button>(
-            Str::T(Str::Back), *font_,
-            sf::Vector2f{x0 + (bw + gap) * 2.f, y}, sf::Vector2f{bw, bh}, 22));
-    } else if (state == GameWorld::State::GameOver) {
-        const float totalW = bw * 2.f + gap;
-        const float x0 = (winW - totalW) * 0.5f;
-        const float y  = winH * 0.5f + 60.f;
-
-        overlayButtons_.push_back(std::make_unique<Button>(
-            Str::T(Str::BtnRetry), *font_,
-            sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
-        overlayButtons_.push_back(std::make_unique<Button>(
-            Str::T(Str::Back), *font_,
-            sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
-    }
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::BtnNextLevel), *font_,
+        sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::BtnReplay), *font_,
+        sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::Back), *font_,
+        sf::Vector2f{x0 + (bw + gap) * 2.f, y}, sf::Vector2f{bw, bh}, 22));
 }
 
 void GameScene::refreshOverlayLayout(float winW, float winH) {
@@ -293,24 +288,15 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
         return;
     }
 
-    // ⭐ 状态变化时重建按钮
     rebuildOverlayButtons();
 
     overlayBg_.setSize({winW, winH});
     overlayBg_.setFillColor(sf::Color(0, 0, 0, 180));
 
-    std::string title;
-    if (state == GameWorld::State::LevelComplete) {
-        title = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex_) +
-                " " + Str::T(Str::LevelCompleteTitle);
-    } else {
-        title = Str::T(Str::GameOverTitle);
-    }
+    std::string title = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex_) +
+                        " " + Str::T(Str::LevelCompleteTitle);
     overlayTitle_.setString(toSf(title));
-    overlayTitle_.setFillColor(
-        state == GameWorld::State::LevelComplete
-            ? sf::Color(100, 240, 120)
-            : sf::Color(240, 100, 100));
+    overlayTitle_.setFillColor(sf::Color(100, 240, 120));
     auto tb = overlayTitle_.getLocalBounds();
     overlayTitle_.setOrigin({tb.position.x + tb.size.x / 2.f,
                              tb.position.y + tb.size.y / 2.f});
@@ -340,7 +326,7 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                             tb2.position.y + tb2.size.y / 2.f});
     overlayTime_.setPosition({winW / 2.f, winH / 2.f - 15.f});
 
-    if (state == GameWorld::State::LevelComplete) {
+    {
         std::string stars;
         for (int i = 0; i < 3; ++i) {
             stars += (i < finalStars_) ? "\u2605" : "\u2606";
@@ -351,24 +337,14 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
         overlayStars_.setOrigin({sb.position.x + sb.size.x / 2.f,
                                  sb.position.y + sb.size.y / 2.f});
         overlayStars_.setPosition({winW / 2.f, winH / 2.f + 60.f});
-    } else {
-        overlayStars_.setString("");
     }
 
-    std::string hint;
-    if (state == GameWorld::State::LevelComplete) {
-        hint = Str::T(Str::OverlayHintComplete);
-    } else {
-        hint = Str::T(Str::OverlayHintFailed);
-    }
+    std::string hint = Str::T(Str::OverlayHintComplete);
     overlaySubHint_.setString(toSf(hint));
     auto sb2 = overlaySubHint_.getLocalBounds();
     overlaySubHint_.setOrigin({sb2.position.x + sb2.size.x / 2.f,
                                sb2.position.y + sb2.size.y / 2.f});
-
-    float hintY = winH / 2.f + 140.f;
-    if (state == GameWorld::State::LevelComplete) hintY = winH / 2.f + 210.f;
-    overlaySubHint_.setPosition({winW / 2.f, hintY});
+    overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 210.f});
 }
 
 void GameScene::handleEvent(const sf::Event& event) {
@@ -400,6 +376,8 @@ void GameScene::handleEvent(const sf::Event& event) {
             if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
                 world_->reset();
                 levelTime_ = 0.f;
+                hitstopTimer_ = 0.f;
+                screenFlashTimer_ = 0.f;
                 finalStars_ = 0;
                 finalCoins_ = 0;
                 finalTotalCoins_ = 0;
@@ -440,6 +418,7 @@ void GameScene::handleEvent(const sf::Event& event) {
             world_->reset();
             levelTime_ = 0.f;
             hitstopTimer_ = 0.f;
+            screenFlashTimer_ = 0.f;
             lastOverlayState_ = GameWorld::State::Playing;
             NotificationSystem::instance().push(Str::T(Str::NotifRespawned),
                                                 NotificationType::Info);
@@ -450,6 +429,8 @@ void GameScene::handleEvent(const sf::Event& event) {
 }
 
 void GameScene::update(float dt) {
+    if (screenFlashTimer_ > 0.f) screenFlashTimer_ -= dt;
+
     if (paused_) {
         pauseMenu_->update(dt);
         auto action = pauseMenu_->consumeAction();
@@ -476,7 +457,6 @@ void GameScene::update(float dt) {
         // ⭐ 处理 overlay 按钮点击
         if (state == GameWorld::State::LevelComplete && overlayButtons_.size() >= 3) {
             if (overlayButtons_[0]->consumeClick()) {
-                // 下一关
                 if (levelIndex_ + 1 <= kMaxLevels && loadLevel(levelIndex_ + 1)) {
                     NotificationSystem::instance().push(
                         Str::T(Str::NotifEnterLevel) +
@@ -493,7 +473,6 @@ void GameScene::update(float dt) {
                 return;
             }
             if (overlayButtons_[1]->consumeClick()) {
-                // 重玩
                 world_->reset();
                 levelTime_ = 0.f;
                 finalStars_ = 0;
@@ -503,18 +482,6 @@ void GameScene::update(float dt) {
                 return;
             }
             if (overlayButtons_[2]->consumeClick()) {
-                nextScene_ = SceneId::Back;
-                return;
-            }
-        } else if (state == GameWorld::State::GameOver && overlayButtons_.size() >= 2) {
-            if (overlayButtons_[0]->consumeClick()) {
-                // 重试
-                world_->reset();
-                levelTime_ = 0.f;
-                lastOverlayState_ = GameWorld::State::Playing;
-                return;
-            }
-            if (overlayButtons_[1]->consumeClick()) {
                 nextScene_ = SceneId::Back;
                 return;
             }
@@ -532,8 +499,6 @@ void GameScene::update(float dt) {
 
     world_->update(dt);
     if (parallax_) parallax_->update(dt);
-
-    // 状态变化的响应由 EventBus 的 EvLevelComplete / EvGameOver 处理
 }
 
 void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH) {
@@ -551,7 +516,6 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
     }
     rt.draw(overlaySubHint_);
 
-    // ⭐ 渲染按钮 + 注册焦点（手柄导航）
     for (auto& b : overlayButtons_) b->render(rt);
 
     std::vector<Button*> items;
@@ -615,5 +579,17 @@ void GameScene::render(Window& window) {
     if (paused_ && pauseMenu_) {
         pauseMenu_->relayout({winW, winH});
         pauseMenu_->render(rt);
+    }
+
+    // 屏幕闪光（最上层）
+    if (screenFlashTimer_ > 0.f) {
+        float t = screenFlashTimer_ / screenFlashDuration_;
+        t = std::clamp(t, 0.f, 1.f);
+
+        sf::RectangleShape flash({winW, winH});
+        sf::Color c = screenFlashColor_;
+        c.a = static_cast<std::uint8_t>(t * 200.f);
+        flash.setFillColor(c);
+        rt.draw(flash);
     }
 }

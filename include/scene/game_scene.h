@@ -61,6 +61,11 @@ private:
     int   finalCoins_ = 0;
     int   finalTotalCoins_ = 0;
 
+    // 屏幕闪光
+    float     screenFlashTimer_ = 0.f;
+    float     screenFlashDuration_ = 0.3f;
+    sf::Color screenFlashColor_ = sf::Color::White;
+
     std::unique_ptr<ParallaxBackground> parallax_;
     std::unique_ptr<LevelIntro>         intro_;
 

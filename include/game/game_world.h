@@ -11,6 +11,8 @@
 #include "key.h"
 #include "door.h"
 #include "spike.h"
+#include "checkpoint.h"
+#include <algorithm>
 
 class GameWorld {
 public:
@@ -23,6 +25,10 @@ public:
     void render(sf::RenderTarget& target);
 
     void setViewSize(float w, float h);
+    void setInitialLives(int n) {
+        initialLives_ = std::max(1, n);
+        lives_ = initialLives_;
+    }
     void setShowColliders(bool b) { showColliders_ = b; }
     void setScreenShake(bool b) { screenShake_ = b; }
     void setParticles(bool b) { particlesEnabled_ = b; }
@@ -46,6 +52,7 @@ public:
     ParticleSystem& particles() { return particles_; }
 
     void reset();
+    void respawnAtCheckpoint();   // 从最近的存档点重生（生命重置，金币保留）
 
     int lives() const { return lives_; }
     int coins() const { return coins_; }
@@ -67,15 +74,19 @@ private:
 
     std::vector<std::unique_ptr<GameObject>> objects_;
     Player* player_ = nullptr;
+    Checkpoint* activeCheckpoint_ = nullptr;   // 当前激活的存档点（最多一个）
 
     Camera camera_;
     ParticleSystem particles_;
     EventBus bus_;
 
     int lives_ = 3;
+    int initialLives_ = 3;
     int coins_ = 0;
     int totalCoins_ = 0;
     State state_ = State::Playing;
+    bool  pendingRestart_ = false;   // 生命耗尽，等待延迟后重生
+    float respawnDelayTimer_ = 0.f;  // 生命耗尽后的重生延迟
 
     float accumulator_ = 0.f;
 

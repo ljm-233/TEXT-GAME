@@ -116,6 +116,7 @@ private:
     std::vector<std::unique_ptr<Button>> consolePromptButtons_;
 
     // ================= Graphics =================
+    std::vector<std::unique_ptr<Button>> initialLivesButtons_;
     std::unique_ptr<Button> animationOn_, animationOff_;
     std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
     std::unique_ptr<Button> notificationOn_, notificationOff_;
@@ -174,6 +175,7 @@ private:
     sf::Text labelNotification_, labelNotificationPos_;
     sf::Text labelPseudo3D_, labelParallax_;
     sf::Text labelPlayerAnim_, labelLevelIntro_;
+    sf::Text labelInitialLives_;
     sf::Text labelParticles_, labelScreenShake_, labelShowColliders_;
     sf::Text labelButtonCorner_, labelButtonOutline_;
 
@@ -224,6 +226,7 @@ private:
     bool    showColliders_;
     float   buttonCorner_;
     float   buttonOutline_;
+    int     initialLives_ = 3;
 
     float   masterVolume_;
     bool    soundEnabled_;

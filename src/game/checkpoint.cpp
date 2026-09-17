@@ -26,7 +26,8 @@ void Checkpoint::update(float dt, const Level& /*level*/) {
 
 AABB Checkpoint::bounds() const {
     float ts = static_cast<float>(tileSize_);
-    return {pos_.x, pos_.y, ts, ts};
+    // 向上扩展一格，让玩家站在 checkpoint 上方时也能触发
+    return {pos_.x, pos_.y - ts, ts, ts * 2.f};
 }
 
 Vec2 Checkpoint::respawnPos() const {

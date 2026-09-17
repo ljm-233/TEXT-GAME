@@ -191,6 +191,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelAnimationSpeed_ (font, toSf(Str::LabelAnimationSpeed), scaledFontSize(20)),
       labelNotification_   (font, toSf(Str::LabelNotification),   scaledFontSize(20)),
       labelNotificationPos_(font, toSf(Str::LabelNotificationPos),scaledFontSize(20)),
+      labelInitialLives_   (font, toSf(Str::LabelInitialLives),   scaledFontSize(20)),
       labelPseudo3D_       (font, toSf(Str::LabelPseudo3D),       scaledFontSize(20)),
       labelParallax_       (font, toSf(Str::LabelParallax),       scaledFontSize(20)),
       labelPlayerAnim_     (font, toSf(Str::LabelPlayerAnimation),scaledFontSize(20)),
@@ -250,6 +251,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     animationSpeedIndex_ = indexOfAnimSpeed(preferences_->getInt("animation_speed_index", 1));
     notificationEnabled_ = preferences_->getBool("notification_enabled", true);
     notificationPosition_= indexOfPos(preferences_->getInt("notification_position", 1));
+    initialLives_        = preferences_->getInt("initial_lives", 3);
     pseudo3D_            = preferences_->getBool("pseudo_3d", true);
     parallaxEnabled_     = preferences_->getBool("parallax", true);
     playerAnimEnabled_   = preferences_->getBool("player_animation", true);
@@ -299,6 +301,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelConsoleBlink_, &labelConsolePrompt_,
                     &labelAnimation_, &labelAnimationSpeed_,
                     &labelNotification_, &labelNotificationPos_,
+                    &labelInitialLives_,
                     &labelPseudo3D_, &labelParallax_, &labelPlayerAnim_,
                     &labelLevelIntro_, &labelParticles_, &labelScreenShake_,
                     &labelShowColliders_,
@@ -402,6 +405,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
 
     // Graphics
+    {
+        const char* kLivesLabels[] = {"1", "3", "5", "10", "100"};
+        for (int i = 0; i < 5; ++i) {
+            initialLivesButtons_.push_back(std::make_unique<Button>(
+                kLivesLabels[i], font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
+        }
+    }
     { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_ = std::move(on); animationOff_ = std::move(off); }
     for (int i = 0; i < kanimSpeedCount; ++i)
         animationSpeedButtons_.push_back(std::make_unique<Button>(
@@ -525,6 +536,7 @@ void SettingsScene::refreshLabels() {
     // ===== Graphics tab =====
     setLabel(labelAnimation_,       Str::LabelAnimation);
     setLabel(labelAnimationSpeed_,  Str::LabelAnimationSpeed);
+    setLabel(labelInitialLives_,    Str::LabelInitialLives);
     setLabel(labelPseudo3D_,        Str::LabelPseudo3D);
     setLabel(labelParallax_,        Str::LabelParallax);
     setLabel(labelPlayerAnim_,      Str::LabelPlayerAnimation);
@@ -698,6 +710,13 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kPosCount; ++i)
         notificationPosButtons_[i]->setSelected(i == notificationPosition_);
 
+    {
+        const int kLivesOptions[] = {1, 3, 5, 10, 100};
+        int idx = 0;
+        for (int i = 0; i < 5; ++i) if (kLivesOptions[i] == initialLives_) idx = i;
+        for (int i = 0; i < 5; ++i)
+            initialLivesButtons_[i]->setSelected(i == idx);
+    }
     pseudo3DOn_->setSelected(pseudo3D_);        pseudo3DOff_->setSelected(!pseudo3D_);
     parallaxOn_->setSelected(parallaxEnabled_); parallaxOff_->setSelected(!parallaxEnabled_);
     playerAnimOn_->setSelected(playerAnimEnabled_); playerAnimOff_->setSelected(!playerAnimEnabled_);
@@ -902,6 +921,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             for (auto& b : consolePromptButtons_) b->handleEvent(event);
             break;
         case Tab::Graphics:
+            for (auto& b : initialLivesButtons_) b->handleEvent(event);
             animationOn_->handleEvent(event);    animationOff_->handleEvent(event);
             for (auto& b : animationSpeedButtons_) b->handleEvent(event);
             notificationOn_->handleEvent(event); notificationOff_->handleEvent(event);
@@ -1182,6 +1202,19 @@ void SettingsScene::update(float /*dt*/) {
             break;
         }
         case Tab::Graphics: {
+            {
+                const int kLivesOptions[] = {1, 3, 5, 10, 100};
+                for (int i = 0; i < 5; ++i) {
+                    if (initialLivesButtons_[i]->consumeClick()) {
+                        if (initialLives_ != kLivesOptions[i]) {
+                            initialLives_ = kLivesOptions[i];
+                            refreshSelection();
+                            preferences_->setInt("initial_lives", initialLives_);
+                        }
+                        return;
+                    }
+                }
+            }
             if (animationOn_->consumeClick() && !animationEnabled_) {
                 animationEnabled_ = true; refreshSelection(); applyAnimation(); return;
             }
@@ -1500,6 +1533,7 @@ void SettingsScene::renderGraphicsTab(Window& window, float contentX,
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
+    r.multi (labelInitialLives_,   initialLivesButtons_, 86.f);
     r.toggle(labelAnimation_,      animationOn_,    animationOff_);
     r.multi (labelAnimationSpeed_, animationSpeedButtons_, 96.f);
 
@@ -1691,6 +1725,7 @@ void SettingsScene::render(Window& window) {
                 for (auto& b : consolePromptButtons_) items.push_back(b.get());
                 break;
             case Tab::Graphics:
+                for (auto& b : initialLivesButtons_) items.push_back(b.get());
                 items.push_back(animationOn_.get());
                 items.push_back(animationOff_.get());
                 for (auto& b : animationSpeedButtons_) items.push_back(b.get());

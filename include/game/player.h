@@ -24,6 +24,7 @@ public:
 
     Vec2 position() const { return pos_; }
     Vec2 velocity() const { return vel_; }
+    Vec2 spawn() const { return spawn_; }
     bool onGround() const { return onGround_; }
 
     void respawn(Vec2 spawn);
