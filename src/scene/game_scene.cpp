@@ -51,6 +51,13 @@ void GameScene::onEnter() {
     save_ = saveManager_->takePendingSave();
     levelIndex_ = std::max(1, save_.currentLevel);
 
+    // ⭐ 读取本关之前的 PB
+    if (levelIndex_ >= 1 && levelIndex_ <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[levelIndex_ - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
+
     parallax_ = std::make_unique<ParallaxBackground>();
 
     if (!loadLevel(levelIndex_)) {
@@ -116,6 +123,14 @@ void GameScene::subscribeWorldEvents() {
                 applyStars();
                 saveManager_->updateProgress(save_.filename,
                                              world_->coins(), levelIndex_);
+
+                // ⭐ PB 检测
+                newRecord_ = (prevBestTime_ <= 0.f || levelTime_ < prevBestTime_);
+                if (newRecord_) {
+                    saveManager_->setLevelBestTime(save_.filename,
+                                                   levelIndex_, levelTime_);
+                }
+
                 SoundManager::instance().playLevelComplete();
                 NotificationSystem::instance().push(
                     Str::T(Str::NotifLevelCompleteStars) +
@@ -173,6 +188,14 @@ bool GameScene::loadLevel(int index) {
     finalStars_ = 0;
     finalCoins_ = 0;
     finalTotalCoins_ = 0;
+    newRecord_ = false;
+
+    // ⭐ 读取新关的 PB
+    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[index - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
 
     if (preferences_->getBool("level_intro", true)) {
         intro_ = std::make_unique<LevelIntro>(
@@ -302,6 +325,7 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                              tb.position.y + tb.size.y / 2.f});
     overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
 
+    // 第一行：金币
     std::string stats = Str::T(Str::OverlayCoins) + std::to_string(finalCoins_) +
                         " / " + std::to_string(finalTotalCoins_);
     overlayHint_.setString(toSf(stats));
@@ -309,7 +333,21 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
     auto hb = overlayHint_.getLocalBounds();
     overlayHint_.setOrigin({hb.position.x + hb.size.x / 2.f,
                             hb.position.y + hb.size.y / 2.f});
-    overlayHint_.setPosition({winW / 2.f, winH / 2.f - 60.f});
+    overlayHint_.setPosition({winW / 2.f, winH / 2.f - 70.f});
+
+    // 第二行：PB（只在通关时显示）
+    std::string pbLine;
+    if (newRecord_) {
+        pbLine = Str::T(Str::OverlayNewRecord);
+    } else if (prevBestTime_ > 0.f) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%s%.2f%s",
+                      Str::T(Str::OverlayBestTime).c_str(),
+                      prevBestTime_,
+                      Str::T(Str::OverlaySeconds).c_str());
+        pbLine = buf;
+    }
+    overlaySubHint_.setString(toSf(pbLine));
 
     char timeBuf[128];
     std::snprintf(timeBuf, sizeof(timeBuf),
@@ -324,7 +362,7 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
     auto tb2 = overlayTime_.getLocalBounds();
     overlayTime_.setOrigin({tb2.position.x + tb2.size.x / 2.f,
                             tb2.position.y + tb2.size.y / 2.f});
-    overlayTime_.setPosition({winW / 2.f, winH / 2.f - 15.f});
+    overlayTime_.setPosition({winW / 2.f, winH / 2.f - 25.f});
 
     {
         std::string stars;
@@ -338,13 +376,16 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
                                  sb.position.y + sb.size.y / 2.f});
         overlayStars_.setPosition({winW / 2.f, winH / 2.f + 60.f});
     }
-
-    std::string hint = Str::T(Str::OverlayHintComplete);
-    overlaySubHint_.setString(toSf(hint));
-    auto sb2 = overlaySubHint_.getLocalBounds();
-    overlaySubHint_.setOrigin({sb2.position.x + sb2.size.x / 2.f,
-                               sb2.position.y + sb2.size.y / 2.f});
-    overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 210.f});
+   // PB 行位置（时间下面）
+    {
+        auto sb = overlaySubHint_.getLocalBounds();
+        overlaySubHint_.setOrigin({sb.position.x + sb.size.x / 2.f,
+                                   sb.position.y + sb.size.y / 2.f});
+        overlaySubHint_.setFillColor(newRecord_
+            ? sf::Color(255, 220, 80)
+            : sf::Color(180, 180, 200));
+        overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 20.f});
+    }
 }
 
 void GameScene::handleEvent(const sf::Event& event) {

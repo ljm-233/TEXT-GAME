@@ -7,6 +7,15 @@
 
 不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景管理、配置系统、日志、UI 组件、动画、通知、音效、多语言）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器）。
 
+## 📸 截图
+
+| | |
+|:---:|:---:|
+| ![主菜单](docs/screenshots/main_menu.png) | ![游戏中](docs/screenshots/gameplay.png) |
+| 主菜单 | 游戏中 |
+| ![关卡编辑器](docs/screenshots/editor.png) | ![选关界面](docs/screenshots/level_choose.png) |
+| 关卡编辑器 | 关卡完成 |
+
 ## 🚧 当前状态
 
 > 最后更新：2026-09

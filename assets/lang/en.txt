@@ -312,3 +312,7 @@ TEXT-GAME 控制台=TEXT-GAME Console
 # ===== 生命值 =====
 初始生命=Initial Lives
 生命耗尽，重新开始=Lives exhausted. Restarting...
+
+# ===== 速通 =====
+最佳: =Best: 
+★ 新纪录！=★ New Record!

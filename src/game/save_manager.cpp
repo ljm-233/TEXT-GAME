@@ -6,6 +6,7 @@
 #include <ctime>
 #include <algorithm>
 #include <sstream>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -47,6 +48,29 @@ std::vector<int> SaveManager::parseStars(const std::string& s) {
     return out;
 }
 
+std::string SaveManager::serializeTimes(const std::vector<float>& times) {
+    std::string out;
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        if (i > 0) out += ',';
+        // 用 snprintf 控制小数位，避免 to_string 产生 6 位小数
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.2f", times[i]);
+        out += buf;
+    }
+    return out;
+}
+
+std::vector<float> SaveManager::parseTimes(const std::string& s) {
+    std::vector<float> out;
+    std::istringstream iss(s);
+    std::string token;
+    while (std::getline(iss, token, ',')) {
+        try { out.push_back(std::stof(token)); }
+        catch (...) { out.push_back(0.f); }
+    }
+    return out;
+}
+
 std::vector<SaveInfo> SaveManager::listSaves() const {
     std::vector<SaveInfo> result;
     auto dir = config_->savesDir();
@@ -84,6 +108,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     info.progress     = 0;
     info.currentLevel = 1;
     info.levelStars   = std::vector<int>(9, 0);
+    info.levelBestTimes = std::vector<float>(9, 0.f);
 
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
@@ -91,12 +116,13 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
         logger_->error("创建存档失败: 无法写入 " + path.string());
         return {};
     }
-    out << "name="          << info.name         << '\n';
-    out << "created_at="    << info.createdAt    << '\n';
-    out << "last_played="   << info.lastPlayed   << '\n';
-    out << "progress="      << info.progress     << '\n';
-    out << "current_level=" << info.currentLevel << '\n';
-    out << "level_stars="   << serializeStars(info.levelStars) << '\n';
+    out << "name="             << info.name         << '\n';
+    out << "created_at="       << info.createdAt    << '\n';
+    out << "last_played="      << info.lastPlayed   << '\n';
+    out << "progress="         << info.progress     << '\n';
+    out << "current_level="    << info.currentLevel << '\n';
+    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
     out.flush();
     if (!out) {
         logger_->error("创建存档失败: 写入过程中断 " + path.string());
@@ -119,6 +145,7 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.progress     = 0;
     out.currentLevel = 1;
     out.levelStars   = std::vector<int>(9, 0);
+    out.levelBestTimes = std::vector<float>(9, 0.f);
 
     std::string line;
     while (std::getline(in, line)) {
@@ -140,6 +167,11 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
             out.levelStars = parseStars(v);
             if (out.levelStars.size() < 9)
                 out.levelStars.resize(9, 0);
+        }
+        else if (k == "level_best_times") {
+            out.levelBestTimes = parseTimes(v);
+            if (out.levelBestTimes.size() < 9)
+                out.levelBestTimes.resize(9, 0.f);
         }
     }
     return true;
@@ -170,12 +202,13 @@ bool SaveManager::updateProgress(const std::string& filename,
     auto path = config_->saveFile(filename);
     std::ofstream out(path);
     if (!out) return false;
-    out << "name="          << info.name         << '\n';
-    out << "created_at="    << info.createdAt    << '\n';
-    out << "last_played="   << info.lastPlayed   << '\n';
-    out << "progress="      << info.progress     << '\n';
-    out << "current_level=" << info.currentLevel << '\n';
-    out << "level_stars="   << serializeStars(info.levelStars) << '\n';
+    out << "name="             << info.name         << '\n';
+    out << "created_at="       << info.createdAt    << '\n';
+    out << "last_played="      << info.lastPlayed   << '\n';
+    out << "progress="         << info.progress     << '\n';
+    out << "current_level="    << info.currentLevel << '\n';
+    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
     return true;
 }
 
@@ -194,15 +227,48 @@ bool SaveManager::setLevelStar(const std::string& filename,
         auto path = config_->saveFile(filename);
         std::ofstream out(path);
         if (!out) return false;
-        out << "name="          << info.name         << '\n';
-        out << "created_at="    << info.createdAt    << '\n';
-        out << "last_played="   << info.lastPlayed   << '\n';
-        out << "progress="      << info.progress     << '\n';
-        out << "current_level=" << info.currentLevel << '\n';
-        out << "level_stars="   << serializeStars(info.levelStars) << '\n';
+        out << "name="             << info.name         << '\n';
+        out << "created_at="       << info.createdAt    << '\n';
+        out << "last_played="      << info.lastPlayed   << '\n';
+        out << "progress="         << info.progress     << '\n';
+        out << "current_level="    << info.currentLevel << '\n';
+        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
                       std::to_string(stars));
     }
     return true;
+}
+
+bool SaveManager::setLevelBestTime(const std::string& filename,
+                                   int level, float seconds) {
+    SaveInfo info;
+    if (!loadSave(filename, info)) return false;
+    if (level < 1 || level > static_cast<int>(info.levelBestTimes.size()))
+        return false;
+    if (seconds <= 0.f) return false;
+
+    int idx = level - 1;
+    // 首次通关，或刷新 PB
+    if (info.levelBestTimes[idx] <= 0.f || seconds < info.levelBestTimes[idx]) {
+        info.levelBestTimes[idx] = seconds;
+        info.lastPlayed = currentTimestamp();
+
+        auto path = config_->saveFile(filename);
+        std::ofstream out(path);
+        if (!out) return false;
+        out << "name="             << info.name         << '\n';
+        out << "created_at="       << info.createdAt    << '\n';
+        out << "last_played="      << info.lastPlayed   << '\n';
+        out << "progress="         << info.progress     << '\n';
+        out << "current_level="    << info.currentLevel << '\n';
+        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+
+        logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
+                      std::to_string(seconds) + " 秒");
+        return true;
+    }
+    return false;   // 未刷新
 }

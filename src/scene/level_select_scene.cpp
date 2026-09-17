@@ -4,6 +4,7 @@
 #include "focus_group.h"
 #include <algorithm>
 #include <iostream>
+#include <cstdio>
 
 LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
                                    std::shared_ptr<SaveManager> saveManager,
@@ -190,6 +191,16 @@ void LevelSelectScene::render(Window& window) {
                 for (int s = 0; s < 3; ++s) {
                     starStr += (s < stars) ? "\u2605" : "\u2606";
                 }
+
+                // ⭐ 如果有关卡 PB，显示在星星后面
+                if (i < static_cast<int>(save_.levelBestTimes.size()) &&
+                    save_.levelBestTimes[i] > 0.f) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof(buf), "  %.2fs",
+                                  save_.levelBestTimes[i]);
+                    starStr += buf;
+                }
+
                 starText_.setString(toSf(starStr));
 
                 if (stars > 0) {

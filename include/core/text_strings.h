@@ -173,6 +173,8 @@ constexpr const char* OverlayTarget      = "目标: ";
 constexpr const char* OverlaySeconds     = " 秒";
 constexpr const char* OverlayHintComplete = "Enter 继续    R 重玩本关    ESC 返回";
 constexpr const char* OverlayHintFailed   = "R 重试    ESC 返回";
+constexpr const char* OverlayBestTime     = "最佳: ";
+constexpr const char* OverlayNewRecord    = "★ 新纪录！";
 
 // ===== 通知 =====
 constexpr const char* NotifLevelLoadFailed    = "关卡加载失败";

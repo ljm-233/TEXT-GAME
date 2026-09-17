@@ -60,6 +60,8 @@ private:
     int   finalStars_ = 0;
     int   finalCoins_ = 0;
     int   finalTotalCoins_ = 0;
+    float prevBestTime_ = 0.f;    // 本关之前的 PB（0 = 无记录）
+    bool  newRecord_ = false;     // 本次是否刷新 PB
 
     // 屏幕闪光
     float     screenFlashTimer_ = 0.f;
