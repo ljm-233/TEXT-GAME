@@ -1,5 +1,6 @@
 #include "button.h"
 #include "theme.h"
+#include "sound_manager.h"
 #include "ui_scale.h"
 #include "utf8.h"
 #include "button_style.h"
@@ -143,7 +144,10 @@ void Button::handleEvent(const sf::Event& event) {
         if (mb->button == sf::Mouse::Button::Left) {
             bool inside = contains({static_cast<float>(mb->position.x),
                                     static_cast<float>(mb->position.y)});
-            if (pressed_ && inside) clicked_ = true;
+            if (pressed_ && inside) {
+                clicked_ = true;
+                SoundManager::instance().playClick();
+            }
             pressed_ = false;
         }
     }
@@ -166,4 +170,9 @@ void Button::render(sf::RenderTarget& target) {
 
     target.draw(shape_);
     target.draw(text_);
+}
+
+void Button::triggerClick() {
+    clicked_ = true;
+    SoundManager::instance().playClick();
 }

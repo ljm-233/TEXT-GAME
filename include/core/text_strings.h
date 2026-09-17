@@ -199,7 +199,7 @@ constexpr const char* EditorHudGrid  = "网格: ";
 constexpr const char* EditorHudUndo  = "撤销: ";
 
 constexpr const char* EditorHint =
-    "左键画/右键擦  Ctrl+滚轮缩放  滚轮上下  WASD移动  G网格  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+0重置缩放";
+    "左键画/右键擦  Ctrl+滚轮缩放  滚轮上下  WASD移动  G网格  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+E导出  Ctrl+I导入  Ctrl+0重置缩放";
 
 constexpr const char* EditorSaved      = "✓ 已保存";
 constexpr const char* EditorSaveFailed = "保存失败！";

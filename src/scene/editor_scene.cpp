@@ -1,5 +1,6 @@
 #include "editor_scene.h"
 #include "text_strings.h"
+#include "level_codec.h"
 #include "utf8.h"
 #include <algorithm>
 #include <cmath>
@@ -480,6 +481,64 @@ void EditorScene::showFlash(const std::string& text, float duration) {
     flashTimer_ = duration;
 }
 
+void EditorScene::exportShareCode() {
+    std::string text;
+    for (const auto& l : lines_) {
+        text += l;
+        text += '\n';
+    }
+    std::string code = LevelCodec::encode(text);
+
+    auto path = preferences_->savesDir() / "share_code.txt";
+    std::ofstream out(path);
+    if (!out) {
+        showFlash("导出失败", 2.0f);
+        return;
+    }
+    out << code;
+    out.flush();
+
+    showFlash("已导出 (" + std::to_string(code.size()) + " 字符)", 2.0f);
+    logger_->info("分享码已导出到 " + path.string() +
+                  " (" + std::to_string(code.size()) + " 字符)");
+}
+
+void EditorScene::importShareCode() {
+    auto path = preferences_->savesDir() / "share_code.txt";
+    std::ifstream in(path);
+    if (!in) {
+        showFlash("找不到 share_code.txt", 2.0f);
+        return;
+    }
+
+    std::string code;
+    std::getline(in, code);
+    if (code.empty()) {
+        showFlash("share_code.txt 为空", 2.0f);
+        return;
+    }
+
+    std::string text = LevelCodec::decode(code);
+    if (text.empty()) {
+        showFlash("分享码无效", 2.0f);
+        return;
+    }
+
+    pushUndo();
+    lines_.clear();
+    std::istringstream iss(text);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        lines_.push_back(line);
+    }
+    refreshDimensions();
+    geometryDirty_ = true;
+
+    showFlash("已导入 " + std::to_string(width_) + " x " + std::to_string(height_), 2.0f);
+    logger_->info("分享码已导入 (" + std::to_string(code.size()) + " 字符)");
+}
+
 // ============================================================
 // 瓦片访问
 // ============================================================
@@ -654,6 +713,14 @@ void EditorScene::handleEvent(const sf::Event& event) {
         }
         if (kp->code == sf::Keyboard::Key::Z && kp->control) {
             undo();
+            return;
+        }
+        if (kp->code == sf::Keyboard::Key::E && kp->control) {
+            exportShareCode();
+            return;
+        }
+        if (kp->code == sf::Keyboard::Key::I && kp->control) {
+            importShareCode();
             return;
         }
 

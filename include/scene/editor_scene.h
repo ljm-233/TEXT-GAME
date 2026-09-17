@@ -26,6 +26,8 @@ public:
 private:
     void loadFile();
     void saveFile();
+    void exportShareCode();
+    void importShareCode();
 
     void pushUndo();
     void undo();

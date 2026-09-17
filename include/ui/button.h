@@ -27,7 +27,7 @@ public:
     bool isFocused() const { return focused_; }
 
     // 外部触发点击（手柄 A 键用）
-    void triggerClick() { clicked_ = true; }
+    void triggerClick();
 
 private:
     bool contains(sf::Vector2f point) const;

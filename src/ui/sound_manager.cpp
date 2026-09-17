@@ -32,6 +32,53 @@ std::vector<std::int16_t> generateSweep(float startFreq, float endFreq, float du
     return samples;
 }
 
+// MC 木按钮风格：三个非谐波频率各自独立衰减（高频衰减更快）
+// 音色从"亮"变"暗"，但没有音调变化——不会听成"得"
+std::vector<std::int16_t> generateClick(float volume) {
+    constexpr float duration = 0.08f;   // 80ms
+
+    // 三个非谐波频率（比例约 1 : 1.36 : 1.82）
+    // 非整数比 = 木质共鸣（不是电子音的谐波）
+    constexpr float f1 = 280.f;   // 基音
+    constexpr float f2 = 380.f;   // 中
+    constexpr float f3 = 510.f;   // 亮
+
+    // 衰减率：越高频衰减越快（物理正确）
+    constexpr float d1 = 30.f;    // 低频：保持最久
+    constexpr float d2 = 55.f;
+    constexpr float d3 = 90.f;    // 高频：最先消失
+
+    constexpr float noiseDur = 0.004f;   // 前 4ms 噪声瞬态
+
+    std::size_t count = static_cast<std::size_t>(kSampleRate * duration);
+    std::vector<std::int16_t> samples(count);
+
+    // 简易噪声
+    std::uint32_t seed = 0x12345678u;
+    auto noise = [&]() {
+        seed = seed * 1103515245u + 12345u;
+        return static_cast<float>((seed >> 16) & 0x7FFF) / 16384.f - 1.f;
+    };
+
+    for (std::size_t i = 0; i < count; ++i) {
+        float t = static_cast<float>(i) / kSampleRate;
+
+        // 三个频率叠加，各自独立指数衰减
+        float body = 0.5f * std::sin(2.f * kPi * f1 * t) * std::exp(-d1 * t)
+                   + 0.3f * std::sin(2.f * kPi * f2 * t) * std::exp(-d2 * t)
+                   + 0.2f * std::sin(2.f * kPi * f3 * t) * std::exp(-d3 * t);
+
+        // 噪声瞬态：让起音有"咔"的质感
+        if (t < noiseDur) {
+            float nEnv = 1.f - t / noiseDur;
+            body = 0.7f * body + 0.6f * noise() * nEnv;
+        }
+
+        samples[i] = static_cast<std::int16_t>(body * volume * 32767.f);
+    }
+    return samples;
+}
+
 std::vector<std::int16_t> generateArpeggio(const std::vector<float>& freqs,
                                            float noteDuration, float volume) {
     std::vector<std::int16_t> result;
@@ -110,6 +157,7 @@ void SoundManager::init() {
                 generateArpeggio({523.25f, 659.25f, 783.99f, 1046.50f}, 0.15f, 0.5f));
     loadSamples(bufGameOver_, generateArpeggio({392.00f, 311.13f, 261.63f}, 0.25f, 0.5f));
     loadSamples(bufCheckpoint_, generateArpeggio({880.f, 1174.66f}, 0.08f, 0.5f));
+    loadSamples(bufClick_, generateClick(0.9f));
 
     loadSamples(bufBGM_, generateBGM());
     bgm_ = std::make_unique<sf::Sound>(bufBGM_);
@@ -189,6 +237,9 @@ void SoundManager::playGameOver() {
 }
 void SoundManager::playCheckpoint() {
     play(bufCheckpoint_);
+}
+void SoundManager::playClick() {
+    play(bufClick_);
 }
 
 // ===== BGM =====

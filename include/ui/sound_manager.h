@@ -39,6 +39,7 @@ public:
     void playLevelComplete();
     void playGameOver();
     void playCheckpoint();
+    void playClick();
 
     // ===== BGM =====
     void playBGM();
@@ -64,6 +65,7 @@ private:
     sf::SoundBuffer bufComplete_;
     sf::SoundBuffer bufGameOver_;
     sf::SoundBuffer bufCheckpoint_;
+    sf::SoundBuffer bufClick_;
 
     // 声部池的占位 buffer，必须比 pool_ 活得久
     sf::SoundBuffer silentBuf_;
