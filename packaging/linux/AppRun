@@ -1,0 +1,9 @@
+#!/bin/bash
+# AppImage 入口脚本
+# 设置 LD_LIBRARY_PATH 找到打包的 SFML 库，然后启动游戏
+
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+export LD_LIBRARY_PATH="$HERE/usr/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec "$HERE/usr/bin/text_game" "$@"

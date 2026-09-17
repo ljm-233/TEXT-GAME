@@ -5,16 +5,7 @@
 
 一个用 C++20 和 SFML 3 **从零构建**的 2D 平台跳跃游戏。
 
-不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景管理、配置系统、日志、UI 组件、动画、通知、音效、多语言）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器）。
-
-## 📸 截图
-
-| | |
-|:---:|:---:|
-| ![主菜单](docs/screenshots/main_menu.png) | ![游戏中](docs/screenshots/gameplay.png) |
-| 主菜单 | 游戏中 |
-| ![关卡编辑器](docs/screenshots/editor.png) | ![选关界面](docs/screenshots/level_choose.png) |
-| 关卡编辑器 | 关卡完成 |
+不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景栈、配置系统、日志、UI 组件、动画、通知、音效、多语言）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器、关卡验证器）。
 
 ## 🚧 当前状态
 
@@ -22,29 +13,39 @@
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| 引擎层 | ✅ 完成 | DI 容器 / 事件总线 / 场景管理 / 配置 / 日志 / UI 组件 / 动画 / 通知 / 音效 |
-| 场景流程 | ✅ 完成 | 主菜单 → 存档选择 → 选关 → 游戏 → 结算，支持场景栈返回 |
+| 引擎层 | ✅ 完成 | DI 容器 / 事件总线 / 场景栈 / 配置 / 日志 / UI 组件 / 动画 / 通知 / 音效 |
+| 场景流程 | ✅ 完成 | 主菜单 → 存档选择 → 选关 → 游戏 → 结算；支持场景栈返回（保留状态） |
 | 玩家控制 | ✅ 完成 | 土狼时间 / 跳跃缓冲 / 长按跳更高 / 手柄支持 / 键位重映射 |
-| 物理系统 | ✅ 完成 | AABB 瓦片扫描 / 固定时间步长 |
-| 摄像机 | ✅ 完成 | 前瞻 / 死区 / 屏幕震动 |
-| 存档系统 | ✅ 完成 | 创建 / 删除 / 星级 / 进度 |
-| 设置系统 | ✅ 完成 | 6 个 Tab / 50+ 项 |
+| 物理系统 | ✅ 完成 | AABB 瓦片扫描 / 固定时间步长 / 单一激活存档点 |
+| 摄像机 | ✅ 完成 | 前瞻 / 死区 / 屏幕震动 / 受击停顿 |
+| 存档系统 | ✅ 完成 | 创建 / 删除 / 星级 / 进度 / **每关最佳时间（PB）** |
+| 设置系统 | ✅ 完成 | 6 个 Tab / 50+ 项，含初始生命（1/3/5/10/99） |
 | 控制台 | ✅ 完成 | streambuf 重定向 / 命令系统 / 计算器 |
-| 关卡编辑器 | ✅ 完成 | 绘制 / 撤销 / 缩放 / 尺寸调整 / 文件切换 / 元素统计 |
-| **多语言** | ✅ 完成 | 中文 / 繁體中文 / English / 日本語 / 한국어 |
+| 关卡编辑器 | ✅ 完成 | 绘制 / 撤销 / 缩放 / 尺寸调整 / 文件切换 / 元素统计 / **分享码导出导入** |
+| 多语言 | ✅ 完成 | 中文 / 繁體中文 / English / 日本語 / 한국어 |
+| 桌面集成 | ✅ 完成 | Linux AppImage / Windows NSIS 安装包 / 自定义图标 |
 | **关卡内容** | ⚠️ **进行中** | 5 个第一版关卡，1~4 关存在可达性问题，待重做 |
 | **测试覆盖** | ⚠️ **部分** | 62 个单元测试用例，纯逻辑覆盖较好，游戏对象部分覆盖 |
 | 开发工具 | ✅ 完成 | Sanitizer / clang-tidy / CMake Presets / 覆盖率 / 关卡验证器 / 硬编码检测 |
 
 ### 已知问题
 
-- `level1` / `level3` 存在平台垂直距离超过玩家跳跃上限的问题，可能导致不可通过
 - 部分 UI 控件（SettingsScene / EditorScene）的回归测试靠手动
+- Wayland 下窗口图标无法通过 SFML API 设置（协议限制）
 
 ### 短期路线
 
-1. 重做 `level1` 作为教学关，验证设计流程
-2. 依次重做 `level2~5`
+1. 依次重做 `level2~5`
+
+## 📸 截图
+
+<!-- 截图完成后替换为实际图片 -->
+| | |
+|:---:|:---:|
+| ![主菜单](docs/screenshots/main_menu.png) | ![游戏中](docs/screenshots/gameplay.png) |
+| 主菜单 | 游戏中 |
+| ![关卡编辑器](docs/screenshots/editor.png) | ![关卡选择](docs/screenshots/level_choose.png) |
+| 关卡编辑器 | 关卡完成 |
 
 ## 🎮 游戏玩法
 
@@ -55,7 +56,7 @@
 | **A / ←** | 左摇杆 / 十字键左 | 向左移动 |
 | **D / →** | 左摇杆 / 十字键右 | 向右移动 |
 | **Space / W / ↑** | A 键 / 十字键上 | 跳跃（长按跳更高） |
-| **R** | — | 重生（回到存档点） |
+| **R** | — | 重生（回到最近的存档点） |
 | **ESC** | B 键 | 暂停 / 返回 |
 | **Enter** | Start 键 | 确认 / 下一关 |
 
@@ -69,6 +70,24 @@
 - **固定时间步长物理**：1/120 秒为单位更新，任何 FPS 下手感一致
 - **摄像机前瞻**：跑动时镜头朝移动方向偏移，提前露出前方
 - **摄像机死区**：小幅移动时镜头不动，减少眩晕
+- **受击停顿**：踩敌 / 受伤时，游戏时间冻结几十毫秒
+
+### 生命与存档
+
+- **初始生命**：在 **设置 → 画面 → 初始生命** 中选择 `1 / 3 / 5 / 10 / 99`
+- **存档点**：一个关卡内**最多只有一个激活的存档点**。激活新的会自动取消旧的
+- **重生规则**：
+  - 掉图 / 被敌人撞 / 踩尖刺后，若还有生命 → 从**最近的存档点**重生
+  - 生命耗尽 → **延迟 0.5 秒后**从最近的存档点重生，生命重置
+  - 按 `R` 键 → 完全重置关卡（回到出生点、金币归零、存档点取消）
+- **没有 Game Over 界面**：生命耗尽后自动重生，不打断游戏流程
+
+### 速通计时（PB）
+
+- 每次通关记录用时
+- 关卡完成界面显示：本次用时 / 目标时间 / **历史最佳时间**
+- 刷新 PB 时显示金色 `★ 新纪录！`
+- 关卡选择页显示每关的 PB
 
 ### 游戏元素
 
@@ -79,7 +98,7 @@
 | `E` | 敌人 | 左右巡逻，会掉头 |
 | `C` | 金币 | 上下浮动，收集计数 |
 | `J` | 弹跳板 | 碰到就弹飞，有冷却 |
-| `S` | 存档点 | 激活后掉图回到这里 |
+| `S` | 存档点 | 激活后掉图回到这里（单一激活） |
 | `M` | 水平移动平台 | 玩家站上去会被带着走 |
 | `V` | 垂直移动平台 | 上下移动 |
 | `K` | 钥匙 | 收集后解锁所有门 `L` |
@@ -126,7 +145,6 @@
 ### 验证关卡
 
 ```bash
-# 用关卡验证器检查所有关卡
 ./build/debug/validate_levels assets/levels
 ```
 
@@ -155,14 +173,10 @@ TEXT-GAME/
 │   │   ├── ko.txt
 │   │   └── zh-TW.txt
 │   └── levels/               # ASCII 关卡文件
-│       ├── level1.txt
-│       ├── level2.txt
-│       ├── level3.txt
-│       ├── level4.txt
-│       └── level5.txt
+│       ├── level1.txt ~ level5.txt
 ├── include/
 │   ├── config/               # 配置类（Bootstrap / Runtime / Preferences）
-│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、EventBus）
+│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、text_strings）
 │   ├── game/                 # 游戏本体
 │   │   ├── vec2.h            # 二维向量
 │   │   ├── aabb.h            # 碰撞盒
@@ -171,6 +185,7 @@ TEXT-GAME/
 │   │   ├── event_bus.h       # 事件总线
 │   │   ├── level.h           # ASCII 关卡
 │   │   ├── level_validator.h # 关卡可达性验证
+│   │   ├── level_codec.h     # 关卡编码（分享码）
 │   │   ├── camera.h          # 摄像机
 │   │   ├── player.h          # 玩家
 │   │   ├── enemy.h           # 敌人
@@ -183,14 +198,23 @@ TEXT-GAME/
 │   │   ├── parallax.h        # 视差背景
 │   │   ├── level_intro.h     # 关卡开场文字
 │   │   └── game_world.h      # 游戏世界
-│   ├── scene/                # 场景
-│   └── ui/                   # UI 组件
+│   ├── scene/                # 6 个场景
+│   └── ui/                   # UI 组件（Button / Slider / Console / SoundManager / Gamepad / KeyBindings / Lang / ...）
+├── packaging/
+│   ├── icons/                # 图标生成脚本 + 生成结果
+│   │   └── generate_icons.py
+│   ├── linux/                # Linux 打包
+│   │   ├── AppRun
+│   │   └── text-game.desktop
+│   ├── windows/              # Windows 打包
+│   │   └── text-game.rc
+│   └── build_appimage.sh     # Linux AppImage 打包脚本
 ├── scripts/
 │   ├── check_hardcoded.py    # 中文硬编码检测
 │   ├── test.sh               # 一键跑单元测试
 │   └── gen_levels.py         # 关卡生成器
 ├── src/                      # 对应 include 的实现
-├── tests/                    # 单元测试（doctest）
+├── tests/                    # 单元测试（doctest，62 个用例）
 ├── tools/
 │   └── validate_levels.cpp   # 关卡验证器（命令行）
 ├── wallpaper/                # 壁纸资源
@@ -212,8 +236,8 @@ TEXT-GAME/
 | 模块 | 职责 |
 | :--- | :--- |
 | **DI 容器** | 统一注册/解析所有依赖，自动缓存单例 |
-| **事件总线** | GameWorld 发出游戏事件，GameScene 订阅处理音效/粒子，解耦 game 层和 ui 层 |
-| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器，支持返回栈（保留场景状态） |
+| **事件总线** | GameWorld 发出游戏事件（跳跃/落地/金币/踩敌/受伤/...），GameScene 订阅处理音效/粒子。解耦 `game` 层与 `ui` 层 |
+| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
 | **配置分层** | Bootstrap / Runtime / Preferences，延迟落盘 |
 | **日志** | 彩色终端 + 文件 + 多级别 + 轮转 + 保留份数 |
 | **多语言** | 用中文原文作 key，运行时查表；支持中/繁中/英/日/韩 |
@@ -222,10 +246,11 @@ TEXT-GAME/
 | **主题** | 深色 / 蓝色 / 浅色，所有组件自动跟随 |
 | **动画** | 颜色平滑过渡，指数逼近，支持开关和速度 |
 | **通知** | 屏幕角落消息，4 类型 × 4 位置 |
-| **音效** | 程序化生成（正弦扫频 + 琶音），零外部依赖 |
+| **音效** | 程序化生成（正弦扫频 + 琶音 + 敲击），零外部依赖 |
 | **手柄** | 焦点导航（方向键切按钮，A 键触发） |
+| **键位** | 运行时重映射（设置 → 按键） |
 | **粒子** | 跳跃 / 落地 / 金币 / 踩敌人 / 受伤 |
-| **打包** | CPack 一键生成 `.tar.gz` / `.zip` |
+| **打包** | CPack / AppImage / NSIS 一键生成 |
 
 ### 游戏层
 
@@ -234,9 +259,11 @@ TEXT-GAME/
 | **物理** | 自写 AABB 瓦片扫描，先水平后垂直 |
 | **关卡** | ASCII 加载 + 视锥裁剪 + 顶点批处理 |
 | **关卡验证** | BFS 从出生点出发，报告孤立平台 / 不可达元素 |
+| **关卡分享码** | RLE + Base64，把 ASCII 关卡压缩成可分享字符串 |
 | **伪 3D** | 瓦片顶面高光 + 侧面阴影 + 对象投影 |
 | **玩家** | 苦力怕精灵动画 + 弹性变形 + 无敌闪烁 + 受击闪白 |
 | **摄像机** | 前瞻 + 死区 + 屏幕震动 + 受击停顿 |
+| **存档点** | 单一激活，新激活自动取消旧激活 |
 
 ## 🛠 技术栈
 
@@ -249,6 +276,7 @@ TEXT-GAME/
 - **静态分析**：clang-tidy
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
 - **覆盖率**：gcov + lcov
+- **打包**：CPack / AppImage / NSIS
 - **CI**：GitHub Actions（Arch / Ubuntu / macOS / Windows / 关卡验证）
 - **跨平台**：Linux / Windows / macOS
 
@@ -258,7 +286,7 @@ TEXT-GAME/
 
 **Arch Linux**：
 ```bash
-sudo pacman -S base-devel cmake ninja sfml python-fonttools lcov clang
+sudo pacman -S base-devel cmake ninja sfml python-fonttools python-pillow lcov clang
 ```
 
 **Ubuntu / Debian**：
@@ -326,12 +354,41 @@ cmake --build --preset release
 
 ### 打包发布
 
+**Linux AppImage**：
+
+```bash
+# 1. 生成图标（只需一次）
+python3 packaging/icons/generate_icons.py
+
+# 2. Release 构建
+cmake --preset release-package
+cmake --build --preset release-package -j
+
+# 3. 打包成 AppImage
+./packaging/build_appimage.sh
+
+# 4. 运行
+./build/TEXT-GAME-0.1.0-x86_64.AppImage
+```
+
+**Windows NSIS 安装包**：
+
+```powershell
+cmake --preset release
+cmake --build --preset release -j
+cd build/release
+cpack -G NSIS
+# 生成 TEXT-GAME-0.1.0-Windows.exe
+```
+
+**通用 CPack**：
+
 ```bash
 cmake --preset release-package
 cmake --build --preset release-package
 cd build/release-package
 cpack
-# 生成 TEXT-GAME-0.1.0-Linux.tar.gz 和 .zip
+# 生成 .tar.gz / .zip / .AppImage / .exe（取决于平台）
 ```
 
 ### 单元测试
@@ -390,7 +447,7 @@ python3 scripts/check_hardcoded.py
 ### 主菜单
 
 - **启动游戏**：选择 / 创建 / 删除存档
-- **选关**：直接跳到已解锁的关卡
+- **选关**：直接跳到已解锁的关卡，显示星级和 PB
 - **关卡编辑器**：可视化编辑 ASCII 关卡
 - **控制台**：内嵌虚拟终端，支持命令和计算器
 - **设置**：6 个 Tab，50+ 项
@@ -402,7 +459,7 @@ python3 scripts/check_hardcoded.py
 
 **界面**：FPS 显示 / 界面缩放 / 主题 / 语言 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
 
-**画面**：动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒
+**画面**：初始生命 / 动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒
 
 **音频**：总音量 / 音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持
 
@@ -417,6 +474,8 @@ python3 scripts/check_hardcoded.py
 - `Ctrl+Z` 撤销（100 步栈）
 - `Ctrl+S` 保存
 - `Ctrl+N` 切换文件
+- `Ctrl+E` 导出分享码
+- `Ctrl+I` 导入分享码
 - `Ctrl+0` 重置缩放
 - `Ctrl+滚轮` 缩放（以鼠标为中心）
 - `WASD` / 方向键移动摄像机
@@ -424,6 +483,8 @@ python3 scripts/check_hardcoded.py
 - `G` 开关网格
 - 顶部 HUD：文件名 / 笔刷 / 尺寸 / 缩放 / 网格状态 / 撤销栈深度
 - 第二行：元素统计（玩家 / 敌人 / 金币 / ...）
+
+**分享码**：把当前关卡编码成 `TG1:<base64>` 字符串，导出到 `saves/share_code.txt`。别人粘贴到你自己的 `share_code.txt`，`Ctrl+I` 即可导入。
 
 ### 控制台命令
 
@@ -446,7 +507,7 @@ exit              关闭控制台
 
 | 语言 | 文件 |
 | :--- | :--- |
-| 中文 | `assets/lang/zh.txt`（隐含，key 即原文） |
+| 中文 | 隐含（key 即中文原文） |
 | 繁體中文 | `assets/lang/zh-TW.txt` |
 | English | `assets/lang/en.txt` |
 | 日本語 | `assets/lang/ja.txt` |

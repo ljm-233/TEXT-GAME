@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TEXT-GAME
+GenericName=Platformer
+Comment=A 2D platformer built from scratch in C++20 + SFML 3
+Comment[zh_CN]=用 C++20 + SFML 3 从零手写的 2D 平台跳跃游戏
+Comment[zh_TW]=用 C++20 + SFML 3 從零手寫的 2D 平台跳躍遊戲
+Comment[ja]=C++20 + SFML 3 で一から作った 2D プラットフォーマー
+Comment[ko]=C++20 + SFML 3로 처음부터 만든 2D 플랫포머
+Exec=text_game
+Icon=text-game
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=platformer;game;2d;sfml;
+StartupNotify=false

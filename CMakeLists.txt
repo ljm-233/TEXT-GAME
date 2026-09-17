@@ -114,6 +114,16 @@ message(STATUS "  共 ${TEXTGAME_SOURCES_COUNT} 个 .cpp 文件")
 # ============================================================
 # 可执行文件
 # ============================================================
+if(WIN32)
+    # 启用 RC 语言支持
+    enable_language(RC)
+    # 如果使用 Visual Studio，可以设置工程属性
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_WIN32_EXECUTABLE ON) 
+    
+    # 将 .rc 文件添加到源文件列表中
+    target_sources(text_game PRIVATE packaging/windows/text-game.rc)
+endif()
+
 add_executable(text_game ${TEXTGAME_SOURCES})
 
 target_include_directories(text_game PRIVATE
@@ -167,22 +177,33 @@ endif()
 # ============================================================
 # Windows：把 SFML 的 DLL 一起装到输出目录
 # ============================================================
+
 if(WIN32)
-    get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION_RELEASE)
-    if(NOT _sfml_graphics_loc)
-        get_target_property(_sfml_graphics_loc SFML::Graphics IMPORTED_LOCATION)
+    # 找 vcpkg 的 bin 目录
+    if(DEFINED VCPKG_INSTALLED_DIR)
+        set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+    else()
+        # fallback: 从 SFML 的 IMPORTED_LOCATION 推导
+        get_target_property(_sfml_loc SFML::Graphics IMPORTED_LOCATION_RELEASE)
+        if(NOT _sfml_loc)
+            get_target_property(_sfml_loc SFML::Graphics IMPORTED_LOCATION)
+        endif()
+        get_filename_component(_vcpkg_bin "${_sfml_loc}" DIRECTORY)
+        # 通常在 lib/ 旁边有 bin/
+        get_filename_component(_vcpkg_bin "${_vcpkg_bin}" DIRECTORY)
+        set(_vcpkg_bin "${_vcpkg_bin}/bin")
     endif()
 
-    if(_sfml_graphics_loc)
-        get_filename_component(_sfml_dll_dir "${_sfml_graphics_loc}" DIRECTORY)
+    message(STATUS "vcpkg DLL 目录: ${_vcpkg_bin}")
 
-        install(DIRECTORY "${_sfml_dll_dir}/"
+    if(EXISTS "${_vcpkg_bin}")
+        install(DIRECTORY "${_vcpkg_bin}/"
                 DESTINATION .
                 FILES_MATCHING
                 PATTERN "sfml-*.dll"
-                PATTERN "openal32.dll"
-                PATTERN "*.dll"
-                )
+                PATTERN "openal32.dll")
+    else()
+        message(WARNING "找不到 vcpkg DLL 目录: ${_vcpkg_bin}")
     endif()
 endif()
 
@@ -207,6 +228,33 @@ endif()
 set(CPACK_GENERATOR "TGZ;ZIP")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_STRIP_FILES TRUE)
+
+# ============================================================
+# CPack 配置 (Windows NSIS)
+# ============================================================
+if(WIN32)
+    # 指定生成器为 NSIS
+    set(CPACK_GENERATOR "NSIS")
+    
+    # 安装程序显示名称
+    set(CPACK_NSIS_DISPLAY_NAME "TEXT-GAME")
+    
+    # 安装程序图标 (可选，建议使用 32x32 或 48x48 的 .ico)
+    set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico") 
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
+    
+    # 安装完成后创建快捷方式 (开始菜单)
+    set(CPACK_PACKAGE_EXECUTABLES "text_game" "TEXT-GAME")
+    
+    # 同时在桌面创建快捷方式
+    set(CPACK_CREATE_DESKTOP_LINKS "text_game")
+    
+    # 安装程序在“控制面板”中显示的图标 (必须是 .exe 文件)
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "text_game.exe")
+    
+    # 快捷方式名称 (桌面和开始菜单共用)
+    set(CPACK_NSIS_SHORTCUTS "TEXT-GAME" "text_game.exe")
+endif()
 
 include(CPack)
 
