@@ -64,9 +64,6 @@ if(SANITIZE)
         message(STATUS "  ASan  (AddressSanitizer)")
         message(STATUS "  UBSan (UndefinedBehaviorSanitizer)")
         message(STATUS "  LSan  (LeakSanitizer, 仅 Linux)")
-        message(STATUS "  运行时可设置 ASAN_OPTIONS 环境变量:")
-        message(STATUS "    禁用泄漏检测: ASAN_OPTIONS=detect_leaks=0")
-        message(STATUS "    关闭 UBSan:   UBSAN_OPTIONS=halt_on_error=0")
 
         add_compile_options(
             -fsanitize=address,undefined
@@ -114,17 +111,19 @@ message(STATUS "  共 ${TEXTGAME_SOURCES_COUNT} 个 .cpp 文件")
 # ============================================================
 # 可执行文件
 # ============================================================
+
+# ⭐ Windows 必须先启用 RC 语言（在任何 target_sources 之前）
 if(WIN32)
-    # 启用 RC 语言支持
     enable_language(RC)
-    # 如果使用 Visual Studio，可以设置工程属性
-    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_WIN32_EXECUTABLE ON) 
-    
-    # 将 .rc 文件添加到源文件列表中
-    target_sources(text_game PRIVATE packaging/windows/text-game.rc)
 endif()
 
+# ⭐ add_executable 必须在所有 target_* 之前
 add_executable(text_game ${TEXTGAME_SOURCES})
+
+# ⭐ Windows: 添加 .rc 资源文件（在 add_executable 之后）
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/windows/text-game.rc")
+    target_sources(text_game PRIVATE packaging/windows/text-game.rc)
+endif()
 
 target_include_directories(text_game PRIVATE
     include
@@ -158,38 +157,54 @@ target_link_libraries(text_game PRIVATE
     SFML::Audio
 )
 
-if(WIN32 AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set_target_properties(text_game PROPERTIES WIN32_EXECUTABLE TRUE)
+# ⭐ Windows: 隐藏控制台窗口（Release / RelWithDebInfo / MinSizeRel）
+#   注意用生成器表达式，避免 Debug 下也隐藏
+if(WIN32)
+    set_target_properties(text_game PROPERTIES
+        WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
+    )
 endif()
 
+# ⭐ macOS: bundle
 if(APPLE)
     set_target_properties(text_game PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "TEXT-GAME"
     )
-    install(TARGETS text_game
-        BUNDLE DESTINATION .
-        RUNTIME DESTINATION .)
-else()
-    install(TARGETS text_game RUNTIME DESTINATION .)
 endif()
 
 # ============================================================
-# Windows：把 SFML 的 DLL 一起装到输出目录
+# install：可执行文件（三平台各自处理）
 # ============================================================
+if(APPLE)
+    install(TARGETS text_game
+        BUNDLE  DESTINATION .
+        RUNTIME DESTINATION .)
+elseif(WIN32)
+    # ⭐ 关键：用 $<TARGET_FILE:...> + RENAME 强制 .exe 后缀，
+    #   绕过 NSIS 有时会剥离扩展名的 bug
+    install(FILES $<TARGET_FILE:text_game>
+            DESTINATION .
+            RENAME text_game.exe
+            COMPONENT Runtime)
+else()
+    install(TARGETS text_game
+            RUNTIME DESTINATION .
+            COMPONENT Runtime)
+endif()
 
+# ============================================================
+# Windows: 打包 SFML 及依赖 DLL
+# ============================================================
 if(WIN32)
-    # 找 vcpkg 的 bin 目录
     if(DEFINED VCPKG_INSTALLED_DIR)
         set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
     else()
-        # fallback: 从 SFML 的 IMPORTED_LOCATION 推导
         get_target_property(_sfml_loc SFML::Graphics IMPORTED_LOCATION_RELEASE)
         if(NOT _sfml_loc)
             get_target_property(_sfml_loc SFML::Graphics IMPORTED_LOCATION)
         endif()
         get_filename_component(_vcpkg_bin "${_sfml_loc}" DIRECTORY)
-        # 通常在 lib/ 旁边有 bin/
         get_filename_component(_vcpkg_bin "${_vcpkg_bin}" DIRECTORY)
         set(_vcpkg_bin "${_vcpkg_bin}/bin")
     endif()
@@ -201,16 +216,24 @@ if(WIN32)
                 DESTINATION .
                 FILES_MATCHING
                 PATTERN "sfml-*.dll"
-                PATTERN "openal32.dll")
+                PATTERN "openal32.dll"
+                PATTERN "*.dll"
+                COMPONENT Runtime)
     else()
         message(WARNING "找不到 vcpkg DLL 目录: ${_vcpkg_bin}")
     endif()
 endif()
 
-install(DIRECTORY assets/    DESTINATION assets)
-install(DIRECTORY wallpaper/ DESTINATION wallpaper)
-install(FILES README.md LICENSE DESTINATION .)
+# ============================================================
+# 资源文件
+# ============================================================
+install(DIRECTORY assets/    DESTINATION assets    COMPONENT Runtime)
+install(DIRECTORY wallpaper/ DESTINATION wallpaper COMPONENT Runtime)
+install(FILES README.md LICENSE DESTINATION .      COMPONENT Runtime)
 
+# ============================================================
+# CPack
+# ============================================================
 set(CPACK_PACKAGE_NAME        "TEXT-GAME")
 set(CPACK_PACKAGE_VENDOR      "ljm-233")
 set(CPACK_PACKAGE_VERSION     "${PROJECT_VERSION}")
@@ -219,42 +242,30 @@ set(CPACK_PACKAGE_CONTACT     "ljm-233")
 
 if(WIN32)
     set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-Windows")
+    set(CPACK_GENERATOR "NSIS")
+
+    set(CPACK_NSIS_DISPLAY_NAME "TEXT-GAME")
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
+        set(CPACK_PACKAGE_ICON     "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
+        set(CPACK_NSIS_MUI_ICON    "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
+    endif()
+
+    # 开始菜单 / 桌面快捷方式
+    set(CPACK_PACKAGE_EXECUTABLES "text_game" "TEXT-GAME")
+    set(CPACK_CREATE_DESKTOP_LINKS "text_game")
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "text_game.exe")
+    set(CPACK_NSIS_SHORTCUTS "TEXT-GAME" "text_game.exe")
 elseif(APPLE)
     set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-macOS")
+    set(CPACK_GENERATOR "TGZ;ZIP")
 else()
     set(CPACK_PACKAGE_FILE_NAME "TEXT-GAME-${PROJECT_VERSION}-Linux")
+    set(CPACK_GENERATOR "TGZ;ZIP")
 endif()
 
-set(CPACK_GENERATOR "TGZ;ZIP")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_STRIP_FILES TRUE)
-
-# ============================================================
-# CPack 配置 (Windows NSIS)
-# ============================================================
-if(WIN32)
-    # 指定生成器为 NSIS
-    set(CPACK_GENERATOR "NSIS")
-    
-    # 安装程序显示名称
-    set(CPACK_NSIS_DISPLAY_NAME "TEXT-GAME")
-    
-    # 安装程序图标 (可选，建议使用 32x32 或 48x48 的 .ico)
-    set(CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico") 
-    set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
-    
-    # 安装完成后创建快捷方式 (开始菜单)
-    set(CPACK_PACKAGE_EXECUTABLES "text_game" "TEXT-GAME")
-    
-    # 同时在桌面创建快捷方式
-    set(CPACK_CREATE_DESKTOP_LINKS "text_game")
-    
-    # 安装程序在“控制面板”中显示的图标 (必须是 .exe 文件)
-    set(CPACK_NSIS_INSTALLED_ICON_NAME "text_game.exe")
-    
-    # 快捷方式名称 (桌面和开始菜单共用)
-    set(CPACK_NSIS_SHORTCUTS "TEXT-GAME" "text_game.exe")
-endif()
 
 include(CPack)
 
@@ -278,9 +289,6 @@ target_link_libraries(validate_levels PRIVATE
     SFML::Graphics
 )
 
-# ============================================================
-# 测试（默认关闭，加 -DBUILD_TESTS=ON 开启）
-# ============================================================
 # ============================================================
 # clang-tidy（-DCLANG_TIDY=ON 开启）
 # ============================================================
@@ -318,29 +326,18 @@ if(COVERAGE)
         if(LCOV_EXE AND GENHTML_EXE)
             add_custom_target(coverage
                 COMMAND ${CMAKE_COMMAND} -E rm -rf coverage.info coverage_html
-                COMMAND ${LCOV_EXE} --zerocounters
-                        --directory ${CMAKE_BINARY_DIR}
+                COMMAND ${LCOV_EXE} --zerocounters --directory ${CMAKE_BINARY_DIR}
                 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-                COMMAND ${LCOV_EXE}
-                        --capture
-                        --directory ${CMAKE_BINARY_DIR}
+                COMMAND ${LCOV_EXE} --capture --directory ${CMAKE_BINARY_DIR}
                         --output-file coverage.info
-                        --rc branch_coverage=1
-                        --ignore-errors mismatch
-                COMMAND ${LCOV_EXE}
-                        --remove coverage.info
-                        '/usr/*'
-                        '*/tests/doctest.h'
-                        '*/tests/*'
-                        '*/_deps/*'
+                        --rc branch_coverage=1 --ignore-errors mismatch
+                COMMAND ${LCOV_EXE} --remove coverage.info
+                        '/usr/*' '*/tests/doctest.h' '*/tests/*' '*/_deps/*'
                         --output-file coverage_filtered.info
-                        --rc branch_coverage=1
-                        --ignore-errors unused
-                COMMAND ${GENHTML_EXE}
-                        coverage_filtered.info
+                        --rc branch_coverage=1 --ignore-errors unused
+                COMMAND ${GENHTML_EXE} coverage_filtered.info
                         --output-directory coverage_html
-                        --branch-coverage
-                        --legend
+                        --branch-coverage --legend
                 COMMAND ${CMAKE_COMMAND} -E echo
                         "覆盖率报告: file://${CMAKE_BINARY_DIR}/coverage_html/index.html"
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -349,22 +346,21 @@ if(COVERAGE)
             )
 
             message(STATUS "  运行: cmake --build ${CMAKE_BINARY_DIR} --target coverage")
-            message(STATUS "  报告: ${CMAKE_BINARY_DIR}/coverage_html/index.html")
         else()
             message(WARNING "未找到 lcov / genhtml，coverage target 未创建")
-            message(WARNING "  Arch Linux: sudo pacman -S lcov")
-            message(WARNING "  Ubuntu:     sudo apt install lcov")
         endif()
     else()
         message(WARNING "覆盖率只在 GCC / Clang 上支持，已忽略")
     endif()
 endif()
 
+# ============================================================
+# 单元测试（-DBUILD_TESTS=ON 开启）
+# ============================================================
 option(BUILD_TESTS "Build unit tests" OFF)
 
 if(COVERAGE AND NOT BUILD_TESTS)
     message(WARNING "COVERAGE=ON 但 BUILD_TESTS=OFF，无法生成有意义覆盖率报告")
-    message(WARNING "  建议同时 -DBUILD_TESTS=ON")
 endif()
 
 if(BUILD_TESTS)
