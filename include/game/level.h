@@ -49,6 +49,7 @@ public:
 
 private:
     void buildGeometry();
+    void rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const;
 
     int width_ = 0, height_ = 0, tileSize_ = 32;
     std::vector<char> tiles_;
@@ -73,6 +74,11 @@ private:
     const sf::Font* font_ = nullptr;
     bool pseudo3D_ = true;
 
-    // 一次性构建的整个关卡的三角形顶点数组
+    // 一次性构建的整个关卡的三角形顶点数组（保留作 fallback）
     sf::VertexArray vertexArray_;
+
+    // ⭐ 视锥裁剪缓存：只包含可见 tile 的顶点
+    mutable sf::VertexArray visibleVA_;
+    mutable int lastX0_ = -1, lastX1_ = -1;
+    mutable int lastY0_ = -1, lastY1_ = -1;
 };

@@ -226,4 +226,12 @@ private:
 
     // 语言版本追踪：语言变化时刷新所有 UI 文字
     int lastLangVersion_ = -1;
+
+    // ⭐ 小屏布局缩放 + 滚动
+    float layoutScale_       = 1.0f;   // 根据窗口高度算
+    float contentScroll_     = 0.f;    // 当前滚动偏移（像素）
+    float contentTotalH_     = 0.f;    // 当前 Tab 内容总高度
+    float contentViewH_      = 0.f;    // 可用高度
+    float lastWinH_          = 0.f;    // 用于检测窗口尺寸变化
+    sf::FloatRect contentClipRect_;    // 内容区裁剪范围（用于 scissor/手动裁剪）
 };

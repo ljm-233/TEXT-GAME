@@ -53,6 +53,26 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # ============================================================
+# 老设备优化（Atom N455 / 低端 x86）
+#   开启后：
+#     - 从 -O3 降级到 -O2，减少代码膨胀，降低 I-cache 压力
+#     - -march=bonnell 针对 Intel Atom (Bonnell 微架构) 生成代码
+#     - -flto 链接时优化
+#   用 cmake --preset release-legacy 或 -DLEGACY_BUILD=ON 开启
+# ============================================================
+option(LEGACY_BUILD "Optimize for low-end CPUs (Atom N455 etc.)" OFF)
+if(LEGACY_BUILD AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "=== 启用老设备优化（Atom Bonnell）===")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(-march=bonnell -mtune=bonnell -O2)
+        add_link_options(-flto=auto)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-march=bonnell -mtune=bonnell -O2 -flto)
+    endif()
+    add_compile_definitions(TEXTGAME_LEGACY_BUILD=1)
+endif()
+
+# ============================================================
 # Sanitizer（-DSANITIZE=ON 开启）
 # ============================================================
 option(SANITIZE "Enable AddressSanitizer + UndefinedBehaviorSanitizer + LeakSanitizer" OFF)
@@ -276,6 +296,24 @@ set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_STRIP_FILES TRUE)
 
 include(CPack)
+
+#========================================================
+# 老设备支持
+#========================================================
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # 针对 Intel Atom (Bonnell) 架构优化
+        target_compile_options(text_game PRIVATE
+            -march=bonnell
+            -mtune=bonnell
+            -O2  # 从 -O3 降级到 -O2，减少代码膨胀
+            -fno-omit-frame-pointer  # 方便 perf 分析
+            -fno-plt
+        )
+        # 链接时优化
+        target_link_options(text_game PRIVATE -flto=auto)
+    endif()
+endif()
 
 # ============================================================
 # 关卡验证工具（独立目标）

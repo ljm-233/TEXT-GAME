@@ -1,5 +1,6 @@
 #pragma once
 #include <SFML/Window/Joystick.hpp>
+#include "gamepad_config.h"
 
 // 手柄封装：自动检测、死区、按钮查询
 class Gamepad {
@@ -44,7 +45,7 @@ private:
 
     bool     connected_ = false;
     unsigned joystickId_ = 0;
-    float    deadzone_ = 0.25f;
+    float    deadzone_ = GamepadConfig::kStickDeadzone;
 
     // 死区处理
     float applyDeadzone(float value) const;

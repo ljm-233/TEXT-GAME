@@ -197,19 +197,98 @@ void Level::buildGeometry() {
 }
 
 // ============================================================
+// 视锥裁剪
+// ============================================================
+
+void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
+    const float tsF = static_cast<float>(tileSize_);
+
+    const sf::Color kBody  (80, 80, 100);
+    const sf::Color kTop   (130, 130, 155);
+    const sf::Color kLeft  (100, 100, 120);
+    const sf::Color kRight (50, 50, 70);
+    const sf::Color kBottom(40, 40, 60);
+
+    // 第一步：统计可见范围内需要的顶点数
+    std::size_t vertexCount = 0;
+    for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            vertexCount += 6;
+            if (!pseudo3D_) continue;
+            if (!isSolid(x, y - 1)) vertexCount += 6;
+            if (!isSolid(x - 1, y)) vertexCount += 6;
+            if (!isSolid(x + 1, y)) vertexCount += 6;
+            if (!isSolid(x, y + 1)) vertexCount += 6;
+        }
+    }
+
+    visibleVA_.clear();
+    visibleVA_.setPrimitiveType(sf::PrimitiveType::Triangles);
+    visibleVA_.resize(vertexCount);
+
+    std::size_t idx = 0;
+    auto addQuad = [&](float xa, float ya, float xb, float yb, sf::Color c) {
+        visibleVA_[idx++] = sf::Vertex{{xa, ya}, c};
+        visibleVA_[idx++] = sf::Vertex{{xb, ya}, c};
+        visibleVA_[idx++] = sf::Vertex{{xb, yb}, c};
+        visibleVA_[idx++] = sf::Vertex{{xa, ya}, c};
+        visibleVA_[idx++] = sf::Vertex{{xb, yb}, c};
+        visibleVA_[idx++] = sf::Vertex{{xa, yb}, c};
+    };
+
+    for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+
+            float px = static_cast<float>(x) * tsF;
+            float py = static_cast<float>(y) * tsF;
+
+            addQuad(px, py, px + tsF, py + tsF, kBody);
+
+            if (!pseudo3D_) continue;
+            if (!isSolid(x, y - 1)) addQuad(px, py, px + tsF, py + 5.f, kTop);
+            if (!isSolid(x - 1, y)) addQuad(px, py, px + 4.f, py + tsF, kLeft);
+            if (!isSolid(x + 1, y)) addQuad(px + tsF - 4.f, py, px + tsF, py + tsF, kRight);
+            if (!isSolid(x, y + 1)) addQuad(px, py + tsF - 4.f, px + tsF, py + tsF, kBottom);
+        }
+    }
+}
+
+// ============================================================
 // 渲染
 // ============================================================
 
 void Level::render(sf::RenderTarget& target,
-                   float /*camLeft*/, float /*camTop*/,
-                   float /*camW*/,    float /*camH*/) const {
+                   float camLeft, float camTop,
+                   float camW,    float camH) const {
     float time = animClock_.getElapsedTime().asSeconds();
     const float tsF = static_cast<float>(tileSize_);
 
-    // ===== 整关一次性 draw =====
-    // SFML / GPU 会自动裁掉视图外的顶点，无需手动剔除
-    if (vertexArray_.getVertexCount() > 0) {
-        target.draw(vertexArray_);
+    // ===== ⭐ 视锥裁剪 =====
+    // 计算相机视野覆盖的 tile 范围（额外留 1 格边界，避免边缘闪烁）
+    int x0 = std::max(0, static_cast<int>(std::floor(camLeft / tsF)) - 1);
+    int x1 = std::min(width_  - 1, static_cast<int>(std::ceil((camLeft + camW) / tsF)) + 1);
+    int y0 = std::max(0, static_cast<int>(std::floor(camTop  / tsF)) - 1);
+    int y1 = std::min(height_ - 1, static_cast<int>(std::ceil((camTop  + camH) / tsF)) + 1);
+
+    // 相机覆盖整关？直接画全关（小关卡不折腾）
+    bool fullVisible = (x0 == 0 && y0 == 0 && x1 == width_ - 1 && y1 == height_ - 1);
+
+    if (fullVisible) {
+        if (vertexArray_.getVertexCount() > 0) {
+            target.draw(vertexArray_);
+        }
+    } else {
+        // 只在可见范围变化时重建
+        if (x0 != lastX0_ || x1 != lastX1_ || y0 != lastY0_ || y1 != lastY1_) {
+            rebuildVisibleGeometry(x0, y0, x1, y1);
+            lastX0_ = x0; lastX1_ = x1;
+            lastY0_ = y0; lastY1_ = y1;
+        }
+        if (visibleVA_.getVertexCount() > 0) {
+            target.draw(visibleVA_);
+        }
     }
 
     // ============================================================

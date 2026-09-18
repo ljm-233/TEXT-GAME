@@ -184,7 +184,14 @@ bool GameScene::loadLevel(int index) {
 
     world_ = std::make_unique<GameWorld>(std::move(level), index);
     world_->setViewSize(kLogicalW, kLogicalH);
-    world_->setInitialLives(preferences_->getInt("initial_lives", 1));
+
+    // ⭐ 校验初始生命值，非法值回退到 1
+    int lives = preferences_->getInt("initial_lives", 1);
+    if (lives != 1 && lives != 3 && lives != 5 && lives != 10 && lives != 100) {
+        lives = 1;
+        preferences_->setInt("initial_lives", 1);
+    }
+    world_->setInitialLives(lives);
     levelIndex_ = index;
 
     levelTime_ = 0.f;
@@ -356,7 +363,10 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
 
     if (state == GameWorld::State::Playing) {
         overlayButtons_.clear();
-        FocusGroup::instance().clear();
+        // ⭐ 暂停时不清焦点，否则会覆盖 PauseMenu 刚设好的
+        if (!paused_) {
+            FocusGroup::instance().clear();
+        }
         return;
     }
 

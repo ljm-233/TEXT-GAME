@@ -4,6 +4,7 @@
 #include "game_constants.h"
 #include "player_sprite_factory.h"
 #include "gamepad.h"
+#include "gamepad_config.h"
 #include "keybindings.h"
 #include <algorithm>
 #include <cmath>
@@ -108,8 +109,9 @@ void Player::handleGamepad() {
     }
 
     float x = gp.leftX();
-    gamepadLeft_  = (x < -0.3f) || gp.dpadLeft();
-    gamepadRight_ = (x >  0.3f) || gp.dpadRight();
+    constexpr float T = GamepadConfig::kMoveStickThreshold;
+    gamepadLeft_  = (x < -T) || gp.dpadLeft();
+    gamepadRight_ = (x >  T) || gp.dpadRight();
 
     bool jumpNow = gp.jumpPressed();
     if (jumpNow && !gamepadJump_) {

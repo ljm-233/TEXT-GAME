@@ -80,6 +80,7 @@ PauseMenu::PauseMenu(const sf::Font& font,
     refreshLabels();
     relayout(windowSize_);
     refreshSelection();
+    syncFocus();
 }
 
 void PauseMenu::syncFocus() {

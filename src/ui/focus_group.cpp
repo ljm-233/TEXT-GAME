@@ -1,5 +1,6 @@
 #include "focus_group.h"
 #include "gamepad.h"
+#include "gamepad_config.h"
 #include <algorithm>
 
 FocusGroup& FocusGroup::instance() {
@@ -65,9 +66,9 @@ Button* FocusGroup::focused() const {
 
 void FocusGroup::handleDirection(bool now, bool& last,
                                  RepeatState& st, Direction dir, float dt) {
-    // ⭐ 手柄方向键重复触发手感参数
-    constexpr float kInitialDelay = 0.35f;
-    constexpr float kRepeatEvery  = 0.10f;
+    // ⭐ 手感参数见 gamepad_config.h
+    constexpr float kInitialDelay = GamepadConfig::kNavInitialDelay;
+    constexpr float kRepeatEvery  = GamepadConfig::kNavRepeatEvery;
 
     if (!now) {
         st.holdTimer    = 0.f;
@@ -167,10 +168,11 @@ void FocusGroup::update(float dt) {
     }
 
     // ===== 方向键：移动焦点（带重复触发）=====
-    bool nowUp    = gp.dpadUp()   || gp.leftY() < -0.5f;
-    bool nowDown  = gp.dpadDown() || gp.leftY() >  0.5f;
-    bool nowLeft  = gp.dpadLeft() || gp.leftX() < -0.5f;
-    bool nowRight = gp.dpadRight()|| gp.leftX() >  0.5f;
+    constexpr float T = GamepadConfig::kNavStickThreshold;
+    bool nowUp    = gp.dpadUp()   || gp.leftY() < -T;
+    bool nowDown  = gp.dpadDown() || gp.leftY() >  T;
+    bool nowLeft  = gp.dpadLeft() || gp.leftX() < -T;
+    bool nowRight = gp.dpadRight()|| gp.leftX() >  T;
 
     handleDirection(nowUp,    lastUp_,    upRepeat_,    Direction::Up,    dt);
     handleDirection(nowDown,  lastDown_,  downRepeat_,  Direction::Down,  dt);

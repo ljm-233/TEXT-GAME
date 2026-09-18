@@ -144,6 +144,29 @@ int indexOfLives(int lives) {
         if (kLives[i] == lives) return i;
     return 0;
 }
+
+// ⭐ 布局缩放：小屏下压缩垂直间距
+inline float contentScaleForHeight(float winH) {
+    return std::clamp(winH / 720.f, 0.65f, 1.0f);
+}
+
+// ⭐ 计算动态值
+struct DynLayout {
+    float rowH;        // 每行高度
+    float btnH;        // 按钮高度
+    float tabGap;      // Tab 按钮间距
+    float tabY;        // 第一个 Tab 的 y
+};
+
+inline DynLayout computeDynLayout(float winH) {
+    float s = contentScaleForHeight(winH);
+    return {
+        /*rowH  */ 50.f * s,
+        /*btnH  */ 46.f * s,
+        /*tabGap*/ 62.f * s,
+        /*tabY  */ 90.f * s,
+    };
+}
 }
 
 // ============================================================
@@ -260,6 +283,11 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     notificationEnabled_ = preferences_->getBool("notification_enabled", true);
     notificationPosition_= indexOfPos(preferences_->getInt("notification_position", 1));
     initialLives_        = preferences_->getInt("initial_lives", 1);
+    if (initialLives_ != 1 && initialLives_ != 3 && initialLives_ != 5
+        && initialLives_ != 10 && initialLives_ != 100) {
+        initialLives_ = 1;
+        preferences_->setInt("initial_lives", 1);
+    }
     pseudo3D_            = preferences_->getBool("pseudo_3d", true);
     parallaxEnabled_     = preferences_->getBool("parallax", true);
     playerAnimEnabled_   = preferences_->getBool("player_animation", true);
@@ -1477,8 +1505,11 @@ void SettingsScene::update(float /*dt*/) {
 // ============================================================
 
 void SettingsScene::renderTabs(Window& window) {
+    // ⭐ 根据缩放调整 Tab 按钮的位置
+    float tabY   = 90.f  * layoutScale_;
+    float tabGap = 62.f  * layoutScale_;
     for (int i = 0; i < kTabCount; ++i) {
-        tabButtons_[i]->setPosition({kTabX, kTabY + i * kTabGap});
+        tabButtons_[i]->setPosition({40.f, tabY + i * tabGap});
         tabButtons_[i]->render(window.native());
     }
 }
@@ -1489,6 +1520,8 @@ struct RowDrawer {
     float contentX;
     float ctrlX;
     float y;
+    float rowH = 50.f;              // ⭐ 动态行高
+    float scrollOffset = 0.f;       // ⭐ 内容区滚动偏移（负值向上）
 
     void toggle(ToggleRow& row) {
         row.label.setPosition({contentX, y + 8.f});
@@ -1497,7 +1530,7 @@ struct RowDrawer {
         row.offButton->setPosition({ctrlX + 96.f, y});
         row.onButton->render(target);
         row.offButton->render(target);
-        y += 50.f;
+        y += rowH;
     }
 
     // 兼容旧接口（其他 Tab 还在用）
@@ -1510,7 +1543,7 @@ struct RowDrawer {
         off->setPosition({ctrlX + 96.f, y});
         on->render(target);
         off->render(target);
-        y += 50.f;
+        y += rowH;
     }
 
     void multi(sf::Text& label,
@@ -1522,7 +1555,7 @@ struct RowDrawer {
             btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
             btns[i]->render(target);
         }
-        y += 50.f;
+        y += rowH;
     }
 
     // ⭐ MultiRow 版本（单行 + 网格）
@@ -1537,20 +1570,21 @@ struct RowDrawer {
                     {ctrlX + static_cast<float>(i) * row.stepX, y});
                 row.buttons[i]->render(target);
             }
-            y += row.stepY;
+            y += rowH;
         } else {
             // 多行网格
             const int cols = row.columns;
+            float stepY = rowH;   // ⭐ 用动态行高
             for (size_t i = 0; i < row.buttons.size(); ++i) {
                 int r = static_cast<int>(i) / cols;
                 int c = static_cast<int>(i) % cols;
                 row.buttons[i]->setPosition(
                     {ctrlX + static_cast<float>(c) * row.stepX,
-                     y + static_cast<float>(r) * row.stepY});
+                     y + static_cast<float>(r) * stepY});
                 row.buttons[i]->render(target);
             }
             int rows = (static_cast<int>(row.buttons.size()) + cols - 1) / cols;
-            y += static_cast<float>(rows) * row.stepY + 6.f;
+            y += static_cast<float>(rows) * stepY + 6.f;
         }
     }
 
@@ -1559,7 +1593,7 @@ struct RowDrawer {
         target.draw(label);
         s->setPosition({ctrlX, y + 4.f});
         s->render(target);
-        y += 50.f;
+        y += rowH;
     }
 };
 }
@@ -1571,6 +1605,7 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
     y += 36.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
+    r.rowH = 50.f * layoutScale_;   // ⭐ 动态行高
     r.multi (*displayMultiRows_[0]);   // Resolution (2×2 网格)
     r.toggle(*displayToggles_[0]);     // Fullscreen
     r.toggle(*displayToggles_[1]);     // VSync
@@ -1586,6 +1621,7 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     y += 36.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
+    r.rowH = 50.f * layoutScale_;
 
     r.toggle(*interfaceToggles_[0]);   // FPS 显示
     r.multi (*interfaceMultiRows_[0]); // FpsPos
@@ -1629,6 +1665,7 @@ void SettingsScene::renderGraphicsTab(Window& window, float contentX,
     y += 36.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
+    r.rowH = 50.f * layoutScale_;
 
     // ⭐ 顺序必须和构造里 push_back 一致
     r.multi (*graphicsMultiRows_[0]);   // InitialLives
@@ -1654,6 +1691,7 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
     y += 36.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
+    r.rowH = 50.f * layoutScale_;
 
     r.slider(labelMasterVolume_, masterVolumeSlider_.get());
     r.toggle(*audioToggles_[0]);   // Sound
@@ -1704,6 +1742,7 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
     y += 36.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
+    r.rowH = 50.f * layoutScale_;
 
     r.toggle(*otherToggles_[0]);   // RememberSize
     r.toggle(*otherToggles_[1]);   // AutoPause
@@ -1741,6 +1780,14 @@ void SettingsScene::render(Window& window) {
     auto size = window.native().getSize();
     float w  = static_cast<float>(size.x);
     float h  = static_cast<float>(size.y);
+
+    // ⭐ 根据窗口高度更新缩放
+    float newScale = std::clamp(h / 720.f, 0.65f, 1.0f);
+    if (std::abs(newScale - layoutScale_) > 0.01f || h != lastWinH_) {
+        layoutScale_ = newScale;
+        lastWinH_ = h;
+        contentScroll_ = 0.f;   // 尺寸变了重置滚动
+    }
 
     renderTabs(window);
 
