@@ -105,7 +105,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
                         : customName;
     info.createdAt  = now;
     info.lastPlayed = now;
-    info.progress     = 0;
+    info.coins        = 0;
     info.currentLevel = 1;
     info.levelStars   = std::vector<int>(9, 0);
     info.levelBestTimes = std::vector<float>(9, 0.f);
@@ -119,7 +119,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     out << "name="             << info.name         << '\n';
     out << "created_at="       << info.createdAt    << '\n';
     out << "last_played="      << info.lastPlayed   << '\n';
-    out << "progress="         << info.progress     << '\n';
+    out << "coins="            << info.coins        << '\n';
     out << "current_level="    << info.currentLevel << '\n';
     out << "level_stars="      << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
@@ -142,7 +142,7 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.name       = Str::UnnamedSave;
     out.createdAt  = "";
     out.lastPlayed = "";
-    out.progress     = 0;
+    out.coins        = 0;
     out.currentLevel = 1;
     out.levelStars   = std::vector<int>(9, 0);
     out.levelBestTimes = std::vector<float>(9, 0.f);
@@ -157,8 +157,9 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
         if      (k == "name")        out.name       = v;
         else if (k == "created_at")  out.createdAt  = v;
         else if (k == "last_played") out.lastPlayed = v;
-        else if (k == "progress") {
-            try { out.progress = std::stoi(v); } catch (...) { out.progress = 0; }
+        // ⭐ 兼容旧字段名 progress= 和新字段名 coins=
+        else if (k == "coins" || k == "progress") {
+            try { out.coins = std::stoi(v); } catch (...) { out.coins = 0; }
         }
         else if (k == "current_level") {
             try { out.currentLevel = std::stoi(v); } catch (...) { out.currentLevel = 1; }
@@ -191,11 +192,11 @@ bool SaveManager::deleteSave(const std::string& filename) {
 }
 
 bool SaveManager::updateProgress(const std::string& filename,
-                                 int progress,
+                                 int coins,
                                  int currentLevel) {
     SaveInfo info;
     if (!loadSave(filename, info)) return false;
-    info.progress     = std::max(info.progress, progress);
+    info.coins        = std::max(info.coins, coins);
     info.currentLevel = std::max(info.currentLevel, currentLevel);
     info.lastPlayed   = currentTimestamp();
 
@@ -205,7 +206,7 @@ bool SaveManager::updateProgress(const std::string& filename,
     out << "name="             << info.name         << '\n';
     out << "created_at="       << info.createdAt    << '\n';
     out << "last_played="      << info.lastPlayed   << '\n';
-    out << "progress="         << info.progress     << '\n';
+    out << "coins="            << info.coins        << '\n';
     out << "current_level="    << info.currentLevel << '\n';
     out << "level_stars="      << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
@@ -230,7 +231,7 @@ bool SaveManager::setLevelStar(const std::string& filename,
         out << "name="             << info.name         << '\n';
         out << "created_at="       << info.createdAt    << '\n';
         out << "last_played="      << info.lastPlayed   << '\n';
-        out << "progress="         << info.progress     << '\n';
+        out << "coins="            << info.coins        << '\n';
         out << "current_level="    << info.currentLevel << '\n';
         out << "level_stars="      << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
@@ -261,7 +262,7 @@ bool SaveManager::setLevelBestTime(const std::string& filename,
         out << "name="             << info.name         << '\n';
         out << "created_at="       << info.createdAt    << '\n';
         out << "last_played="      << info.lastPlayed   << '\n';
-        out << "progress="         << info.progress     << '\n';
+        out << "coins="            << info.coins        << '\n';
         out << "current_level="    << info.currentLevel << '\n';
         out << "level_stars="      << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';

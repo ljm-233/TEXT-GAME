@@ -69,13 +69,13 @@ bool Gamepad::backPressed() const {
 bool Gamepad::dpadUp() const {
     if (!connected_) return false;
     float y = sf::Joystick::getAxisPosition(joystickId_, sf::Joystick::Axis::PovY);
-    return y > 50.f;
+    return y < -50.f;
 }
 
 bool Gamepad::dpadDown() const {
     if (!connected_) return false;
     float y = sf::Joystick::getAxisPosition(joystickId_, sf::Joystick::Axis::PovY);
-    return y < -50.f;
+    return y > 50.f;
 }
 
 bool Gamepad::dpadLeft() const {

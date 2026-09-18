@@ -206,7 +206,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelSound_          (font, toSf(Str::LabelSound),          scaledFontSize(20)),
       labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    scaledFontSize(20)),
       labelBGM_            (font, toSf(Str::LabelBGM),            scaledFontSize(20)),
-      labelBGMVolume_      (font, toSf(Str::LabelBGMVolume),               scaledFontSize(20)),
+      labelBGMVolume_      (font, toSf(Str::LabelBGMVolume),      scaledFontSize(20)),
       labelGamepad_        (font, toSf(Str::LabelGamepad),        scaledFontSize(20)),
 
       labelRememberSize_   (font, toSf(Str::LabelRememberSize),   scaledFontSize(20)),
@@ -251,7 +251,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     animationSpeedIndex_ = indexOfAnimSpeed(preferences_->getInt("animation_speed_index", 1));
     notificationEnabled_ = preferences_->getBool("notification_enabled", true);
     notificationPosition_= indexOfPos(preferences_->getInt("notification_position", 1));
-    initialLives_        = preferences_->getInt("initial_lives", 3);
+    initialLives_        = preferences_->getInt("initial_lives", 1);
     pseudo3D_            = preferences_->getBool("pseudo_3d", true);
     parallaxEnabled_     = preferences_->getBool("parallax", true);
     playerAnimEnabled_   = preferences_->getBool("player_animation", true);
@@ -299,12 +299,9 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                     &labelConsoleFont_, &labelConsoleHistory_,
                     &labelConsoleLineHeight_, &labelConsoleAutoScroll_,
                     &labelConsoleBlink_, &labelConsolePrompt_,
-                    &labelAnimation_, &labelAnimationSpeed_,
-                    &labelNotification_, &labelNotificationPos_,
+                    &labelAnimationSpeed_,
+                    &labelNotificationPos_,
                     &labelInitialLives_,
-                    &labelPseudo3D_, &labelParallax_, &labelPlayerAnim_,
-                    &labelLevelIntro_, &labelParticles_, &labelScreenShake_,
-                    &labelShowColliders_,
                     &labelButtonCorner_, &labelButtonOutline_,
                     &labelMasterVolume_,
                     &labelSound_, &labelSoundVolume_, &labelBGM_, &labelBGMVolume_,
@@ -413,21 +410,52 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
         }
     }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); animationOn_ = std::move(on); animationOff_ = std::move(off); }
+
+    // ⭐ Toggle 行统一用 ToggleRow
+    auto makeToggleRow = [&](const char* labelKey,
+                             std::function<void(bool)> onChanged) {
+        auto row = std::make_unique<ToggleRow>(font_, labelKey,
+                                               std::move(onChanged));
+        auto [on, off] = makeToggle(Str::On, Str::Off);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        return row;
+    };
+
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelAnimation, [this](bool v) {
+        animationEnabled_ = v; refreshSelection(); applyAnimation();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelPseudo3D, [this](bool v) {
+        pseudo3D_ = v; refreshSelection(); applyPseudo3D();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelParallax, [this](bool v) {
+        parallaxEnabled_ = v; refreshSelection(); applyParallax();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelPlayerAnimation, [this](bool v) {
+        playerAnimEnabled_ = v; refreshSelection(); applyPlayerAnimation();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelLevelIntro, [this](bool v) {
+        levelIntroEnabled_ = v; refreshSelection(); applyLevelIntro();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelParticles, [this](bool v) {
+        particlesEnabled_ = v; refreshSelection(); applyParticles();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelScreenShake, [this](bool v) {
+        screenShake_ = v; refreshSelection(); applyScreenShake();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelNotification, [this](bool v) {
+        notificationEnabled_ = v; refreshSelection(); applyNotification();
+    }));
+    graphicsToggles_.push_back(makeToggleRow(Str::LabelShowColliders, [this](bool v) {
+        showColliders_ = v; refreshSelection(); applyShowColliders();
+    }));
+
     for (int i = 0; i < kanimSpeedCount; ++i)
         animationSpeedButtons_.push_back(std::make_unique<Button>(
             kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    { auto [on, off] = makeToggle(Str::On, Str::Off); notificationOn_ = std::move(on); notificationOff_ = std::move(off); }
     for (int i = 0; i < kPosCount; ++i)
         notificationPosButtons_.push_back(std::make_unique<Button>(
             kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
-    { auto [on, off] = makeToggle(Str::On, Str::Off); pseudo3DOn_  = std::move(on); pseudo3DOff_  = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); parallaxOn_  = std::move(on); parallaxOff_  = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); playerAnimOn_= std::move(on); playerAnimOff_= std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); levelIntroOn_= std::move(on); levelIntroOff_= std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); particlesOn_ = std::move(on); particlesOff_ = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); screenShakeOn_ = std::move(on); screenShakeOff_ = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); showCollidersOn_ = std::move(on); showCollidersOff_ = std::move(off); }
     for (int i = 0; i < kButtonCornerCount; ++i)
         buttonCornerButtons_.push_back(std::make_unique<Button>(
             kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -534,20 +562,16 @@ void SettingsScene::refreshLabels() {
     setLabel(labelConsolePrompt_,        Str::LabelConsolePrompt);
 
     // ===== Graphics tab =====
-    setLabel(labelAnimation_,       Str::LabelAnimation);
+    for (auto& row : graphicsToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
     setLabel(labelAnimationSpeed_,  Str::LabelAnimationSpeed);
     setLabel(labelInitialLives_,    Str::LabelInitialLives);
-    setLabel(labelPseudo3D_,        Str::LabelPseudo3D);
-    setLabel(labelParallax_,        Str::LabelParallax);
-    setLabel(labelPlayerAnim_,      Str::LabelPlayerAnimation);
-    setLabel(labelLevelIntro_,      Str::LabelLevelIntro);
-    setLabel(labelParticles_,       Str::LabelParticles);
-    setLabel(labelScreenShake_,     Str::LabelScreenShake);
-    setLabel(labelNotification_,    Str::LabelNotification);
     setLabel(labelNotificationPos_, Str::LabelNotificationPos);
     setLabel(labelButtonCorner_,    Str::LabelButtonCorner);
     setLabel(labelButtonOutline_,   Str::LabelButtonOutline);
-    setLabel(labelShowColliders_,   Str::LabelShowColliders);
 
     // ===== Audio tab =====
     setLabel(labelMasterVolume_, Str::LabelMasterVolume);
@@ -585,15 +609,6 @@ void SettingsScene::refreshLabels() {
     setOn(clockOn_);       setOff(clockOff_);
     setOn(consoleAutoScrollOn_); setOff(consoleAutoScrollOff_);
     setOn(consoleBlinkOn_);      setOff(consoleBlinkOff_);
-    setOn(animationOn_);   setOff(animationOff_);
-    setOn(notificationOn_);setOff(notificationOff_);
-    setOn(pseudo3DOn_);    setOff(pseudo3DOff_);
-    setOn(parallaxOn_);    setOff(parallaxOff_);
-    setOn(playerAnimOn_);  setOff(playerAnimOff_);
-    setOn(levelIntroOn_);  setOff(levelIntroOff_);
-    setOn(particlesOn_);   setOff(particlesOff_);
-    setOn(screenShakeOn_); setOff(screenShakeOff_);
-    setOn(showCollidersOn_); setOff(showCollidersOff_);
     setOn(soundOn_);       setOff(soundOff_);
     setOn(bgmOn_);         setOff(bgmOff_);
     setOn(gamepadOn_);     setOff(gamepadOff_);
@@ -645,6 +660,86 @@ void SettingsScene::refreshLabels() {
 
     // 语言按钮保持"中文"/"English"字样（不翻译，否则用户无法识别）
 }
+
+void SettingsScene::syncFocus() {
+    if (resetConfirm_ || aboutDialog_) {
+        FocusGroup::instance().clear();
+        return;
+    }
+
+    std::vector<Button*> items;
+    for (auto& b : tabButtons_) items.push_back(b.get());
+
+    switch (currentTab_) {
+        case Tab::Display:
+            for (auto& b : resolutionButtons_) items.push_back(b.get());
+            items.push_back(fullscreenOn_.get());
+            items.push_back(fullscreenOff_.get());
+            items.push_back(vsyncOn_.get());
+            items.push_back(vsyncOff_.get());
+            for (auto& b : antiAliasingButtons_) items.push_back(b.get());
+            for (auto& b : logLevelButtons_)     items.push_back(b.get());
+            for (auto& b : fpsLimitButtons_)     items.push_back(b.get());
+            break;
+        case Tab::Interface:
+            items.push_back(fpsOn_.get());
+            items.push_back(fpsOff_.get());
+            for (auto& b : fpsPosButtons_)      items.push_back(b.get());
+            for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
+            for (auto& b : uiScaleButtons_)     items.push_back(b.get());
+            for (auto& b : themeButtons_)       items.push_back(b.get());
+            for (auto& b : languageButtons_)    items.push_back(b.get());
+            items.push_back(wallpaperButton_.get());
+            items.push_back(clockOn_.get());
+            items.push_back(clockOff_.get());
+            for (auto& b : clockPosButtons_)    items.push_back(b.get());
+            for (auto& b : consoleFontButtons_)    items.push_back(b.get());
+            for (auto& b : consoleHistoryButtons_) items.push_back(b.get());
+            for (auto& b : consoleLineHeightButtons_) items.push_back(b.get());
+            items.push_back(consoleAutoScrollOn_.get());
+            items.push_back(consoleAutoScrollOff_.get());
+            items.push_back(consoleBlinkOn_.get());
+            items.push_back(consoleBlinkOff_.get());
+            for (auto& b : consolePromptButtons_) items.push_back(b.get());
+            break;
+            case Tab::Graphics:
+                for (auto& b : initialLivesButtons_) items.push_back(b.get());
+                for (auto& row : graphicsToggles_) {
+                    items.push_back(row->onButton.get());
+                    items.push_back(row->offButton.get());
+                }
+                for (auto& b : animationSpeedButtons_) items.push_back(b.get());
+                for (auto& b : notificationPosButtons_) items.push_back(b.get());
+                for (auto& b : buttonCornerButtons_)  items.push_back(b.get());
+                for (auto& b : buttonOutlineButtons_) items.push_back(b.get());
+                break;;
+        case Tab::Audio:
+            items.push_back(soundOn_.get());
+            items.push_back(soundOff_.get());
+            items.push_back(bgmOn_.get());
+            items.push_back(bgmOff_.get());
+            items.push_back(gamepadOn_.get());
+            items.push_back(gamepadOff_.get());
+            break;
+        case Tab::Keys:
+            for (auto& b : keyBindingButtons_) items.push_back(b.get());
+            break;
+        case Tab::Other:
+            items.push_back(rememberOn_.get());
+            items.push_back(rememberOff_.get());
+            items.push_back(autoPauseOn_.get());
+            items.push_back(autoPauseOff_.get());
+            for (auto& b : logRotateButtons_) items.push_back(b.get());
+            for (auto& b : logKeepButtons_)   items.push_back(b.get());
+            items.push_back(aboutButton_.get());
+            items.push_back(resetButton_.get());
+            break;
+    }
+    items.push_back(backButton_.get());
+
+    FocusGroup::instance().setItems(items);
+}
+
 
 void SettingsScene::refreshSelection() {
     for (int i = 0; i < kTabCount; ++i)
@@ -701,12 +796,26 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kConsolePromptCount; ++i)
         consolePromptButtons_[i]->setSelected(i == consolePrompt_);
 
-    animationOn_->setSelected(animationEnabled_);
-    animationOff_->setSelected(!animationEnabled_);
+    // ⭐ 9 个 Toggle 一次性刷新
+    auto setToggleRow = [](ToggleRow& row, bool v) {
+        row.currentValue = v;
+        row.onButton->setSelected(v);
+        row.offButton->setSelected(!v);
+    };
+    if (graphicsToggles_.size() == 9) {
+        setToggleRow(*graphicsToggles_[0], animationEnabled_);
+        setToggleRow(*graphicsToggles_[1], pseudo3D_);
+        setToggleRow(*graphicsToggles_[2], parallaxEnabled_);
+        setToggleRow(*graphicsToggles_[3], playerAnimEnabled_);
+        setToggleRow(*graphicsToggles_[4], levelIntroEnabled_);
+        setToggleRow(*graphicsToggles_[5], particlesEnabled_);
+        setToggleRow(*graphicsToggles_[6], screenShake_);
+        setToggleRow(*graphicsToggles_[7], notificationEnabled_);
+        setToggleRow(*graphicsToggles_[8], showColliders_);
+    }
+
     for (int i = 0; i < kanimSpeedCount; ++i)
         animationSpeedButtons_[i]->setSelected(i == animationSpeedIndex_);
-    notificationOn_->setSelected(notificationEnabled_);
-    notificationOff_->setSelected(!notificationEnabled_);
     for (int i = 0; i < kPosCount; ++i)
         notificationPosButtons_[i]->setSelected(i == notificationPosition_);
 
@@ -717,13 +826,6 @@ void SettingsScene::refreshSelection() {
         for (int i = 0; i < 5; ++i)
             initialLivesButtons_[i]->setSelected(i == idx);
     }
-    pseudo3DOn_->setSelected(pseudo3D_);        pseudo3DOff_->setSelected(!pseudo3D_);
-    parallaxOn_->setSelected(parallaxEnabled_); parallaxOff_->setSelected(!parallaxEnabled_);
-    playerAnimOn_->setSelected(playerAnimEnabled_); playerAnimOff_->setSelected(!playerAnimEnabled_);
-    levelIntroOn_->setSelected(levelIntroEnabled_); levelIntroOff_->setSelected(!levelIntroEnabled_);
-    particlesOn_->setSelected(particlesEnabled_);   particlesOff_->setSelected(!particlesEnabled_);
-    screenShakeOn_->setSelected(screenShake_);      screenShakeOff_->setSelected(!screenShake_);
-    showCollidersOn_->setSelected(showColliders_);  showCollidersOff_->setSelected(!showColliders_);
 
     int bcIdx = indexOfButtonCorner(buttonCorner_);
     for (int i = 0; i < kButtonCornerCount; ++i)
@@ -868,10 +970,12 @@ void SettingsScene::resetAllPreferences() { preferences_->resetAll(); }
 
 void SettingsScene::onEnter() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 void SettingsScene::onResume() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 void SettingsScene::handleEvent(const sf::Event& event) {
@@ -922,17 +1026,12 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             break;
         case Tab::Graphics:
             for (auto& b : initialLivesButtons_) b->handleEvent(event);
-            animationOn_->handleEvent(event);    animationOff_->handleEvent(event);
+            for (auto& row : graphicsToggles_) {
+                row->onButton->handleEvent(event);
+                row->offButton->handleEvent(event);
+            }
             for (auto& b : animationSpeedButtons_) b->handleEvent(event);
-            notificationOn_->handleEvent(event); notificationOff_->handleEvent(event);
             for (auto& b : notificationPosButtons_) b->handleEvent(event);
-            pseudo3DOn_->handleEvent(event);     pseudo3DOff_->handleEvent(event);
-            parallaxOn_->handleEvent(event);     parallaxOff_->handleEvent(event);
-            playerAnimOn_->handleEvent(event);   playerAnimOff_->handleEvent(event);
-            levelIntroOn_->handleEvent(event);   levelIntroOff_->handleEvent(event);
-            particlesOn_->handleEvent(event);    particlesOff_->handleEvent(event);
-            screenShakeOn_->handleEvent(event);  screenShakeOff_->handleEvent(event);
-            showCollidersOn_->handleEvent(event);showCollidersOff_->handleEvent(event);
             for (auto& b : buttonCornerButtons_)  b->handleEvent(event);
             for (auto& b : buttonOutlineButtons_) b->handleEvent(event);
             break;
@@ -1002,13 +1101,16 @@ void SettingsScene::update(float /*dt*/) {
             nextScene_ = SceneId::Exit;
         } else if (r == ConfirmDialog::Result::No) {
             resetConfirm_.reset();
+            syncFocus();
         }
         return;
     }
     if (aboutDialog_) {
         auto r = aboutDialog_->consumeResult();
-        if (r == ConfirmDialog::Result::Ok || r == ConfirmDialog::Result::No)
+        if (r == ConfirmDialog::Result::Ok || r == ConfirmDialog::Result::No) {
             aboutDialog_.reset();
+            syncFocus();
+        }
         return;
     }
 
@@ -1017,6 +1119,7 @@ void SettingsScene::update(float /*dt*/) {
             if (static_cast<int>(currentTab_) != i) {
                 currentTab_ = static_cast<Tab>(i);
                 refreshSelection();
+                syncFocus();           // ⭐ Tab 变了，按钮列表也变
             }
             return;
         }
@@ -1215,11 +1318,16 @@ void SettingsScene::update(float /*dt*/) {
                     }
                 }
             }
-            if (animationOn_->consumeClick() && !animationEnabled_) {
-                animationEnabled_ = true; refreshSelection(); applyAnimation(); return;
-            }
-            if (animationOff_->consumeClick() && animationEnabled_) {
-                animationEnabled_ = false; refreshSelection(); applyAnimation(); return;
+            // ⭐ 9 个 Toggle 一次循环
+            for (auto& row : graphicsToggles_) {
+                if (row->onButton->consumeClick() && !row->currentValue) {
+                    if (row->onChanged) row->onChanged(true);
+                    return;
+                }
+                if (row->offButton->consumeClick() && row->currentValue) {
+                    if (row->onChanged) row->onChanged(false);
+                    return;
+                }
             }
             for (int i = 0; i < kanimSpeedCount; ++i)
                 if (animationSpeedButtons_[i]->consumeClick()) {
@@ -1229,12 +1337,6 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            if (notificationOn_->consumeClick() && !notificationEnabled_) {
-                notificationEnabled_ = true; refreshSelection(); applyNotification(); return;
-            }
-            if (notificationOff_->consumeClick() && notificationEnabled_) {
-                notificationEnabled_ = false; refreshSelection(); applyNotification(); return;
-            }
             for (int i = 0; i < kPosCount; ++i)
                 if (notificationPosButtons_[i]->consumeClick()) {
                     if (notificationPosition_ != i) {
@@ -1243,48 +1345,6 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            if (pseudo3DOn_->consumeClick() && !pseudo3D_) {
-                pseudo3D_ = true; refreshSelection(); applyPseudo3D(); return;
-            }
-            if (pseudo3DOff_->consumeClick() && pseudo3D_) {
-                pseudo3D_ = false; refreshSelection(); applyPseudo3D(); return;
-            }
-            if (parallaxOn_->consumeClick() && !parallaxEnabled_) {
-                parallaxEnabled_ = true; refreshSelection(); applyParallax(); return;
-            }
-            if (parallaxOff_->consumeClick() && parallaxEnabled_) {
-                parallaxEnabled_ = false; refreshSelection(); applyParallax(); return;
-            }
-            if (playerAnimOn_->consumeClick() && !playerAnimEnabled_) {
-                playerAnimEnabled_ = true; refreshSelection(); applyPlayerAnimation(); return;
-            }
-            if (playerAnimOff_->consumeClick() && playerAnimEnabled_) {
-                playerAnimEnabled_ = false; refreshSelection(); applyPlayerAnimation(); return;
-            }
-            if (levelIntroOn_->consumeClick() && !levelIntroEnabled_) {
-                levelIntroEnabled_ = true; refreshSelection(); applyLevelIntro(); return;
-            }
-            if (levelIntroOff_->consumeClick() && levelIntroEnabled_) {
-                levelIntroEnabled_ = false; refreshSelection(); applyLevelIntro(); return;
-            }
-            if (particlesOn_->consumeClick() && !particlesEnabled_) {
-                particlesEnabled_ = true; refreshSelection(); applyParticles(); return;
-            }
-            if (particlesOff_->consumeClick() && particlesEnabled_) {
-                particlesEnabled_ = false; refreshSelection(); applyParticles(); return;
-            }
-            if (screenShakeOn_->consumeClick() && !screenShake_) {
-                screenShake_ = true; refreshSelection(); applyScreenShake(); return;
-            }
-            if (screenShakeOff_->consumeClick() && screenShake_) {
-                screenShake_ = false; refreshSelection(); applyScreenShake(); return;
-            }
-            if (showCollidersOn_->consumeClick() && !showColliders_) {
-                showColliders_ = true; refreshSelection(); applyShowColliders(); return;
-            }
-            if (showCollidersOff_->consumeClick() && showColliders_) {
-                showColliders_ = false; refreshSelection(); applyShowColliders(); return;
-            }
             for (int i = 0; i < kButtonCornerCount; ++i)
                 if (buttonCornerButtons_[i]->consumeClick()) {
                     if (std::abs(buttonCorner_ - kButtonCorners[i]) > 0.5f) {
@@ -1383,19 +1443,21 @@ void SettingsScene::update(float /*dt*/) {
                 }
             if (aboutButton_->consumeClick()) {
                 std::string msg =
-                    std::string(Str::T(Str::AboutTitle)) + "\n\n"
+                    std::string(Str::T(Str::AboutTitle)) + "\n"
                     + Str::T(Str::AboutVersion) + PROJECT_VERSION + "\n"
                     + Str::T(Str::AboutBuild)   + BUILD_DATE + "\n"
                     + Str::T(Str::AboutAuthor)  + "ljm-233";
                 aboutDialog_ = std::make_unique<ConfirmDialog>(
-                    font_, msg, sf::Vector2f(1280.f, 720.f),
+                    font_, msg, sf::Vector2f(1440.f, 900.f),
                     ConfirmDialog::Mode::Info);
+                syncFocus();
                 return;
             }
             if (resetButton_->consumeClick()) {
                 resetConfirm_ = std::make_unique<ConfirmDialog>(
                     font_, Str::T(Str::ResetConfirm),
-                    sf::Vector2f(1280.f, 720.f));
+                    sf::Vector2f(1720.f, 720.f));
+                syncFocus();
                 return;
             }
             break;
@@ -1423,6 +1485,17 @@ struct RowDrawer {
     float ctrlX;
     float y;
 
+    void toggle(ToggleRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        row.onButton->setPosition ({ctrlX, y});
+        row.offButton->setPosition({ctrlX + 96.f, y});
+        row.onButton->render(target);
+        row.offButton->render(target);
+        y += 50.f;
+    }
+
+    // 兼容旧接口（其他 Tab 还在用）
     void toggle(sf::Text& label,
                 const std::unique_ptr<Button>& on,
                 const std::unique_ptr<Button>& off) {
@@ -1534,23 +1607,21 @@ void SettingsScene::renderGraphicsTab(Window& window, float contentX,
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
     r.multi (labelInitialLives_,   initialLivesButtons_, 86.f);
-    r.toggle(labelAnimation_,      animationOn_,    animationOff_);
+
+    // ⭐ 顺序必须和构造里 push_back 一致
+    r.toggle(*graphicsToggles_[0]);   // Animation
     r.multi (labelAnimationSpeed_, animationSpeedButtons_, 96.f);
-
-    r.toggle(labelPseudo3D_,       pseudo3DOn_,     pseudo3DOff_);
-    r.toggle(labelParallax_,       parallaxOn_,     parallaxOff_);
-    r.toggle(labelPlayerAnim_,     playerAnimOn_,   playerAnimOff_);
-    r.toggle(labelLevelIntro_,     levelIntroOn_,   levelIntroOff_);
-    r.toggle(labelParticles_,      particlesOn_,    particlesOff_);
-    r.toggle(labelScreenShake_,    screenShakeOn_,  screenShakeOff_);
-
-    r.toggle(labelNotification_,   notificationOn_, notificationOff_);
-    r.multi (labelNotificationPos_,notificationPosButtons_, 86.f);
-
+    r.toggle(*graphicsToggles_[1]);   // Pseudo3D
+    r.toggle(*graphicsToggles_[2]);   // Parallax
+    r.toggle(*graphicsToggles_[3]);   // PlayerAnim
+    r.toggle(*graphicsToggles_[4]);   // LevelIntro
+    r.toggle(*graphicsToggles_[5]);   // Particles
+    r.toggle(*graphicsToggles_[6]);   // ScreenShake
+    r.toggle(*graphicsToggles_[7]);   // Notification
+    r.multi (labelNotificationPos_, notificationPosButtons_, 86.f);
     r.multi (labelButtonCorner_,   buttonCornerButtons_, 96.f);
     r.multi (labelButtonOutline_,  buttonOutlineButtons_, 96.f);
-
-    r.toggle(labelShowColliders_,  showCollidersOn_, showCollidersOff_);
+    r.toggle(*graphicsToggles_[8]);   // ShowColliders
 }
 
 void SettingsScene::renderAudioTab(Window& window, float contentX,
@@ -1680,99 +1751,5 @@ void SettingsScene::render(Window& window) {
     if (aboutDialog_) {
         aboutDialog_->relayout({w, h});
         aboutDialog_->render(window.native());
-    }
-
-    // ============================================================
-    // ⭐ 注册焦点
-    // ============================================================
-    if (resetConfirm_ || aboutDialog_) {
-        FocusGroup::instance().clear();
-    } else {
-        std::vector<Button*> items;
-
-        for (auto& b : tabButtons_) items.push_back(b.get());
-
-        switch (currentTab_) {
-            case Tab::Display:
-                for (auto& b : resolutionButtons_)   items.push_back(b.get());
-                items.push_back(fullscreenOn_.get());
-                items.push_back(fullscreenOff_.get());
-                items.push_back(vsyncOn_.get());
-                items.push_back(vsyncOff_.get());
-                for (auto& b : antiAliasingButtons_) items.push_back(b.get());
-                for (auto& b : logLevelButtons_)     items.push_back(b.get());
-                for (auto& b : fpsLimitButtons_)     items.push_back(b.get());
-                break;
-            case Tab::Interface:
-                items.push_back(fpsOn_.get());
-                items.push_back(fpsOff_.get());
-                for (auto& b : fpsPosButtons_)      items.push_back(b.get());
-                for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
-                for (auto& b : uiScaleButtons_)     items.push_back(b.get());
-                for (auto& b : themeButtons_)       items.push_back(b.get());
-                for (auto& b : languageButtons_)    items.push_back(b.get());
-                items.push_back(wallpaperButton_.get());
-                items.push_back(clockOn_.get());
-                items.push_back(clockOff_.get());
-                for (auto& b : clockPosButtons_)    items.push_back(b.get());
-                for (auto& b : consoleFontButtons_)    items.push_back(b.get());
-                for (auto& b : consoleHistoryButtons_) items.push_back(b.get());
-                for (auto& b : consoleLineHeightButtons_) items.push_back(b.get());
-                items.push_back(consoleAutoScrollOn_.get());
-                items.push_back(consoleAutoScrollOff_.get());
-                items.push_back(consoleBlinkOn_.get());
-                items.push_back(consoleBlinkOff_.get());
-                for (auto& b : consolePromptButtons_) items.push_back(b.get());
-                break;
-            case Tab::Graphics:
-                for (auto& b : initialLivesButtons_) items.push_back(b.get());
-                items.push_back(animationOn_.get());
-                items.push_back(animationOff_.get());
-                for (auto& b : animationSpeedButtons_) items.push_back(b.get());
-                items.push_back(notificationOn_.get());
-                items.push_back(notificationOff_.get());
-                for (auto& b : notificationPosButtons_) items.push_back(b.get());
-                items.push_back(pseudo3DOn_.get());
-                items.push_back(pseudo3DOff_.get());
-                items.push_back(parallaxOn_.get());
-                items.push_back(parallaxOff_.get());
-                items.push_back(playerAnimOn_.get());
-                items.push_back(playerAnimOff_.get());
-                items.push_back(levelIntroOn_.get());
-                items.push_back(levelIntroOff_.get());
-                items.push_back(particlesOn_.get());
-                items.push_back(particlesOff_.get());
-                items.push_back(screenShakeOn_.get());
-                items.push_back(screenShakeOff_.get());
-                items.push_back(showCollidersOn_.get());
-                items.push_back(showCollidersOff_.get());
-                for (auto& b : buttonCornerButtons_)  items.push_back(b.get());
-                for (auto& b : buttonOutlineButtons_) items.push_back(b.get());
-                break;
-            case Tab::Audio:
-                items.push_back(soundOn_.get());
-                items.push_back(soundOff_.get());
-                items.push_back(bgmOn_.get());
-                items.push_back(bgmOff_.get());
-                items.push_back(gamepadOn_.get());
-                items.push_back(gamepadOff_.get());
-                break;
-            case Tab::Keys:
-                for (auto& b : keyBindingButtons_) items.push_back(b.get());
-                break;
-            case Tab::Other:
-                items.push_back(rememberOn_.get());
-                items.push_back(rememberOff_.get());
-                items.push_back(autoPauseOn_.get());
-                items.push_back(autoPauseOff_.get());
-                for (auto& b : logRotateButtons_) items.push_back(b.get());
-                for (auto& b : logKeepButtons_)   items.push_back(b.get());
-                items.push_back(aboutButton_.get());
-                items.push_back(resetButton_.get());
-                break;
-        }
-
-        items.push_back(backButton_.get());
-        FocusGroup::instance().setItems(items);
     }
 }

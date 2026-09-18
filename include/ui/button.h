@@ -50,4 +50,10 @@ private:
     sf::Color currentFill_;
     sf::Color currentOutline_;
     sf::Color currentText_;
+
+    // ⭐ 缓存 refreshShape 的输入，避免每帧重建多边形
+    sf::Vector2f lastShapeSize_{-1.f, -1.f};
+    bool         lastShapeFocused_ = false;
+    float        lastShapeCorner_ = -1.f;
+    float        lastShapeOutline_ = -1.f;
 };

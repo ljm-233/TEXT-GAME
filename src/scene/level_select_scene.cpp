@@ -3,7 +3,6 @@
 #include "utf8.h"
 #include "focus_group.h"
 #include <algorithm>
-#include <iostream>
 #include <cstdio>
 
 LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
@@ -51,10 +50,12 @@ LevelSelectScene::LevelSelectScene(std::shared_ptr<Background>  background,
 
 void LevelSelectScene::onEnter() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 void LevelSelectScene::onResume() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 void LevelSelectScene::refreshLabels() {
@@ -66,6 +67,20 @@ void LevelSelectScene::refreshLabels() {
     }
     backButton_->setText(Str::T(Str::Back));
 }
+
+void LevelSelectScene::syncFocus() {
+    std::vector<Button*> items;
+    for (int i = 0; i < kMaxLevels; ++i) {
+        int level = i + 1;
+        bool unlocked = hasSave_ && level <= currentLevel_;
+        if (unlocked) {
+            items.push_back(levelButtons_[i].get());
+        }
+    }
+    items.push_back(backButton_.get());
+    FocusGroup::instance().setItems(items);
+}
+
 
 void LevelSelectScene::refreshSelection() {
     for (int i = 0; i < kMaxLevels; ++i) {
@@ -117,17 +132,7 @@ void LevelSelectScene::update(float /*dt*/) {
 void LevelSelectScene::render(Window& window) {
     // ⭐ 每帧刷新字符串，保证语言切换后立即生效
     refreshLabels();
-
-    // 一次性诊断日志
-    static bool logged = false;
-    if (!logged) {
-        std::cerr << "[LevelSelect] title=\""
-                  << Str::T(Str::LevelSelectTitle)
-                  << "\" saveLabel=\"" << Str::T(Str::SaveLabel)
-                  << "\" hasSave=" << hasSave_ << "\n";
-        logged = true;
-    }
-
+    
     window.clear();
     if (background_) background_->render(window.native());
 
@@ -223,15 +228,4 @@ void LevelSelectScene::render(Window& window) {
 
     backButton_->setPosition({cx - 90.f, h - 100.f});
     backButton_->render(window.native());
-
-    std::vector<Button*> items;
-    for (int i = 0; i < kMaxLevels; ++i) {
-        int level = i + 1;
-        bool unlocked = hasSave_ && level <= currentLevel_;
-        if (unlocked) {
-            items.push_back(levelButtons_[i].get());
-        }
-    }
-    items.push_back(backButton_.get());
-    FocusGroup::instance().setItems(items);
 }

@@ -72,6 +72,26 @@ PauseMenu::PauseMenu(const sf::Font& font,
     refreshSelection();
 }
 
+void PauseMenu::syncFocus() {
+    if (view_ == View::Main) {
+        std::vector<Button*> items;
+        for (auto& b : mainButtons_) items.push_back(b.get());
+        FocusGroup::instance().setItems(items);
+    } else {
+        std::vector<Button*> items;
+        for (auto& b : themeButtons_) items.push_back(b.get());
+        items.push_back(animOn_.get());
+        items.push_back(animOff_.get());
+        items.push_back(notifOn_.get());
+        items.push_back(notifOff_.get());
+        items.push_back(gamepadOn_.get());
+        items.push_back(gamepadOff_.get());
+        items.push_back(backButton_.get());
+        FocusGroup::instance().setItems(items);
+    }
+}
+
+
 void PauseMenu::refreshLabels() {
     title_.setString(toSf(Str::T("已暂停")));
     settingsTitle_.setString(toSf(Str::T(Str::Settings)));
@@ -188,12 +208,14 @@ void PauseMenu::switchToSettings() {
     refreshLabels();
     relayout(windowSize_);
     refreshSelection();
+    syncFocus();
 }
 
 void PauseMenu::switchToMain() {
     view_ = View::Main;
     refreshLabels();
     relayout(windowSize_);
+    syncFocus();
 }
 
 void PauseMenu::applyTheme(int idx) {
@@ -330,12 +352,6 @@ void PauseMenu::render(sf::RenderTarget& target) {
     if (view_ == View::Main) {
         target.draw(title_);
         for (auto& b : mainButtons_) b->render(target);
-
-        FocusGroup::instance().setItems({
-            mainButtons_[0].get(),
-            mainButtons_[1].get(),
-            mainButtons_[2].get()
-        });
     } else {
         target.draw(settingsTitle_);
         target.draw(labelTheme_);
@@ -351,16 +367,5 @@ void PauseMenu::render(sf::RenderTarget& target) {
         gamepadOn_->render(target);
         gamepadOff_->render(target);
         backButton_->render(target);
-
-        std::vector<Button*> items;
-        for (auto& b : themeButtons_) items.push_back(b.get());
-        items.push_back(animOn_.get());
-        items.push_back(animOff_.get());
-        items.push_back(notifOn_.get());
-        items.push_back(notifOff_.get());
-        items.push_back(gamepadOn_.get());
-        items.push_back(gamepadOff_.get());
-        items.push_back(backButton_.get());
-        FocusGroup::instance().setItems(items);
     }
 }

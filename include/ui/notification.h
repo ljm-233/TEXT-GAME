@@ -2,6 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include <deque>
 #include <string>
+#include <memory>
 
 enum class NotificationType {
     Info,    // 蓝色
@@ -17,7 +18,10 @@ class NotificationSystem {
 public:
     static NotificationSystem& instance();
 
-    void setFont(const sf::Font& font) { font_ = &font; }
+    void setFont(const sf::Font& font) {
+        font_ = &font;
+        text_ = std::make_unique<sf::Text>(font, sf::String(), 18);
+    }
 
     void push(const std::string& text, NotificationType type = NotificationType::Info,
               float duration = 3.f);
@@ -47,6 +51,10 @@ private:
     const sf::Font* font_ = nullptr;
     bool enabled_ = true;
     NotificationPos pos_ = NotificationPos::TopRight;
+
+    // ⭐ 复用渲染对象，避免每帧构造 sf::Text
+    mutable std::unique_ptr<sf::Text> text_;
+    mutable sf::RectangleShape        panel_;
 
     static constexpr size_t kMaxVisible = 6;
     static constexpr float kWidth = 340.f;

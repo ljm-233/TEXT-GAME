@@ -80,8 +80,8 @@ private:
     ParticleSystem particles_;
     EventBus bus_;
 
-    int lives_ = 3;
-    int initialLives_ = 3;
+    int lives_ = 1;
+    int initialLives_ = 1;
     int coins_ = 0;
     int totalCoins_ = 0;
     State state_ = State::Playing;

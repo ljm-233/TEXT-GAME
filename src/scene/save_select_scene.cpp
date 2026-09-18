@@ -41,10 +41,26 @@ void SaveSelectScene::rebuildButtons() {
     // 刷新固定按钮的文字（语言可能已变）
     newButton_->setText(Str::T(Str::NewSave));
     backButton_->setText(Str::T(Str::Back));
+    syncFocus();
 }
+
+void SaveSelectScene::syncFocus() {
+    if (confirm_ || newSaveDialog_) {
+        FocusGroup::instance().clear();
+        return;
+    }
+    std::vector<Button*> items;
+    for (auto& b : saveButtons_)   items.push_back(b.get());
+    for (auto& b : deleteButtons_) items.push_back(b.get());
+    items.push_back(newButton_.get());
+    items.push_back(backButton_.get());
+    FocusGroup::instance().setItems(items);
+}
+
 
 void SaveSelectScene::onEnter() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 void SaveSelectScene::onResume() {
@@ -85,9 +101,11 @@ void SaveSelectScene::update(float /*dt*/) {
             auto info = saveManager_->createSave(name);
             saveManager_->setPendingSave(info);
             newSaveDialog_.reset();
+            syncFocus();
             nextScene_ = SceneId::Game;
         } else if (r == NewSaveDialog::Result::Cancelled) {
             newSaveDialog_.reset();
+            syncFocus();
         }
         return;
     }
@@ -101,10 +119,11 @@ void SaveSelectScene::update(float /*dt*/) {
             }
             confirm_.reset();
             pendingDeleteIndex_ = -1;
-            rebuildButtons();
+            rebuildButtons();     // ⭐ rebuildButtons 内部已经调 syncFocus
         } else if (r == ConfirmDialog::Result::No) {
             confirm_.reset();
             pendingDeleteIndex_ = -1;
+            syncFocus();
         }
         return;
     }
@@ -125,6 +144,7 @@ void SaveSelectScene::update(float /*dt*/) {
                             + Str::T(Str::DeleteConfirmTail);
             confirm_ = std::make_unique<ConfirmDialog>(
                 font_, msg, sf::Vector2f(1280.f, 720.f));
+            syncFocus();
             logger_->info("请求删除存档: " + saves_[i].filename);
             return;
         }
@@ -134,6 +154,7 @@ void SaveSelectScene::update(float /*dt*/) {
         std::string defName = Str::T(Str::NewSavePlaceholder);
         newSaveDialog_ = std::make_unique<NewSaveDialog>(
             font_, defName, sf::Vector2f(1280.f, 720.f));
+        syncFocus();
         return;
     }
 
@@ -182,16 +203,5 @@ void SaveSelectScene::render(Window& window) {
     if (newSaveDialog_) {
         newSaveDialog_->relayout({w, h});
         newSaveDialog_->render(window.native());
-    }
-
-    if (confirm_ || newSaveDialog_) {
-        FocusGroup::instance().clear();
-    } else {
-        std::vector<Button*> items;
-        for (auto& b : saveButtons_)   items.push_back(b.get());
-        for (auto& b : deleteButtons_) items.push_back(b.get());
-        items.push_back(newButton_.get());
-        items.push_back(backButton_.get());
-        FocusGroup::instance().setItems(items);
     }
 }

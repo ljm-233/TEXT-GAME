@@ -110,21 +110,21 @@ void NotificationSystem::render(sf::RenderTarget& target) {
         bg.a = a8;
 
         // 背景
-        sf::RectangleShape panel(sf::Vector2f{width, height});
-        panel.setPosition({x, y});
-        panel.setFillColor(bg);
-        panel.setOutlineThickness(2.f);
-        panel.setOutlineColor(sf::Color(255, 255, 255, a8));
+        panel_.setSize({width, height});
+        panel_.setPosition({x, y});
+        panel_.setFillColor(bg);
+        panel_.setOutlineThickness(2.f);
+        panel_.setOutlineColor(sf::Color(255, 255, 255, a8));
+        target.draw(panel_);
 
-        target.draw(panel);
-
-        // 文字
-        sf::Text text(*font_, sf::String::fromUtf8(e.text.begin(), e.text.end()), 18);
-        text.setFillColor(sf::Color(255, 255, 255, a8));
-        auto b = text.getLocalBounds();
-        text.setOrigin({0.f, b.position.y + b.size.y / 2.f});
-        text.setPosition({x + 14.f, y + height / 2.f});
-        target.draw(text);
+        // 文字（复用成员）
+        if (!text_) return;
+        text_->setString(sf::String::fromUtf8(e.text.begin(), e.text.end()));
+        text_->setFillColor(sf::Color(255, 255, 255, a8));
+        auto b = text_->getLocalBounds();
+        text_->setOrigin({0.f, b.position.y + b.size.y / 2.f});
+        text_->setPosition({x + 14.f, y + height / 2.f});
+        target.draw(*text_);
 
         y += height + gap;
     }

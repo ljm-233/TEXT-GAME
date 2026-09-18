@@ -32,6 +32,8 @@ public:
 
 private:
     bool loadLevel(int index);
+    bool advanceToNextLevel();
+    void syncFocus();
     void subscribeWorldEvents();
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
@@ -89,6 +91,7 @@ private:
     float     lastOverlayWinW_ = 0.f;
     float     lastOverlayWinH_ = 0.f;
     GameWorld::State lastOverlayState_ = GameWorld::State::Playing;
+    GameWorld::State lastFocusState_   = GameWorld::State::Playing;   // ⭐ 新增
 
     std::vector<std::unique_ptr<Button>> overlayButtons_;
 

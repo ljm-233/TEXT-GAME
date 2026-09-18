@@ -163,7 +163,19 @@ void Button::render(sf::RenderTarget& target) {
     float dt = animClock_.restart().asSeconds();
     updateColors(dt);
 
-    refreshShape();
+    // ⭐ 只在 size / focus / style 变化时重建形状
+    const auto& style = getButtonStyle();
+    if (size_ != lastShapeSize_ ||
+        focused_ != lastShapeFocused_ ||
+        style.cornerRadius != lastShapeCorner_ ||
+        style.outlineThickness != lastShapeOutline_) {
+        refreshShape();
+        lastShapeSize_ = size_;
+        lastShapeFocused_ = focused_;
+        lastShapeCorner_ = style.cornerRadius;
+        lastShapeOutline_ = style.outlineThickness;
+    }
+
     shape_.setFillColor(currentFill_);
     shape_.setOutlineColor(currentOutline_);
     text_.setFillColor(currentText_);

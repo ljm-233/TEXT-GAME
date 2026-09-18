@@ -83,12 +83,15 @@ void Game::switchScene(SceneId next) {
         window_->close();
         return;
     }
+
+    // ⭐ 先清空焦点，让新场景的 onEnter/onResume 重新注册
+    FocusGroup::instance().clear();
+
     if (next == SceneId::Back) {
         sceneManager_->pop();
     } else {
         sceneManager_->push(next);
     }
-    FocusGroup::instance().clear();
 
     // 场景切换后立刻更新标题
     updateWindowTitle(sceneManager_->current());

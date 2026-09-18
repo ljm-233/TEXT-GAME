@@ -25,6 +25,7 @@ public:
 private:
     void refreshLabels();
     void refreshSelection();
+    void syncFocus();              // ⭐ 新增
 
     std::shared_ptr<Background>  background_;
     std::shared_ptr<SaveManager> saveManager_;

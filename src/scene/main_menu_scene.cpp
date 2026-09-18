@@ -28,11 +28,19 @@ void MainMenuScene::onEnter() {
     nextScene_ = SceneId::None;
     elapsed_ = 0.f;
     refreshLabels();
+    FocusGroup::instance().setItems({
+        &startButton_, &levelSelectButton_, &editorButton_,
+        &calculatorButton_, &settingsButton_, &exitButton_
+    });
 }
 
 void MainMenuScene::onResume() {
     nextScene_ = SceneId::None;
     refreshLabels();
+    FocusGroup::instance().setItems({
+        &startButton_, &levelSelectButton_, &editorButton_,
+        &calculatorButton_, &settingsButton_, &exitButton_
+    });
 }
 
 void MainMenuScene::handleEvent(const sf::Event& event) {
@@ -101,9 +109,4 @@ void MainMenuScene::render(Window& window) {
         btns[i]->setPosition({cx - btnW / 2.f, targetY + yOffset});
         btns[i]->render(window.native());
     }
-
-    FocusGroup::instance().setItems({
-        &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &settingsButton_, &exitButton_
-    });
 }

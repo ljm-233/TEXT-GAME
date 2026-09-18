@@ -10,7 +10,7 @@ struct SaveInfo {
     std::string name;
     std::string createdAt;
     std::string lastPlayed;
-    int         progress     = 0;
+    int         coins        = 0;   // ⭐ 实际存的是金币数（旧名 progress）
     int         currentLevel = 1;
     std::vector<int> levelStars;   // 每关星级，索引 0 = 第 1 关，值 0~3
 
@@ -28,7 +28,7 @@ public:
     bool loadSave(const std::string& filename, SaveInfo& out) const;
     bool deleteSave(const std::string& filename);
     bool updateProgress(const std::string& filename,
-                        int progress,
+                        int coins,
                         int currentLevel = 1);
 
     // ⭐ 写入某关星级（取最高）

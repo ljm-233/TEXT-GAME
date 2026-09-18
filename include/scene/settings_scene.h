@@ -6,12 +6,36 @@
 #include "text_input.h"
 #include "preferences.h"
 #include "runtime_config.h"
+#include "text_strings.h"
 #include "window.h"
 #include "resolution.h"
 #include "confirm_dialog.h"
 #include "theme.h"
+#include <functional>
 #include <memory>
+#include <string>
 #include <vector>
+#include "ui_scale.h"
+#include "utf8.h"
+
+// ⭐ 统一管理一个 ON/OFF 类设置项
+struct ToggleRow {
+    std::string labelKey;
+    sf::Text label;
+    std::unique_ptr<Button> onButton;
+    std::unique_ptr<Button> offButton;
+    bool currentValue = false;
+    std::function<void(bool)> onChanged;
+
+    ToggleRow(const sf::Font& font,
+              const std::string& key,
+              std::function<void(bool)> cb)
+        : labelKey(key),
+          label(font, toSf(Str::T(key.c_str())), scaledFontSize(20)),
+          onChanged(std::move(cb)) {
+        label.setFillColor(sf::Color(230, 230, 230));
+    }
+};
 
 class SettingsScene : public Scene {
 public:
@@ -37,6 +61,7 @@ private:
     // ===== 应用状态 =====
     void refreshLabels();
     void refreshSelection();
+    void syncFocus();              // ⭐ 新增
     void applyResolution();
     void applyFullscreen();
     void applyVsync();
@@ -117,17 +142,9 @@ private:
 
     // ================= Graphics =================
     std::vector<std::unique_ptr<Button>> initialLivesButtons_;
-    std::unique_ptr<Button> animationOn_, animationOff_;
+    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;   // ⭐ 新增
     std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
-    std::unique_ptr<Button> notificationOn_, notificationOff_;
     std::vector<std::unique_ptr<Button>> notificationPosButtons_;
-    std::unique_ptr<Button> pseudo3DOn_, pseudo3DOff_;
-    std::unique_ptr<Button> parallaxOn_, parallaxOff_;
-    std::unique_ptr<Button> playerAnimOn_, playerAnimOff_;
-    std::unique_ptr<Button> levelIntroOn_, levelIntroOff_;
-    std::unique_ptr<Button> particlesOn_, particlesOff_;
-    std::unique_ptr<Button> screenShakeOn_, screenShakeOff_;
-    std::unique_ptr<Button> showCollidersOn_, showCollidersOff_;
     std::vector<std::unique_ptr<Button>> buttonCornerButtons_;
     std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
 
@@ -226,7 +243,7 @@ private:
     bool    showColliders_;
     float   buttonCorner_;
     float   buttonOutline_;
-    int     initialLives_ = 3;
+    int     initialLives_;
 
     float   masterVolume_;
     bool    soundEnabled_;

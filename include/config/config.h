@@ -2,6 +2,7 @@
 #include "paths.h"
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 
@@ -127,10 +128,16 @@ protected:
 
     void save() const {
         std::ofstream out(filePath_);
-        if (!out)
+        if (!out) {
+            std::cerr << "[Config] 无法写入: " << filePath_.string() << "\n";
             return;
+        }
         for (const auto& [k, v] : values_) {
             out << k << '=' << v << '\n';
+        }
+        if (!out) {
+            std::cerr << "[Config] 写入过程中出错: "
+                      << filePath_.string() << "\n";
         }
     }
 

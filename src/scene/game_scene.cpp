@@ -47,6 +47,9 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
 
 void GameScene::onEnter() {
     nextScene_ = SceneId::None;
+    // （原有的 save_ / parallax_ / loadLevel 逻辑保持不变）
+
+    syncFocus();
 
     save_ = saveManager_->takePendingSave();
     levelIndex_ = std::max(1, save_.currentLevel);
@@ -67,10 +70,12 @@ void GameScene::onEnter() {
     }
 
     logger_->info("进入游戏场景，存档: " + save_.filename);
+    syncFocus();
 }
 
 void GameScene::onResume() {
     nextScene_ = SceneId::None;
+    syncFocus();
 }
 
 std::string GameScene::windowTitleHint() const {
@@ -179,7 +184,7 @@ bool GameScene::loadLevel(int index) {
 
     world_ = std::make_unique<GameWorld>(std::move(level), index);
     world_->setViewSize(kLogicalW, kLogicalH);
-    world_->setInitialLives(preferences_->getInt("initial_lives", 3));
+    world_->setInitialLives(preferences_->getInt("initial_lives", 1));
     levelIndex_ = index;
 
     levelTime_ = 0.f;
@@ -209,7 +214,51 @@ bool GameScene::loadLevel(int index) {
     lastOverlayState_ = GameWorld::State::Playing;
 
     subscribeWorldEvents();
+    syncFocus();
 
+    return true;
+}
+
+void GameScene::syncFocus() {
+    // 暂停菜单打开时，焦点交给 PauseMenu 管理，这里不动
+    if (paused_ && pauseMenu_) return;
+
+    // 开场动画显示中，不设焦点
+    if (intro_) {
+        FocusGroup::instance().clear();
+        return;
+    }
+
+    // LevelComplete 状态：设 overlay 按钮
+    if (world_ && world_->state() == GameWorld::State::LevelComplete
+        && !overlayButtons_.empty()) {
+        std::vector<Button*> items;
+        for (auto& b : overlayButtons_) items.push_back(b.get());
+        FocusGroup::instance().setItems(items);
+        return;
+    }
+
+    // Playing 状态：无焦点
+    FocusGroup::instance().clear();
+}
+
+
+bool GameScene::advanceToNextLevel() {
+    int next = levelIndex_ + 1;
+    if (next > kMaxLevels) return false;
+
+    // 先确认关卡文件存在，避免 loadLevel 打 error 日志
+    auto nextPath = preferences_->assetFile(
+        "levels/level" + std::to_string(next) + ".txt");
+    if (!std::filesystem::exists(nextPath)) return false;
+
+    if (!loadLevel(next)) return false;
+
+    NotificationSystem::instance().push(
+        Str::T(Str::NotifEnterLevel) + std::to_string(levelIndex_) +
+            Str::T(Str::NotifLevelSuffix),
+        NotificationType::Info);
+    saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
     return true;
 }
 
@@ -428,19 +477,10 @@ void GameScene::handleEvent(const sf::Event& event) {
             if (state == GameWorld::State::LevelComplete) {
                 if (kp->code == sf::Keyboard::Key::Enter ||
                     kp->code == sf::Keyboard::Key::Space) {
-                    if (levelIndex_ + 1 <= kMaxLevels &&
-                        loadLevel(levelIndex_ + 1)) {
+                    if (!advanceToNextLevel()) {
                         NotificationSystem::instance().push(
-                            Str::T(Str::NotifEnterLevel) +
-                                std::to_string(levelIndex_) +
-                                Str::T(Str::NotifLevelSuffix),
-                            NotificationType::Info);
-                        saveManager_->updateProgress(
-                            save_.filename, world_->coins(), levelIndex_);
-                    } else {
-                        NotificationSystem::instance().push(
-                            Str::T(Str::NotifAllClear),
-                            NotificationType::Success, 5.f);
+                    Str::T(Str::NotifAllClear),
+                    NotificationType::Success, 5.f);
                     }
                 }
             }
@@ -451,6 +491,7 @@ void GameScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
             paused_ = true;
+            // PauseMenu 构造末尾会调 syncFocus()，自动接管焦点
             pauseMenu_ = std::make_unique<PauseMenu>(
                 *font_, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
             return;
@@ -478,12 +519,22 @@ void GameScene::update(float dt) {
         if (action == PauseMenu::Action::Resume) {
             paused_ = false;
             pauseMenu_.reset();
+            syncFocus();                              // ⭐ 恢复 GameScene 焦点
         } else if (action == PauseMenu::Action::SaveAndQuit) {
             saveManager_->updateProgress(save_.filename, world_->coins(),
                                          levelIndex_);
             nextScene_ = SceneId::Back;
         }
         return;
+    }
+
+    // ⭐ 检测世界状态变化，同步焦点（Playing ↔ LevelComplete）
+    if (world_) {
+        auto state = world_->state();
+        if (state != lastFocusState_) {
+            lastFocusState_ = state;
+            syncFocus();
+        }
     }
 
     if (intro_) {
@@ -498,18 +549,10 @@ void GameScene::update(float dt) {
         // ⭐ 处理 overlay 按钮点击
         if (state == GameWorld::State::LevelComplete && overlayButtons_.size() >= 3) {
             if (overlayButtons_[0]->consumeClick()) {
-                if (levelIndex_ + 1 <= kMaxLevels && loadLevel(levelIndex_ + 1)) {
+                if (!advanceToNextLevel()) {
                     NotificationSystem::instance().push(
-                        Str::T(Str::NotifEnterLevel) +
-                            std::to_string(levelIndex_) +
-                            Str::T(Str::NotifLevelSuffix),
-                        NotificationType::Info);
-                    saveManager_->updateProgress(
-                        save_.filename, world_->coins(), levelIndex_);
-                } else {
-                    NotificationSystem::instance().push(
-                        Str::T(Str::NotifAllClear),
-                        NotificationType::Success, 5.f);
+                    Str::T(Str::NotifAllClear),
+                    NotificationType::Success, 5.f);
                 }
                 return;
             }
@@ -558,10 +601,6 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
     rt.draw(overlaySubHint_);
 
     for (auto& b : overlayButtons_) b->render(rt);
-
-    std::vector<Button*> items;
-    for (auto& b : overlayButtons_) items.push_back(b.get());
-    FocusGroup::instance().setItems(items);
 }
 
 void GameScene::render(Window& window) {
