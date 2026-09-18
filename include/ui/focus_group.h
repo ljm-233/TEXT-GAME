@@ -33,6 +33,8 @@ public:
 private:
     FocusGroup() = default;
 
+    enum class Direction { Up, Down, Left, Right };
+
     std::vector<Button*> items_;
     int   index_ = 0;
     bool  enabled_ = true;
@@ -45,7 +47,19 @@ private:
     bool  lastB_     = false;
     bool  lastStart_ = false;
 
+    // ⭐ 方向键重复触发状态（每个方向独立）
+    struct RepeatState {
+        float holdTimer    = 0.f;   // 持续按住时长
+        int   triggerCount = 0;     // 已触发的次数（0 = 未按）
+    };
+    RepeatState upRepeat_, downRepeat_, leftRepeat_, rightRepeat_;
+
     std::vector<sf::Event> pendingEvents_;
 
-    void moveFocus(int dir);
+    void moveFocus(Direction dir);
+    void moveFocusLinear(int delta);   // 保留线性逻辑作为 fallback
+
+    // ⭐ 单方向的处理（带重复触发）
+    void handleDirection(bool now, bool& last,
+                         RepeatState& st, Direction dir, float dt);
 };

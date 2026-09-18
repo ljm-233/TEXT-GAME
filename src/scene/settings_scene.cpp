@@ -424,39 +424,102 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         showFps_ = v; refreshSelection();
         preferences_->setBool("show_fps", v);
     }));
-    for (int i = 0; i < kPosCount; ++i)
-        fpsPosButtons_.push_back(std::make_unique<Button>(
-            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
-    for (int i = 0; i < kFpsFormatCount; ++i)
-        fpsFormatButtons_.push_back(std::make_unique<Button>(
-            kFpsFormatLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{110.f, 40.f}, 16));
-    for (int i = 0; i < kUiScaleCount; ++i)
-        uiScaleButtons_.push_back(std::make_unique<Button>(
-            kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kThemeCount; ++i)
-        themeButtons_.push_back(std::make_unique<Button>(
-            themeName(static_cast<ThemeId>(i)), font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-    for (const auto& code : Lang::instance().available()) {
-        std::string label = code;
-        if (code == "zh")         label = "中文";
-        else if (code == "zh-TW") label = "繁體中文";
-        else if (code == "en")    label = "English";
-        else if (code == "ja")    label = "日本語";
-        else if (code == "ko")    label = "한국어";
-        languageButtons_.push_back(std::make_unique<Button>(
-            label, font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+    // FpsPos
+    {
+        auto row = makeMultiRow(Str::LabelFpsPos, [this](int i) {
+            fpsPosition_ = i; refreshSelection(); applyFpsPosition();
+        });
+        row->stepX = 86.f;
+        for (int i = 0; i < kPosCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kPosLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{76.f, 40.f}, 16));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // FpsFormat
+    {
+        auto row = makeMultiRow(Str::LabelFpsFormat, [this](int i) {
+            fpsFormat_ = i; refreshSelection(); applyFpsFormat();
+        });
+        row->stepX = 114.f;
+        for (int i = 0; i < kFpsFormatCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kFpsFormatLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{110.f, 40.f}, 16));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // UiScale
+    {
+        auto row = makeMultiRow(Str::LabelUiScale, [this](int i) {
+            uiScale_ = kUiScales[i];
+            refreshSelection();
+            setUiScale(uiScale_);
+            preferences_->setDouble("ui_scale", uiScale_);
+        });
+        for (int i = 0; i < kUiScaleCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kUiScaleLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // Theme
+    {
+        auto row = makeMultiRow(Str::LabelTheme, [this](int i) {
+            themeId_ = static_cast<ThemeId>(i);
+            refreshSelection(); applyTheme();
+        });
+        row->stepX = 110.f;
+        for (int i = 0; i < kThemeCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                themeName(static_cast<ThemeId>(i)), font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // Language（动态数量）
+    {
+        auto row = makeMultiRow(Str::LabelLanguage, [this](int i) {
+            languageIdx_ = i; refreshSelection(); applyLanguage();
+        });
+        row->stepX = 110.f;
+        for (const auto& code : Lang::instance().available()) {
+            std::string label = code;
+            if (code == "zh")         label = "中文";
+            else if (code == "zh-TW") label = "繁體中文";
+            else if (code == "en")    label = "English";
+            else if (code == "ja")    label = "日本語";
+            else if (code == "ko")    label = "한국어";
+            row->addButton(std::make_unique<Button>(
+                label, font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{100.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
     }
     wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
+
+    // Clock 是 Toggle（位置在 [1]）
     interfaceToggles_.push_back(makeToggleRow(Str::LabelClock, [this](bool v) {
         showClock_ = v; refreshSelection();
         preferences_->setBool("show_clock", v);
     }));
-    for (int i = 0; i < kPosCount; ++i)
-        clockPosButtons_.push_back(std::make_unique<Button>(
-            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+    // ClockPos
+    {
+        auto row = makeMultiRow(Str::LabelClockPos, [this](int i) {
+            clockPosition_ = i; refreshSelection();
+            preferences_->setInt("clock_position", clockPosition_);
+        });
+        row->stepX = 86.f;
+        for (int i = 0; i < kPosCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kPosLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{76.f, 40.f}, 16));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
 
     consoleMaskSlider_ = std::make_unique<Slider>(
         font_, 0.f, 255.f, static_cast<float>(consoleMask_),
@@ -464,15 +527,47 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     consolePanelAlphaSlider_ = std::make_unique<Slider>(
         font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_),
         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    for (int i = 0; i < kConsoleFontCount; ++i)
-        consoleFontButtons_.push_back(std::make_unique<Button>(
-            kConsoleFontLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kConsoleHistoryCount; ++i)
-        consoleHistoryButtons_.push_back(std::make_unique<Button>(
-            std::to_string(kConsoleHistory[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kConsoleLineHeightCount; ++i)
-        consoleLineHeightButtons_.push_back(std::make_unique<Button>(
-            kConsoleLineHeightLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+
+    // ConsoleFont
+    {
+        auto row = makeMultiRow(Str::LabelConsoleFont, [this](int i) {
+            consoleFontSize_ = kConsoleFonts[i]; refreshSelection();
+            preferences_->setInt("console_font_size", consoleFontSize_);
+        });
+        for (int i = 0; i < kConsoleFontCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kConsoleFontLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // ConsoleHistory
+    {
+        auto row = makeMultiRow(Str::LabelConsoleHistory, [this](int i) {
+            consoleHistoryLines_ = kConsoleHistory[i]; refreshSelection();
+            preferences_->setInt("console_history_lines", consoleHistoryLines_);
+        });
+        for (int i = 0; i < kConsoleHistoryCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                std::to_string(kConsoleHistory[i]), font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+    // ConsoleLineHeight
+    {
+        auto row = makeMultiRow(Str::LabelConsoleLineHeight, [this](int i) {
+            consoleLineHeight_ = kConsoleLineHeights[i]; refreshSelection();
+            preferences_->setInt("console_line_height", consoleLineHeight_);
+        });
+        for (int i = 0; i < kConsoleLineHeightCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kConsoleLineHeightLabels[i], font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
+
     interfaceToggles_.push_back(makeToggleRow(Str::LabelConsoleAutoScroll, [this](bool v) {
         consoleAutoScroll_ = v; refreshSelection();
         preferences_->setBool("console_auto_scroll", v);
@@ -481,9 +576,20 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         consoleBlinkCursor_ = v; refreshSelection();
         preferences_->setBool("console_blink_cursor", v);
     }));
-    for (int i = 0; i < kConsolePromptCount; ++i)
-        consolePromptButtons_.push_back(std::make_unique<Button>(
-            kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
+
+    // ConsolePrompt
+    {
+        auto row = makeMultiRow(Str::LabelConsolePrompt, [this](int i) {
+            consolePrompt_ = i; refreshSelection(); applyConsolePrompt();
+        });
+        row->stepX = 70.f;
+        for (int i = 0; i < kConsolePromptCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{60.f, 40.f}, 18));
+        }
+        interfaceMultiRows_.push_back(std::move(row));
+    }
 
     // Graphics
     // InitialLives
@@ -690,19 +796,9 @@ void SettingsScene::refreshLabels() {
     setLabel(labelVsync_,        Str::LabelVsync);
 
     // ===== Interface tab =====
-    setLabel(labelFpsPos_,               Str::LabelFpsPos);
-    setLabel(labelFpsFormat_,            Str::LabelFpsFormat);
-    setLabel(labelUiScale_,              Str::LabelUiScale);
-    setLabel(labelTheme_,                Str::LabelTheme);
-    setLabel(labelLanguage_,             Str::LabelLanguage);
     setLabel(labelWallpaper_,            Str::LabelWallpaper);
-    setLabel(labelClockPos_,             Str::LabelClockPos);
     setLabel(labelConsoleMask_,          Str::LabelConsoleMask);
     setLabel(labelConsolePanelAlpha_,    Str::LabelConsolePanelAlpha);
-    setLabel(labelConsoleFont_,          Str::LabelConsoleFont);
-    setLabel(labelConsoleHistory_,       Str::LabelConsoleHistory);
-    setLabel(labelConsoleLineHeight_,    Str::LabelConsoleLineHeight);
-    setLabel(labelConsolePrompt_,        Str::LabelConsolePrompt);
 
     // ===== Graphics tab =====
     for (auto& row : graphicsToggles_) {
@@ -751,41 +847,24 @@ void SettingsScene::refreshLabels() {
         row->offButton->setText(Str::T(Str::Off));
     }
 
-    // ===== 主题按钮 =====
-    for (int i = 0; i < kThemeCount && i < static_cast<int>(themeButtons_.size()); ++i) {
-        themeButtons_[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
-    }
-
     // ===== 其他按钮 =====
     if (wallpaperButton_) wallpaperButton_->setText(Str::T(Str::NextWallpaper));
     if (aboutButton_)     aboutButton_->setText(Str::T(Str::ButtonAbout));
     if (resetButton_)     resetButton_->setText(Str::T(Str::ResetDefault));
     if (backButton_)      backButton_->setText(Str::T(Str::Back));
 
-    // ===== 下拉选项按钮 =====
-    for (int i = 0; i < kPosCount; ++i) {
-        if (i < static_cast<int>(fpsPosButtons_.size()))
-            fpsPosButtons_[i]->setText(Str::T(kPosLabels[i]));
-        if (i < static_cast<int>(clockPosButtons_.size()))
-            clockPosButtons_[i]->setText(Str::T(kPosLabels[i]));
-    }
-
-    for (int i = 0; i < kFpsFormatCount && i < static_cast<int>(fpsFormatButtons_.size()); ++i)
-        fpsFormatButtons_[i]->setText(Str::T(kFpsFormatLabels[i]));
-    for (int i = 0; i < kConsoleFontCount && i < static_cast<int>(consoleFontButtons_.size()); ++i)
-        consoleFontButtons_[i]->setText(Str::T(kConsoleFontLabels[i]));
-    for (int i = 0; i < kConsoleLineHeightCount && i < static_cast<int>(consoleLineHeightButtons_.size()); ++i)
-        consoleLineHeightButtons_[i]->setText(Str::T(kConsoleLineHeightLabels[i]));
-
     // 语言按钮保持"中文"/"English"字样（不翻译，否则用户无法识别）
-    for (auto& row : displayMultiRows_) {
-        row->refreshLabel();
-    }
-    for (auto& row : graphicsMultiRows_) {
-        row->refreshLabel();
-    }
-    for (auto& row : otherMultiRows_) {
-        row->refreshLabel();
+    for (auto& row : displayMultiRows_)  row->refreshLabel();
+    for (auto& row : graphicsMultiRows_) row->refreshLabel();
+    for (auto& row : interfaceMultiRows_) row->refreshLabel();
+    for (auto& row : otherMultiRows_)    row->refreshLabel();
+
+    // ⭐ 主题按钮的文字是 themeName()，语言按钮是动态码名，都特殊处理
+    if (interfaceMultiRows_.size() >= 5) {
+        auto& themeRow = *interfaceMultiRows_[3];
+        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size()); ++i) {
+            themeRow.buttons[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
+        }
     }
 }
 
@@ -813,17 +892,10 @@ void SettingsScene::syncFocus() {
                 items.push_back(row->onButton.get());
                 items.push_back(row->offButton.get());
             }
-            for (auto& b : fpsPosButtons_)      items.push_back(b.get());
-            for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
-            for (auto& b : uiScaleButtons_)     items.push_back(b.get());
-            for (auto& b : themeButtons_)       items.push_back(b.get());
-            for (auto& b : languageButtons_)    items.push_back(b.get());
+            for (auto& row : interfaceMultiRows_) {
+                for (auto& btn : row->buttons) items.push_back(btn.get());
+            }
             items.push_back(wallpaperButton_.get());
-            for (auto& b : clockPosButtons_)    items.push_back(b.get());
-            for (auto& b : consoleFontButtons_)    items.push_back(b.get());
-            for (auto& b : consoleHistoryButtons_) items.push_back(b.get());
-            for (auto& b : consoleLineHeightButtons_) items.push_back(b.get());
-            for (auto& b : consolePromptButtons_) items.push_back(b.get());
             break;
             case Tab::Graphics:
                 for (auto& row : graphicsMultiRows_) {
@@ -891,31 +963,18 @@ void SettingsScene::refreshSelection() {
         setRow(*interfaceToggles_[2], consoleAutoScroll_);
         setRow(*interfaceToggles_[3], consoleBlinkCursor_);
     }
-    for (int i = 0; i < kPosCount; ++i)
-        fpsPosButtons_[i]->setSelected(i == fpsPosition_);
-    for (int i = 0; i < kFpsFormatCount; ++i)
-        fpsFormatButtons_[i]->setSelected(i == fpsFormat_);
-    int uiIdx = indexOfUiScale(uiScale_);
-    for (int i = 0; i < kUiScaleCount; ++i)
-        uiScaleButtons_[i]->setSelected(i == uiIdx);
-    for (int i = 0; i < kThemeCount; ++i)
-        themeButtons_[i]->setSelected(i == static_cast<int>(themeId_));
-    for (int i = 0; i < static_cast<int>(languageButtons_.size()); ++i)
-        languageButtons_[i]->setSelected(i == languageIdx_);
-    for (int i = 0; i < kPosCount; ++i)
-        clockPosButtons_[i]->setSelected(i == clockPosition_);
-
-    int cfIdx = indexOfConsoleFont(consoleFontSize_);
-    for (int i = 0; i < kConsoleFontCount; ++i)
-        consoleFontButtons_[i]->setSelected(i == cfIdx);
-    int chIdx = indexOfConsoleHistory(consoleHistoryLines_);
-    for (int i = 0; i < kConsoleHistoryCount; ++i)
-        consoleHistoryButtons_[i]->setSelected(i == chIdx);
-    int clhIdx = indexOfConsoleLineHeight(consoleLineHeight_);
-    for (int i = 0; i < kConsoleLineHeightCount; ++i)
-        consoleLineHeightButtons_[i]->setSelected(i == clhIdx);
-    for (int i = 0; i < kConsolePromptCount; ++i)
-        consolePromptButtons_[i]->setSelected(i == consolePrompt_);
+    if (interfaceMultiRows_.size() == 10) {
+        interfaceMultiRows_[0]->setSelected(fpsPosition_);
+        interfaceMultiRows_[1]->setSelected(fpsFormat_);
+        interfaceMultiRows_[2]->setSelected(indexOfUiScale(uiScale_));
+        interfaceMultiRows_[3]->setSelected(static_cast<int>(themeId_));
+        interfaceMultiRows_[4]->setSelected(languageIdx_);
+        interfaceMultiRows_[5]->setSelected(clockPosition_);
+        interfaceMultiRows_[6]->setSelected(indexOfConsoleFont(consoleFontSize_));
+        interfaceMultiRows_[7]->setSelected(indexOfConsoleHistory(consoleHistoryLines_));
+        interfaceMultiRows_[8]->setSelected(indexOfConsoleLineHeight(consoleLineHeight_));
+        interfaceMultiRows_[9]->setSelected(consolePrompt_);
+    }
 
     // ⭐ 9 个 Toggle 一次性刷新
     auto setToggleRow = [](ToggleRow& row, bool v) {
@@ -1126,19 +1185,12 @@ void SettingsScene::handleEvent(const sf::Event& event) {
                 row->onButton->handleEvent(event);
                 row->offButton->handleEvent(event);
             }
-            for (auto& b : fpsPosButtons_)    b->handleEvent(event);
-            for (auto& b : fpsFormatButtons_) b->handleEvent(event);
-            for (auto& b : uiScaleButtons_)   b->handleEvent(event);
-            for (auto& b : themeButtons_)     b->handleEvent(event);
-            for (auto& b : languageButtons_)  b->handleEvent(event);
+            for (auto& row : interfaceMultiRows_) {
+                for (auto& btn : row->buttons) btn->handleEvent(event);
+            }
             wallpaperButton_->handleEvent(event);
-            for (auto& b : clockPosButtons_) b->handleEvent(event);
             consoleMaskSlider_->handleEvent(event);
             consolePanelAlphaSlider_->handleEvent(event);
-            for (auto& b : consoleFontButtons_)      b->handleEvent(event);
-            for (auto& b : consoleHistoryButtons_)   b->handleEvent(event);
-            for (auto& b : consoleLineHeightButtons_)b->handleEvent(event);
-            for (auto& b : consolePromptButtons_) b->handleEvent(event);
             break;
         case Tab::Graphics:
             for (auto& row : graphicsMultiRows_) {
@@ -1282,58 +1334,21 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             }
-            for (int i = 0; i < kPosCount; ++i)
-                if (fpsPosButtons_[i]->consumeClick()) {
-                    if (fpsPosition_ != i) {
-                        fpsPosition_ = i;
-                        refreshSelection(); applyFpsPosition();
+            // ⭐ 10 组 Multi
+            for (auto& row : interfaceMultiRows_) {
+                for (size_t i = 0; i < row->buttons.size(); ++i) {
+                    if (row->buttons[i]->consumeClick()) {
+                        if (row->currentIndex != static_cast<int>(i)
+                            && row->onSelected) {
+                            row->onSelected(static_cast<int>(i));
+                        }
+                        return;
                     }
-                    return;
                 }
-            for (int i = 0; i < kFpsFormatCount; ++i)
-                if (fpsFormatButtons_[i]->consumeClick()) {
-                    if (fpsFormat_ != i) {
-                        fpsFormat_ = i;
-                        refreshSelection(); applyFpsFormat();
-                    }
-                    return;
-                }
-            for (int i = 0; i < kUiScaleCount; ++i)
-                if (uiScaleButtons_[i]->consumeClick()) {
-                    if (std::abs(uiScale_ - kUiScales[i]) > 0.01f) {
-                        uiScale_ = kUiScales[i];
-                        refreshSelection();
-                        setUiScale(uiScale_);
-                        preferences_->setDouble("ui_scale", uiScale_);
-                    }
-                    return;
-                }
-            for (int i = 0; i < kThemeCount; ++i)
-                if (themeButtons_[i]->consumeClick()) {
-                    if (static_cast<int>(themeId_) != i) {
-                        themeId_ = static_cast<ThemeId>(i);
-                        refreshSelection(); applyTheme();
-                    }
-                    return;
-                }
-            for (int i = 0; i < static_cast<int>(languageButtons_.size()); ++i)
-                if (languageButtons_[i]->consumeClick()) {
-                    if (languageIdx_ != i) {
-                        languageIdx_ = i;
-                        refreshSelection(); applyLanguage();
-                    }
-                    return;
-                }
+            }
+            // Wallpaper
             if (wallpaperButton_->consumeClick()) { applyWallpaper(); return; }
-            for (int i = 0; i < kPosCount; ++i)
-                if (clockPosButtons_[i]->consumeClick()) {
-                    if (clockPosition_ != i) {
-                        clockPosition_ = i;
-                        refreshSelection();
-                        preferences_->setInt("clock_position", clockPosition_);
-                    }
-                    return;
-                }
+            // ConsoleMask / PanelAlpha sliders
             if (consoleMaskSlider_->consumeChanged()) {
                 consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
                 preferences_->setInt("console_mask", consoleMask_);
@@ -1342,41 +1357,6 @@ void SettingsScene::update(float /*dt*/) {
                 consolePanelAlpha_ = static_cast<int>(consolePanelAlphaSlider_->value());
                 preferences_->setInt("console_panel_alpha", consolePanelAlpha_);
             }
-            for (int i = 0; i < kConsoleFontCount; ++i)
-                if (consoleFontButtons_[i]->consumeClick()) {
-                    if (consoleFontSize_ != kConsoleFonts[i]) {
-                        consoleFontSize_ = kConsoleFonts[i];
-                        refreshSelection();
-                        preferences_->setInt("console_font_size", consoleFontSize_);
-                    }
-                    return;
-                }
-            for (int i = 0; i < kConsoleHistoryCount; ++i)
-                if (consoleHistoryButtons_[i]->consumeClick()) {
-                    if (consoleHistoryLines_ != kConsoleHistory[i]) {
-                        consoleHistoryLines_ = kConsoleHistory[i];
-                        refreshSelection();
-                        preferences_->setInt("console_history_lines", consoleHistoryLines_);
-                    }
-                    return;
-                }
-            for (int i = 0; i < kConsoleLineHeightCount; ++i)
-                if (consoleLineHeightButtons_[i]->consumeClick()) {
-                    if (consoleLineHeight_ != kConsoleLineHeights[i]) {
-                        consoleLineHeight_ = kConsoleLineHeights[i];
-                        refreshSelection();
-                        preferences_->setInt("console_line_height", consoleLineHeight_);
-                    }
-                    return;
-                }
-            for (int i = 0; i < kConsolePromptCount; ++i)
-                if (consolePromptButtons_[i]->consumeClick()) {
-                    if (consolePrompt_ != i) {
-                        consolePrompt_ = i;
-                        refreshSelection(); applyConsolePrompt();
-                    }
-                    return;
-                }
             break;
         }
         case Tab::Graphics: {
@@ -1608,15 +1588,15 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
     r.toggle(*interfaceToggles_[0]);   // FPS 显示
-    r.multi (labelFpsPos_,    fpsPosButtons_, 86.f);
-    r.multi (labelFpsFormat_, fpsFormatButtons_, 114.f);
-    r.multi (labelUiScale_,   uiScaleButtons_, 96.f);
+    r.multi (*interfaceMultiRows_[0]); // FpsPos
+    r.multi (*interfaceMultiRows_[1]); // FpsFormat
+    r.multi (*interfaceMultiRows_[2]); // UiScale
 
     hintUiScale_.setPosition({contentX, r.y - 26.f});
     window.native().draw(hintUiScale_);
 
-    r.multi (labelTheme_,     themeButtons_, 110.f);
-    r.multi (labelLanguage_,  languageButtons_, 110.f);
+    r.multi (*interfaceMultiRows_[3]); // Theme
+    r.multi (*interfaceMultiRows_[4]); // Language
     if (background_) {
         labelWallpaper_.setString(toSf(
             std::string(Str::LabelWallpaper) + "  ("
@@ -1630,16 +1610,16 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     r.y += 50.f;
 
     r.toggle(*interfaceToggles_[1]);   // 时钟显示
-    r.multi (labelClockPos_,  clockPosButtons_, 86.f);
+    r.multi (*interfaceMultiRows_[5]); // ClockPos
 
     r.slider(labelConsoleMask_,       consoleMaskSlider_.get());
     r.slider(labelConsolePanelAlpha_, consolePanelAlphaSlider_.get());
-    r.multi (labelConsoleFont_,       consoleFontButtons_, 96.f);
-    r.multi (labelConsoleHistory_,    consoleHistoryButtons_, 96.f);
-    r.multi (labelConsoleLineHeight_, consoleLineHeightButtons_, 96.f);
+    r.multi (*interfaceMultiRows_[6]); // ConsoleFont
+    r.multi (*interfaceMultiRows_[7]); // ConsoleHistory
+    r.multi (*interfaceMultiRows_[8]); // ConsoleLineHeight
     r.toggle(*interfaceToggles_[2]);   // 控制台自动滚动
     r.toggle(*interfaceToggles_[3]);   // 控制台光标闪烁
-    r.multi (labelConsolePrompt_,     consolePromptButtons_, 70.f);
+    r.multi (*interfaceMultiRows_[9]); // ConsolePrompt
 }
 
 void SettingsScene::renderGraphicsTab(Window& window, float contentX,

@@ -101,21 +101,15 @@ private:
     // [0] Resolution  [1] AntiAliasing  [2] LogLevel  [3] FpsLimit
 
     // ================= Interface =================
-    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;   // ⭐ 4 个 Toggle
-    std::vector<std::unique_ptr<Button>> fpsPosButtons_;
-    std::vector<std::unique_ptr<Button>> fpsFormatButtons_;
-    std::vector<std::unique_ptr<Button>> uiScaleButtons_;
-    std::vector<std::unique_ptr<Button>> themeButtons_;
-    std::vector<std::unique_ptr<Button>> languageButtons_;
+    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;   // 4 个 Toggle
+    std::vector<std::unique_ptr<MultiRow>>  interfaceMultiRows_; // 10 个 Multi
+    // [0] FpsPos  [1] FpsFormat  [2] UiScale  [3] Theme  [4] Language
+    // [5] ClockPos  [6] ConsoleFont  [7] ConsoleHistory
+    // [8] ConsoleLineHeight  [9] ConsolePrompt
     std::unique_ptr<Button> wallpaperButton_;
-    std::vector<std::unique_ptr<Button>> clockPosButtons_;
 
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
-    std::vector<std::unique_ptr<Button>> consoleFontButtons_;
-    std::vector<std::unique_ptr<Button>> consoleHistoryButtons_;
-    std::vector<std::unique_ptr<Button>> consoleLineHeightButtons_;
-    std::vector<std::unique_ptr<Button>> consolePromptButtons_;
 
     // ================= Graphics =================
     std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;   // 9 个 Toggle
