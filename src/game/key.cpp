@@ -3,21 +3,7 @@
 
 Key::Key(Vec2 pos, int tileSize)
     : pos_(pos), tileSize_(tileSize) {
-    float ts = static_cast<float>(tileSize_);
-
-    headShape_.setPointCount(3);
-    headShape_.setFillColor(sf::Color::Transparent);
-    headShape_.setOutlineThickness(3.f);
-    headShape_.setOutlineColor(sf::Color(255, 210, 60));
-
-    shaftShape_.setSize({ts * 0.12f, ts * 0.5f});
-    shaftShape_.setFillColor(sf::Color(255, 210, 60));
-
-    toothShape1_.setSize({ts * 0.18f, ts * 0.1f});
-    toothShape1_.setFillColor(sf::Color(255, 210, 60));
-
-    toothShape2_.setSize({ts * 0.14f, ts * 0.1f});
-    toothShape2_.setFillColor(sf::Color(255, 210, 60));
+    // 同上：不再用 ConvexShape，全部在 render 里用 VertexArray + RectangleShape
 }
 
 void Key::update(float dt, const Level& /*level*/) {
@@ -33,45 +19,45 @@ AABB Key::bounds() const {
 void Key::render(sf::RenderTarget& target) const {
     if (collected_) return;
 
-    float ts = static_cast<float>(tileSize_);
-    float cx = pos_.x + ts * 0.5f;
+    const float ts = static_cast<float>(tileSize_);
+    const float cx = pos_.x + ts * 0.5f;
     float cy = pos_.y + ts * 0.5f;
-
-    // 上下浮动
     cy += std::sin(animTimer_ * 3.f) * 3.f;
 
-    // 左右摇摆（横向缩放）
-    float swing = std::cos(animTimer_ * 2.f);
-    float scaleX = 0.6f + 0.4f * std::abs(swing);
+    const float swing  = std::cos(animTimer_ * 2.f);
+    const float scaleX = 0.6f + 0.4f * std::abs(swing);
+    const sf::Color gold(255, 210, 60);
 
-    // ===== 钥匙头（三角形环）=====
-    float headW = ts * 0.15f;
-    float headTop = cy - ts * 0.35f;
-    headShape_.setPoint(0, {cx - headW * scaleX, headTop});
-    headShape_.setPoint(1, {cx + headW * scaleX, headTop});
-    headShape_.setPoint(2, {cx, headTop + ts * 0.18f});
-    target.draw(headShape_);
+    // 钥匙头（三角形）
+    {
+        const float headW   = ts * 0.15f * scaleX;
+        const float headTop = cy - ts * 0.35f;
+        sf::VertexArray va(sf::PrimitiveType::Triangles, 3);
+        va[0] = sf::Vertex{{cx - headW, headTop             }, gold};
+        va[1] = sf::Vertex{{cx + headW, headTop             }, gold};
+        va[2] = sf::Vertex{{cx,        headTop + ts * 0.18f }, gold};
+        target.draw(va);
+    }
 
-    // ===== 钥匙杆 =====
-    float shaftW = ts * 0.12f * scaleX;
-    shaftShape_.setSize({shaftW, ts * 0.5f});
-    shaftShape_.setPosition({cx - shaftW * 0.5f, headTop + ts * 0.15f});
-    target.draw(shaftShape_);
+    // 钥匙杆
+    {
+        const float shaftW = ts * 0.12f * scaleX;
+        sf::RectangleShape shaft({shaftW, ts * 0.5f});
+        shaft.setFillColor(gold);
+        shaft.setPosition({cx - shaftW * 0.5f, cy - ts * 0.35f + ts * 0.15f});
+        target.draw(shaft);
+    }
 
-    // ===== 钥匙齿（两个小凸起）=====
-    float tooth1W = ts * 0.18f * scaleX;
-    toothShape1_.setSize({tooth1W, ts * 0.08f});
-    toothShape1_.setPosition({
-        cx + shaftW * 0.4f,
-        headTop + ts * 0.42f
-    });
-    target.draw(toothShape1_);
+    // 钥匙齿（两个凸起）
+    {
+        const float shaftW = ts * 0.12f * scaleX;
+        sf::RectangleShape tooth({ts * 0.18f * scaleX, ts * 0.08f});
+        tooth.setFillColor(gold);
+        tooth.setPosition({cx + shaftW * 0.4f, cy - ts * 0.35f + ts * 0.42f});
+        target.draw(tooth);
 
-    float tooth2W = ts * 0.14f * scaleX;
-    toothShape2_.setSize({tooth2W, ts * 0.08f});
-    toothShape2_.setPosition({
-        cx + shaftW * 0.4f,
-        headTop + ts * 0.58f
-    });
-    target.draw(toothShape2_);
+        tooth.setSize({ts * 0.14f * scaleX, ts * 0.08f});
+        tooth.setPosition({cx + shaftW * 0.4f, cy - ts * 0.35f + ts * 0.58f});
+        target.draw(tooth);
+    }
 }

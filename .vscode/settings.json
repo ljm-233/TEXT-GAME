@@ -1,7 +1,13 @@
 {
     "clangd.arguments": [
-        "--compile-commands-dir=${workspaceFolder}/build",
+        "--compile-commands-dir=${workspaceFolder}/build/debug",
         "--background-index",
         "--clang-tidy"
-    ]
+    ],
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "files.associations": {
+        "*.tcc": "cpp",
+        "*.inc": "cpp"
+    },
+    "files.encoding": "utf8"
 }

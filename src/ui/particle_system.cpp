@@ -82,8 +82,9 @@ void ParticleSystem::emitLand(Vec2 pos, float intensity) {
                  std::sin(angle) * speed - 30.f};
 
         // 灰白碎石
-        int shade = static_cast<int>(randRange(140.f, 200.f));
-        p.color = sf::Color(shade, shade, shade + 10);
+    std::uint8_t shade = static_cast<std::uint8_t>(randRange(140.f, 200.f));
+    p.color = sf::Color(shade, shade,
+                    static_cast<std::uint8_t>(shade + 10));
 
         p.life = randRange(0.25f, 0.45f);
         p.maxLife = p.life;

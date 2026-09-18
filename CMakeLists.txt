@@ -43,7 +43,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8)
-    add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+                            _CRT_SECURE_NO_WARNINGS)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -161,8 +162,15 @@ target_link_libraries(text_game PRIVATE
 #   注意用生成器表达式，避免 Debug 下也隐藏
 if(WIN32)
     set_target_properties(text_game PROPERTIES
-        WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
-    )
+        WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>)
+
+    # ⭐ MSVC 下 WIN32_EXECUTABLE 会要求 WinMain，但我们只有 main()
+    #    用 /ENTRY:mainCRTStartup 强制用 main 作为入口
+    #    MinGW 不需要（libmingw32.a 自带桥接）
+    if(MSVC)
+        target_link_options(text_game PRIVATE
+            "$<$<NOT:$<CONFIG:Debug>>:/ENTRY:mainCRTStartup>")
+    endif()
 endif()
 
 # ⭐ macOS: bundle
@@ -214,11 +222,11 @@ if(WIN32)
     if(EXISTS "${_vcpkg_bin}")
         install(DIRECTORY "${_vcpkg_bin}/"
                 DESTINATION .
+                COMPONENT Runtime
                 FILES_MATCHING
                 PATTERN "sfml-*.dll"
                 PATTERN "openal32.dll"
-                PATTERN "*.dll"
-                COMPONENT Runtime)
+                PATTERN "*.dll")
     else()
         message(WARNING "找不到 vcpkg DLL 目录: ${_vcpkg_bin}")
     endif()

@@ -12,25 +12,60 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+
+    {
+      "name": "triplet-windows",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "triplet-linux",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    },
+    {
+      "name": "triplet-macos",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-osx"
       }
     },
 
     {
       "name": "debug",
-      "inherits": "base",
+      "inherits": ["base", "triplet-windows", "triplet-linux", "triplet-macos"],
       "displayName": "Debug",
-      "description": "标准 Debug 构建",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
-
     {
       "name": "release",
-      "inherits": "base",
+      "inherits": ["base", "triplet-windows", "triplet-linux", "triplet-macos"],
       "displayName": "Release",
-      "description": "发布构建",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -40,47 +75,38 @@
       "name": "tests",
       "inherits": "debug",
       "displayName": "Debug + Tests",
-      "description": "Debug 构建 + 单元测试",
       "cacheVariables": {
         "BUILD_TESTS": "ON"
       }
     },
-
     {
       "name": "asan",
       "inherits": "tests",
       "displayName": "Debug + Tests + Sanitizer",
-      "description": "开启 ASan / UBSan / LSan 的调试构建",
       "cacheVariables": {
         "SANITIZE": "ON"
       }
     },
-
     {
       "name": "release-package",
       "inherits": "release",
       "displayName": "Release (packaging)",
-      "description": "用于 cpack 的发布构建，不含测试",
       "cacheVariables": {
         "BUILD_TESTS": "OFF"
       }
     },
-
     {
       "name": "clang-tidy",
       "inherits": "debug",
       "displayName": "Debug + clang-tidy",
-      "description": "用 clang-tidy 做静态分析",
       "cacheVariables": {
         "CLANG_TIDY": "ON"
       }
     },
-
     {
       "name": "coverage",
       "inherits": "tests",
       "displayName": "Debug + Tests + Coverage",
-      "description": "用 gcov / lcov 生成覆盖率报告",
       "cacheVariables": {
         "COVERAGE": "ON"
       }

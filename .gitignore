@@ -1,40 +1,36 @@
 # ===== 构建产物 =====
-build/
+/build/
+/build-*/
+/out/
 cmake-build-*/
-*.o
-*.obj
-*.a
-*.so
-*.dylib
-*.exe
-*.out
-
-# ===== CMake 临时 =====
+compile_commands.json
 CMakeCache.txt
 CMakeFiles/
-cmake_install.cmake
-compile_commands.json
-.ninja_deps
-.ninja_log
-build.ninja
-rules.ninja
 
-# ===== 运行时生成（保留目录，忽略内容）=====
-config/*
-!config/.gitkeep
-saves/*
-!saves/.gitkeep
-cache/*
-!cache/.gitkeep
-temp/*
-!temp/.gitkeep
+# ===== 运行时数据 =====
+/config/*.conf
+/config/*.log
+/config/*.log.*
+/saves/
+/cache/
+/temp/
 
-# ===== 编辑器 =====
-.vscode/
-.idea/
-*.swp
-*~
-
-# ===== 系统 =====
+# ===== 平台 =====
 .DS_Store
 Thumbs.db
+
+# ===== 编辑器临时文件 =====
+*.swp
+*.swo
+*~
+
+# ===== 打包产物 =====
+*.tar.gz
+*.zip
+_CPack_Packages/
+
+# ===== 但 .vscode 里的本地设置例外 =====
+# 不忽略 .vscode/launch.json / tasks.json / settings.json / c_cpp_properties.json
+# 只忽略可能的本地覆盖
+.vscode/*.local.json
+.vscode/ipch/

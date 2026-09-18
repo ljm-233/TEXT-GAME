@@ -2,26 +2,20 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake Configure",
+            "label": "CMake Configure (debug)",
             "type": "shell",
             "command": "cmake",
-            "args": [
-                "-S", ".",
-                "-B", "build",
-                "-G", "Ninja",
-                "-DCMAKE_BUILD_TYPE=Debug",
-                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-            ],
+            "args": ["--preset", "debug"],
             "problemMatcher": []
         },
         {
-            "label": "CMake Build",
+            "label": "CMake Build (debug)",
             "type": "shell",
             "command": "cmake",
-            "args": ["--build", "build"],
+            "args": ["--build", "--preset", "debug"],
             "group": { "kind": "build", "isDefault": true },
-            "dependsOn": "CMake Configure",
-            "problemMatcher": ["$gcc"]
+            "dependsOn": "CMake Configure (debug)",
+            "problemMatcher": ["$msCompile", "$gcc"]
         }
     ]
 }

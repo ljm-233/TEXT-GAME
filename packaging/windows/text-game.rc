@@ -1,5 +1,5 @@
 // 图标 (必须使用 .ico 格式)
-IDI_ICON1 ICON "text-game.ico"
+IDI_ICON1 ICON "../icons/text-game.ico"
 
 // 版本信息
 VS_VERSION_INFO VERSIONINFO
