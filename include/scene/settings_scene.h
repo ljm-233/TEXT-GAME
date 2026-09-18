@@ -17,25 +17,7 @@
 #include <vector>
 #include "ui_scale.h"
 #include "utf8.h"
-
-// ⭐ 统一管理一个 ON/OFF 类设置项
-struct ToggleRow {
-    std::string labelKey;
-    sf::Text label;
-    std::unique_ptr<Button> onButton;
-    std::unique_ptr<Button> offButton;
-    bool currentValue = false;
-    std::function<void(bool)> onChanged;
-
-    ToggleRow(const sf::Font& font,
-              const std::string& key,
-              std::function<void(bool)> cb)
-        : labelKey(key),
-          label(font, toSf(Str::T(key.c_str())), scaledFontSize(20)),
-          onChanged(std::move(cb)) {
-        label.setFillColor(sf::Color(230, 230, 230));
-    }
-};
+#include "toggle_row.h"
 
 class SettingsScene : public Scene {
 public:
@@ -114,21 +96,19 @@ private:
 
     // ================= Display =================
     std::vector<std::unique_ptr<Button>> resolutionButtons_;
-    std::unique_ptr<Button> fullscreenOn_, fullscreenOff_;
-    std::unique_ptr<Button> vsyncOn_, vsyncOff_;
+    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;   // ⭐ 2 个 Toggle
     std::vector<std::unique_ptr<Button>> antiAliasingButtons_;
     std::vector<std::unique_ptr<Button>> logLevelButtons_;
     std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
 
     // ================= Interface =================
-    std::unique_ptr<Button> fpsOn_, fpsOff_;
+    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;   // ⭐ 4 个 Toggle
     std::vector<std::unique_ptr<Button>> fpsPosButtons_;
     std::vector<std::unique_ptr<Button>> fpsFormatButtons_;
     std::vector<std::unique_ptr<Button>> uiScaleButtons_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
     std::vector<std::unique_ptr<Button>> languageButtons_;
     std::unique_ptr<Button> wallpaperButton_;
-    std::unique_ptr<Button> clockOn_, clockOff_;
     std::vector<std::unique_ptr<Button>> clockPosButtons_;
 
     std::unique_ptr<Slider> consoleMaskSlider_;
@@ -136,8 +116,6 @@ private:
     std::vector<std::unique_ptr<Button>> consoleFontButtons_;
     std::vector<std::unique_ptr<Button>> consoleHistoryButtons_;
     std::vector<std::unique_ptr<Button>> consoleLineHeightButtons_;
-    std::unique_ptr<Button> consoleAutoScrollOn_, consoleAutoScrollOff_;
-    std::unique_ptr<Button> consoleBlinkOn_, consoleBlinkOff_;
     std::vector<std::unique_ptr<Button>> consolePromptButtons_;
 
     // ================= Graphics =================
@@ -150,19 +128,16 @@ private:
 
     // ================= Audio =================
     std::unique_ptr<Slider> masterVolumeSlider_;
-    std::unique_ptr<Button> soundOn_, soundOff_;
+    std::vector<std::unique_ptr<ToggleRow>> audioToggles_;   // ⭐ 3 个 Toggle
     std::unique_ptr<Slider> soundVolumeSlider_;
-    std::unique_ptr<Button> bgmOn_, bgmOff_;
     std::unique_ptr<Slider> bgmVolumeSlider_;
-    std::unique_ptr<Button> gamepadOn_, gamepadOff_;
 
     // ================= Keys =================
     std::vector<std::unique_ptr<Button>> keyBindingButtons_;   // 5 个动作的按钮
     int listeningAction_ = -1;                                 // -1 = 不在监听
 
     // ================= Other =================
-    std::unique_ptr<Button> rememberOn_, rememberOff_;
-    std::unique_ptr<Button> autoPauseOn_, autoPauseOff_;
+    std::vector<std::unique_ptr<ToggleRow>> otherToggles_;   // ⭐ 2 个 Toggle
     std::vector<std::unique_ptr<Button>> logRotateButtons_;
     std::vector<std::unique_ptr<Button>> logKeepButtons_;
     std::unique_ptr<Button> aboutButton_;

@@ -4,6 +4,7 @@
 #include <vector>
 #include "button.h"
 #include "preferences.h"
+#include "toggle_row.h"
 
 class PauseMenu {
 public:
@@ -52,8 +53,6 @@ private:
     sf::Text  labelGamepad_;
     sf::Text  hintText_;
     std::vector<std::unique_ptr<Button>> themeButtons_;
-    std::unique_ptr<Button> animOn_, animOff_;
-    std::unique_ptr<Button> notifOn_, notifOff_;
-    std::unique_ptr<Button> gamepadOn_, gamepadOff_;
+    std::vector<std::unique_ptr<ToggleRow>> settingsToggles_;   // ⭐ 3 个
     std::unique_ptr<Button> backButton_;
 };

@@ -6,6 +6,7 @@
 #include "ui_scale.h"
 #include "utf8.h"
 #include <algorithm>
+#include <functional>
 #include "focus_group.h"
 
 namespace {
@@ -52,18 +53,27 @@ PauseMenu::PauseMenu(const sf::Font& font,
         themeButtons_.push_back(std::make_unique<Button>(
             Str::T(kThemeKeys[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{90.f, 40.f}, 18));
     }
-    animOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
-                                       sf::Vector2f{80.f, 40.f}, 18);
-    animOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
-                                        sf::Vector2f{80.f, 40.f}, 18);
-    notifOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
-                                        sf::Vector2f{80.f, 40.f}, 18);
-    notifOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
-                                         sf::Vector2f{80.f, 40.f}, 18);
-    gamepadOn_ = std::make_unique<Button>(Str::T(Str::On), font_, sf::Vector2f{0.f, 0.f},
-                                          sf::Vector2f{80.f, 40.f}, 18);
-    gamepadOff_ = std::make_unique<Button>(Str::T(Str::Off), font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{80.f, 40.f}, 18);
+    auto makeToggleRow = [&](const char* labelKey,
+                             std::function<void(bool)> onChanged) {
+        auto row = std::make_unique<ToggleRow>(font_, labelKey,
+                                               std::move(onChanged));
+        auto on  = std::make_unique<Button>(Str::T(Str::On),  font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(Str::T(Str::Off), font_,
+                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{80.f, 40.f}, 18);
+        row->onButton  = std::move(on);
+        row->offButton = std::move(off);
+        return row;
+    };
+    settingsToggles_.push_back(makeToggleRow(Str::LabelAnimation, [this](bool v) {
+        applyAnimation(v); refreshSelection();
+    }));
+    settingsToggles_.push_back(makeToggleRow(Str::LabelNotification, [this](bool v) {
+        applyNotification(v); refreshSelection();
+    }));
+    settingsToggles_.push_back(makeToggleRow(Str::LabelGamepad, [this](bool v) {
+        applyGamepad(v); refreshSelection();
+    }));
     backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_, sf::Vector2f{0.f, 0.f},
                                            sf::Vector2f{160.f, 44.f}, 20);
 
@@ -80,12 +90,10 @@ void PauseMenu::syncFocus() {
     } else {
         std::vector<Button*> items;
         for (auto& b : themeButtons_) items.push_back(b.get());
-        items.push_back(animOn_.get());
-        items.push_back(animOff_.get());
-        items.push_back(notifOn_.get());
-        items.push_back(notifOff_.get());
-        items.push_back(gamepadOn_.get());
-        items.push_back(gamepadOff_.get());
+        for (auto& row : settingsToggles_) {
+            items.push_back(row->onButton.get());
+            items.push_back(row->offButton.get());
+        }
         items.push_back(backButton_.get());
         FocusGroup::instance().setItems(items);
     }
@@ -109,12 +117,11 @@ void PauseMenu::refreshLabels() {
     for (int i = 0; i < 3 && i < static_cast<int>(themeButtons_.size()); ++i) {
         themeButtons_[i]->setText(Str::T(kThemeKeys[i]));
     }
-    if (animOn_)    animOn_->setText(Str::T(Str::On));
-    if (animOff_)   animOff_->setText(Str::T(Str::Off));
-    if (notifOn_)   notifOn_->setText(Str::T(Str::On));
-    if (notifOff_)  notifOff_->setText(Str::T(Str::Off));
-    if (gamepadOn_) gamepadOn_->setText(Str::T(Str::On));
-    if (gamepadOff_)gamepadOff_->setText(Str::T(Str::Off));
+    for (auto& row : settingsToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
     if (backButton_)backButton_->setText(Str::T(Str::Back));
 }
 
@@ -163,19 +170,19 @@ void PauseMenu::relayout(sf::Vector2f windowSize) {
         }
         y += 60.f;
 
-        labelAnim_.setPosition({labelX, y + 8.f});
-        animOn_->setPosition({ctrlX, y});
-        animOff_->setPosition({ctrlX + 90.f, y});
+        settingsToggles_[0]->label.setPosition({labelX, y + 8.f});
+        settingsToggles_[0]->onButton->setPosition({ctrlX, y});
+        settingsToggles_[0]->offButton->setPosition({ctrlX + 90.f, y});
         y += 60.f;
 
-        labelNotif_.setPosition({labelX, y + 8.f});
-        notifOn_->setPosition({ctrlX, y});
-        notifOff_->setPosition({ctrlX + 90.f, y});
+        settingsToggles_[1]->label.setPosition({labelX, y + 8.f});
+        settingsToggles_[1]->onButton->setPosition({ctrlX, y});
+        settingsToggles_[1]->offButton->setPosition({ctrlX + 90.f, y});
         y += 60.f;
 
-        labelGamepad_.setPosition({labelX, y + 8.f});
-        gamepadOn_->setPosition({ctrlX, y});
-        gamepadOff_->setPosition({ctrlX + 90.f, y});
+        settingsToggles_[2]->label.setPosition({labelX, y + 8.f});
+        settingsToggles_[2]->onButton->setPosition({ctrlX, y});
+        settingsToggles_[2]->offButton->setPosition({ctrlX + 90.f, y});
         y += 70.f;
 
         hintText_.setPosition({labelX, y});
@@ -190,17 +197,16 @@ void PauseMenu::refreshSelection() {
     for (int i = 0; i < 3; ++i)
         themeButtons_[i]->setSelected(i == themeIdx);
 
-    bool animOn = prefs_->getBool("animation_enabled", true);
-    animOn_->setSelected(animOn);
-    animOff_->setSelected(!animOn);
-
-    bool notifOn = prefs_->getBool("notification_enabled", true);
-    notifOn_->setSelected(notifOn);
-    notifOff_->setSelected(!notifOn);
-
-    bool gamepadOn = prefs_->getBool("gamepad_enabled", true);
-    gamepadOn_->setSelected(gamepadOn);
-    gamepadOff_->setSelected(!gamepadOn);
+    if (settingsToggles_.size() == 3) {
+        auto setRow = [](ToggleRow& row, bool v) {
+            row.currentValue = v;
+            row.onButton->setSelected(v);
+            row.offButton->setSelected(!v);
+        };
+        setRow(*settingsToggles_[0], prefs_->getBool("animation_enabled", true));
+        setRow(*settingsToggles_[1], prefs_->getBool("notification_enabled", true));
+        setRow(*settingsToggles_[2], prefs_->getBool("gamepad_enabled", true));
+    }
 }
 
 void PauseMenu::switchToSettings() {
@@ -258,12 +264,10 @@ void PauseMenu::handleEvent(const sf::Event& event) {
     } else {
         for (auto& b : themeButtons_)
             b->handleEvent(event);
-        animOn_->handleEvent(event);
-        animOff_->handleEvent(event);
-        notifOn_->handleEvent(event);
-        notifOff_->handleEvent(event);
-        gamepadOn_->handleEvent(event);
-        gamepadOff_->handleEvent(event);
+        for (auto& row : settingsToggles_) {
+            row->onButton->handleEvent(event);
+            row->offButton->handleEvent(event);
+        }
         backButton_->handleEvent(event);
     }
 }
@@ -288,47 +292,15 @@ void PauseMenu::update(float /*dt*/) {
                 return;
             }
         }
-        if (animOn_->consumeClick()) {
-            if (!prefs_->getBool("animation_enabled", true)) {
-                applyAnimation(true);
-                refreshSelection();
+        for (auto& row : settingsToggles_) {
+            if (row->onButton->consumeClick() && !row->currentValue) {
+                if (row->onChanged) row->onChanged(true);
+                return;
             }
-            return;
-        }
-        if (animOff_->consumeClick()) {
-            if (prefs_->getBool("animation_enabled", true)) {
-                applyAnimation(false);
-                refreshSelection();
+            if (row->offButton->consumeClick() && row->currentValue) {
+                if (row->onChanged) row->onChanged(false);
+                return;
             }
-            return;
-        }
-        if (notifOn_->consumeClick()) {
-            if (!prefs_->getBool("notification_enabled", true)) {
-                applyNotification(true);
-                refreshSelection();
-            }
-            return;
-        }
-        if (notifOff_->consumeClick()) {
-            if (prefs_->getBool("notification_enabled", true)) {
-                applyNotification(false);
-                refreshSelection();
-            }
-            return;
-        }
-        if (gamepadOn_->consumeClick()) {
-            if (!prefs_->getBool("gamepad_enabled", true)) {
-                applyGamepad(true);
-                refreshSelection();
-            }
-            return;
-        }
-        if (gamepadOff_->consumeClick()) {
-            if (prefs_->getBool("gamepad_enabled", true)) {
-                applyGamepad(false);
-                refreshSelection();
-            }
-            return;
         }
         if (backButton_->consumeClick()) {
             switchToMain();
@@ -355,17 +327,13 @@ void PauseMenu::render(sf::RenderTarget& target) {
     } else {
         target.draw(settingsTitle_);
         target.draw(labelTheme_);
-        target.draw(labelAnim_);
-        target.draw(labelNotif_);
-        target.draw(labelGamepad_);
         target.draw(hintText_);
         for (auto& b : themeButtons_) b->render(target);
-        animOn_->render(target);
-        animOff_->render(target);
-        notifOn_->render(target);
-        notifOff_->render(target);
-        gamepadOn_->render(target);
-        gamepadOff_->render(target);
+        for (auto& row : settingsToggles_) {
+            target.draw(row->label);
+            row->onButton->render(target);
+            row->offButton->render(target);
+        }
         backButton_->render(target);
     }
 }

@@ -330,13 +330,29 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         return std::make_pair(std::move(on), std::move(off));
     };
 
+    auto makeToggleRow = [&](const char* labelKey,
+                             std::function<void(bool)> onChanged) {
+        auto row = std::make_unique<ToggleRow>(font_, labelKey,
+                                               std::move(onChanged));
+        auto [on, off] = makeToggle(Str::On, Str::Off);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        return row;
+    };
+
     // Display
     for (int i = 0; i < kResolutionCount; ++i)
         resolutionButtons_.push_back(std::make_unique<Button>(
             kResolutions[i].label, font_,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
-    { auto [on, off] = makeToggle(Str::On, Str::Off); fullscreenOn_ = std::move(on); fullscreenOff_ = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); vsyncOn_      = std::move(on); vsyncOff_      = std::move(off); }
+
+    // ⭐ 2 个 Toggle 用 ToggleRow
+    displayToggles_.push_back(makeToggleRow(Str::LabelFullscreen, [this](bool v) {
+        fullscreen_ = v; refreshSelection(); applyFullscreen();
+    }));
+    displayToggles_.push_back(makeToggleRow(Str::LabelVsync, [this](bool v) {
+        vsync_ = v; refreshSelection(); applyVsync();
+    }));
     for (int i = 0; i < kaaCount; ++i)
         antiAliasingButtons_.push_back(std::make_unique<Button>(
             kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -348,7 +364,10 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // Interface
-    { auto [on, off] = makeToggle(Str::On, Str::Off); fpsOn_ = std::move(on); fpsOff_ = std::move(off); }
+    interfaceToggles_.push_back(makeToggleRow(Str::LabelFps, [this](bool v) {
+        showFps_ = v; refreshSelection();
+        preferences_->setBool("show_fps", v);
+    }));
     for (int i = 0; i < kPosCount; ++i)
         fpsPosButtons_.push_back(std::make_unique<Button>(
             kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
@@ -375,7 +394,10 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     }
     wallpaperButton_ = std::make_unique<Button>(Str::NextWallpaper, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
-    { auto [on, off] = makeToggle(Str::On, Str::Off); clockOn_ = std::move(on); clockOff_ = std::move(off); }
+    interfaceToggles_.push_back(makeToggleRow(Str::LabelClock, [this](bool v) {
+        showClock_ = v; refreshSelection();
+        preferences_->setBool("show_clock", v);
+    }));
     for (int i = 0; i < kPosCount; ++i)
         clockPosButtons_.push_back(std::make_unique<Button>(
             kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
@@ -395,8 +417,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (int i = 0; i < kConsoleLineHeightCount; ++i)
         consoleLineHeightButtons_.push_back(std::make_unique<Button>(
             kConsoleLineHeightLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    { auto [on, off] = makeToggle(Str::On, Str::Off); consoleAutoScrollOn_ = std::move(on); consoleAutoScrollOff_ = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); consoleBlinkOn_ = std::move(on); consoleBlinkOff_ = std::move(off); }
+    interfaceToggles_.push_back(makeToggleRow(Str::LabelConsoleAutoScroll, [this](bool v) {
+        consoleAutoScroll_ = v; refreshSelection();
+        preferences_->setBool("console_auto_scroll", v);
+    }));
+    interfaceToggles_.push_back(makeToggleRow(Str::LabelConsoleBlink, [this](bool v) {
+        consoleBlinkCursor_ = v; refreshSelection();
+        preferences_->setBool("console_blink_cursor", v);
+    }));
     for (int i = 0; i < kConsolePromptCount; ++i)
         consolePromptButtons_.push_back(std::make_unique<Button>(
             kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
@@ -410,17 +438,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
         }
     }
-
-    // ⭐ Toggle 行统一用 ToggleRow
-    auto makeToggleRow = [&](const char* labelKey,
-                             std::function<void(bool)> onChanged) {
-        auto row = std::make_unique<ToggleRow>(font_, labelKey,
-                                               std::move(onChanged));
-        auto [on, off] = makeToggle(Str::On, Str::Off);
-        row->onButton = std::move(on);
-        row->offButton = std::move(off);
-        return row;
-    };
 
     graphicsToggles_.push_back(makeToggleRow(Str::LabelAnimation, [this](bool v) {
         animationEnabled_ = v; refreshSelection(); applyAnimation();
@@ -467,19 +484,30 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     masterVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, masterVolume_ * 100.f,
         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    { auto [on, off] = makeToggle(Str::On, Str::Off); soundOn_ = std::move(on); soundOff_ = std::move(off); }
+    audioToggles_.push_back(makeToggleRow(Str::LabelSound, [this](bool v) {
+        soundEnabled_ = v; refreshSelection(); applySound();
+    }));
     soundVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, soundVolume_ * 100.f,
         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    { auto [on, off] = makeToggle(Str::On, Str::Off); bgmOn_ = std::move(on); bgmOff_ = std::move(off); }
+    audioToggles_.push_back(makeToggleRow(Str::LabelBGM, [this](bool v) {
+        bgmEnabled_ = v; refreshSelection(); applyBGM();
+    }));
     bgmVolumeSlider_ = std::make_unique<Slider>(
         font_, 0.f, 100.f, bgmVolume_ * 100.f,
         sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    { auto [on, off] = makeToggle(Str::On, Str::Off); gamepadOn_ = std::move(on); gamepadOff_ = std::move(off); }
+    audioToggles_.push_back(makeToggleRow(Str::LabelGamepad, [this](bool v) {
+        gamepadEnabled_ = v; refreshSelection(); applyGamepad();
+    }));
 
     // Other
-    { auto [on, off] = makeToggle(Str::On, Str::Off); rememberOn_ = std::move(on); rememberOff_ = std::move(off); }
-    { auto [on, off] = makeToggle(Str::On, Str::Off); autoPauseOn_ = std::move(on); autoPauseOff_ = std::move(off); }
+    otherToggles_.push_back(makeToggleRow(Str::LabelRememberSize, [this](bool v) {
+        rememberSize_ = v; refreshSelection();
+        preferences_->setBool("remember_window_size", v);
+    }));
+    otherToggles_.push_back(makeToggleRow(Str::LabelAutoPause, [this](bool v) {
+        autoPauseOnBlur_ = v; refreshSelection(); applyAutoPause();
+    }));
     for (int i = 0; i < kLogRotateCount; ++i)
         logRotateButtons_.push_back(std::make_unique<Button>(
             kLogRotateLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -536,29 +564,23 @@ void SettingsScene::refreshLabels() {
 
     // ===== Display tab =====
     setLabel(labelResolution_,   Str::LabelResolution);
-    setLabel(labelFullscreen_,   Str::LabelFullscreen);
-    setLabel(labelVsync_,        Str::LabelVsync);
     setLabel(labelAntiAliasing_, Str::LabelAntiAliasing);
     setLabel(labelLogLevel_,     Str::LabelLogLevel);
     setLabel(labelFpsLimit_,     Str::LabelFpsLimit);
 
     // ===== Interface tab =====
-    setLabel(labelFps_,                  Str::LabelFps);
     setLabel(labelFpsPos_,               Str::LabelFpsPos);
     setLabel(labelFpsFormat_,            Str::LabelFpsFormat);
     setLabel(labelUiScale_,              Str::LabelUiScale);
     setLabel(labelTheme_,                Str::LabelTheme);
     setLabel(labelLanguage_,             Str::LabelLanguage);
     setLabel(labelWallpaper_,            Str::LabelWallpaper);
-    setLabel(labelClock_,                Str::LabelClock);
     setLabel(labelClockPos_,             Str::LabelClockPos);
     setLabel(labelConsoleMask_,          Str::LabelConsoleMask);
     setLabel(labelConsolePanelAlpha_,    Str::LabelConsolePanelAlpha);
     setLabel(labelConsoleFont_,          Str::LabelConsoleFont);
     setLabel(labelConsoleHistory_,       Str::LabelConsoleHistory);
     setLabel(labelConsoleLineHeight_,    Str::LabelConsoleLineHeight);
-    setLabel(labelConsoleAutoScroll_,    Str::LabelConsoleAutoScroll);
-    setLabel(labelConsoleBlink_,         Str::LabelConsoleBlink);
     setLabel(labelConsolePrompt_,        Str::LabelConsolePrompt);
 
     // ===== Graphics tab =====
@@ -575,15 +597,15 @@ void SettingsScene::refreshLabels() {
 
     // ===== Audio tab =====
     setLabel(labelMasterVolume_, Str::LabelMasterVolume);
-    setLabel(labelSound_,        Str::LabelSound);
     setLabel(labelSoundVolume_,  Str::LabelSoundVolume);
-    setLabel(labelBGM_,          Str::LabelBGM);
     setLabel(labelBGMVolume_,    Str::LabelBGMVolume);
-    setLabel(labelGamepad_,      Str::LabelGamepad);
+    for (auto& row : audioToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
 
     // ===== Other tab =====
-    setLabel(labelRememberSize_, Str::LabelRememberSize);
-    setLabel(labelAutoPause_,    Str::LabelAutoPause);
     setLabel(labelLogRotate_,    Str::LabelLogRotate);
     setLabel(labelLogKeep_,      Str::LabelLogKeep);
     setLabel(labelPlayerName_,   Str::LabelPlayerName);
@@ -599,21 +621,21 @@ void SettingsScene::refreshLabels() {
         tabButtons_[5]->setText(Str::T(Str::TabOther));
     }
 
-    // ===== On / Off 按钮 =====
-    auto setOn  = [](std::unique_ptr<Button>& b) { if (b) b->setText(Str::T(Str::On)); };
-    auto setOff = [](std::unique_ptr<Button>& b) { if (b) b->setText(Str::T(Str::Off)); };
-
-    setOn(fullscreenOn_);  setOff(fullscreenOff_);
-    setOn(vsyncOn_);       setOff(vsyncOff_);
-    setOn(fpsOn_);         setOff(fpsOff_);
-    setOn(clockOn_);       setOff(clockOff_);
-    setOn(consoleAutoScrollOn_); setOff(consoleAutoScrollOff_);
-    setOn(consoleBlinkOn_);      setOff(consoleBlinkOff_);
-    setOn(soundOn_);       setOff(soundOff_);
-    setOn(bgmOn_);         setOff(bgmOff_);
-    setOn(gamepadOn_);     setOff(gamepadOff_);
-    setOn(rememberOn_);    setOff(rememberOff_);
-    setOn(autoPauseOn_);   setOff(autoPauseOff_);
+    for (auto& row : displayToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+    for (auto& row : interfaceToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+    for (auto& row : otherToggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
 
     // ===== 主题按钮 =====
     for (int i = 0; i < kThemeCount && i < static_cast<int>(themeButtons_.size()); ++i) {
@@ -673,33 +695,29 @@ void SettingsScene::syncFocus() {
     switch (currentTab_) {
         case Tab::Display:
             for (auto& b : resolutionButtons_) items.push_back(b.get());
-            items.push_back(fullscreenOn_.get());
-            items.push_back(fullscreenOff_.get());
-            items.push_back(vsyncOn_.get());
-            items.push_back(vsyncOff_.get());
+            for (auto& row : displayToggles_) {
+                items.push_back(row->onButton.get());
+                items.push_back(row->offButton.get());
+            }
             for (auto& b : antiAliasingButtons_) items.push_back(b.get());
             for (auto& b : logLevelButtons_)     items.push_back(b.get());
             for (auto& b : fpsLimitButtons_)     items.push_back(b.get());
             break;
         case Tab::Interface:
-            items.push_back(fpsOn_.get());
-            items.push_back(fpsOff_.get());
+            for (auto& row : interfaceToggles_) {
+                items.push_back(row->onButton.get());
+                items.push_back(row->offButton.get());
+            }
             for (auto& b : fpsPosButtons_)      items.push_back(b.get());
             for (auto& b : fpsFormatButtons_)   items.push_back(b.get());
             for (auto& b : uiScaleButtons_)     items.push_back(b.get());
             for (auto& b : themeButtons_)       items.push_back(b.get());
             for (auto& b : languageButtons_)    items.push_back(b.get());
             items.push_back(wallpaperButton_.get());
-            items.push_back(clockOn_.get());
-            items.push_back(clockOff_.get());
             for (auto& b : clockPosButtons_)    items.push_back(b.get());
             for (auto& b : consoleFontButtons_)    items.push_back(b.get());
             for (auto& b : consoleHistoryButtons_) items.push_back(b.get());
             for (auto& b : consoleLineHeightButtons_) items.push_back(b.get());
-            items.push_back(consoleAutoScrollOn_.get());
-            items.push_back(consoleAutoScrollOff_.get());
-            items.push_back(consoleBlinkOn_.get());
-            items.push_back(consoleBlinkOff_.get());
             for (auto& b : consolePromptButtons_) items.push_back(b.get());
             break;
             case Tab::Graphics:
@@ -714,21 +732,19 @@ void SettingsScene::syncFocus() {
                 for (auto& b : buttonOutlineButtons_) items.push_back(b.get());
                 break;;
         case Tab::Audio:
-            items.push_back(soundOn_.get());
-            items.push_back(soundOff_.get());
-            items.push_back(bgmOn_.get());
-            items.push_back(bgmOff_.get());
-            items.push_back(gamepadOn_.get());
-            items.push_back(gamepadOff_.get());
+            for (auto& row : audioToggles_) {
+                items.push_back(row->onButton.get());
+                items.push_back(row->offButton.get());
+            }
             break;
         case Tab::Keys:
             for (auto& b : keyBindingButtons_) items.push_back(b.get());
             break;
         case Tab::Other:
-            items.push_back(rememberOn_.get());
-            items.push_back(rememberOff_.get());
-            items.push_back(autoPauseOn_.get());
-            items.push_back(autoPauseOff_.get());
+            for (auto& row : otherToggles_) {
+                items.push_back(row->onButton.get());
+                items.push_back(row->offButton.get());
+            }
             for (auto& b : logRotateButtons_) items.push_back(b.get());
             for (auto& b : logKeepButtons_)   items.push_back(b.get());
             items.push_back(aboutButton_.get());
@@ -747,10 +763,14 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kResolutionCount; ++i)
         resolutionButtons_[i]->setSelected(i == selectedResolution_);
 
-    fullscreenOn_->setSelected(fullscreen_);
-    fullscreenOff_->setSelected(!fullscreen_);
-    vsyncOn_->setSelected(vsync_);
-    vsyncOff_->setSelected(!vsync_);
+    if (displayToggles_.size() == 2) {
+        displayToggles_[0]->currentValue = fullscreen_;
+        displayToggles_[0]->onButton->setSelected(fullscreen_);
+        displayToggles_[0]->offButton->setSelected(!fullscreen_);
+        displayToggles_[1]->currentValue = vsync_;
+        displayToggles_[1]->onButton->setSelected(vsync_);
+        displayToggles_[1]->offButton->setSelected(!vsync_);
+    }
 
     int aaIdx = indexOfAA(antiAliasingLevel_);
     for (int i = 0; i < kaaCount; ++i)
@@ -762,8 +782,17 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kfpsLimitCount; ++i)
         fpsLimitButtons_[i]->setSelected(i == flIdx);
 
-    fpsOn_->setSelected(showFps_);
-    fpsOff_->setSelected(!showFps_);
+    if (interfaceToggles_.size() == 4) {
+        auto setRow = [](ToggleRow& row, bool v) {
+            row.currentValue = v;
+            row.onButton->setSelected(v);
+            row.offButton->setSelected(!v);
+        };
+        setRow(*interfaceToggles_[0], showFps_);
+        setRow(*interfaceToggles_[1], showClock_);
+        setRow(*interfaceToggles_[2], consoleAutoScroll_);
+        setRow(*interfaceToggles_[3], consoleBlinkCursor_);
+    }
     for (int i = 0; i < kPosCount; ++i)
         fpsPosButtons_[i]->setSelected(i == fpsPosition_);
     for (int i = 0; i < kFpsFormatCount; ++i)
@@ -775,8 +804,6 @@ void SettingsScene::refreshSelection() {
         themeButtons_[i]->setSelected(i == static_cast<int>(themeId_));
     for (int i = 0; i < static_cast<int>(languageButtons_.size()); ++i)
         languageButtons_[i]->setSelected(i == languageIdx_);
-    clockOn_->setSelected(showClock_);
-    clockOff_->setSelected(!showClock_);
     for (int i = 0; i < kPosCount; ++i)
         clockPosButtons_[i]->setSelected(i == clockPosition_);
 
@@ -789,10 +816,6 @@ void SettingsScene::refreshSelection() {
     int clhIdx = indexOfConsoleLineHeight(consoleLineHeight_);
     for (int i = 0; i < kConsoleLineHeightCount; ++i)
         consoleLineHeightButtons_[i]->setSelected(i == clhIdx);
-    consoleAutoScrollOn_->setSelected(consoleAutoScroll_);
-    consoleAutoScrollOff_->setSelected(!consoleAutoScroll_);
-    consoleBlinkOn_->setSelected(consoleBlinkCursor_);
-    consoleBlinkOff_->setSelected(!consoleBlinkCursor_);
     for (int i = 0; i < kConsolePromptCount; ++i)
         consolePromptButtons_[i]->setSelected(i == consolePrompt_);
 
@@ -834,17 +857,26 @@ void SettingsScene::refreshSelection() {
     for (int i = 0; i < kButtonOutlineCount; ++i)
         buttonOutlineButtons_[i]->setSelected(i == boIdx);
 
-    soundOn_->setSelected(soundEnabled_);
-    soundOff_->setSelected(!soundEnabled_);
-    bgmOn_->setSelected(bgmEnabled_);
-    bgmOff_->setSelected(!bgmEnabled_);
-    gamepadOn_->setSelected(gamepadEnabled_);
-    gamepadOff_->setSelected(!gamepadEnabled_);
+    if (audioToggles_.size() == 3) {
+        auto setRow = [](ToggleRow& row, bool v) {
+            row.currentValue = v;
+            row.onButton->setSelected(v);
+            row.offButton->setSelected(!v);
+        };
+        setRow(*audioToggles_[0], soundEnabled_);
+        setRow(*audioToggles_[1], bgmEnabled_);
+        setRow(*audioToggles_[2], gamepadEnabled_);
+    }
 
-    rememberOn_->setSelected(rememberSize_);
-    rememberOff_->setSelected(!rememberSize_);
-    autoPauseOn_->setSelected(autoPauseOnBlur_);
-    autoPauseOff_->setSelected(!autoPauseOnBlur_);
+    if (otherToggles_.size() == 2) {
+        auto setRow = [](ToggleRow& row, bool v) {
+            row.currentValue = v;
+            row.onButton->setSelected(v);
+            row.offButton->setSelected(!v);
+        };
+        setRow(*otherToggles_[0], rememberSize_);
+        setRow(*otherToggles_[1], autoPauseOnBlur_);
+    }
     for (int i = 0; i < kLogRotateCount; ++i)
         logRotateButtons_[i]->setSelected(i == logRotateIndex_);
     for (int i = 0; i < kLogKeepCount; ++i)
@@ -997,31 +1029,31 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     switch (currentTab_) {
         case Tab::Display:
             for (auto& b : resolutionButtons_) b->handleEvent(event);
-            fullscreenOn_->handleEvent(event); fullscreenOff_->handleEvent(event);
-            vsyncOn_->handleEvent(event);      vsyncOff_->handleEvent(event);
+            for (auto& row : displayToggles_) {
+                row->onButton->handleEvent(event);
+                row->offButton->handleEvent(event);
+            }
             for (auto& b : antiAliasingButtons_) b->handleEvent(event);
             for (auto& b : logLevelButtons_)     b->handleEvent(event);
             for (auto& b : fpsLimitButtons_)     b->handleEvent(event);
             break;
         case Tab::Interface:
-            fpsOn_->handleEvent(event); fpsOff_->handleEvent(event);
+            for (auto& row : interfaceToggles_) {
+                row->onButton->handleEvent(event);
+                row->offButton->handleEvent(event);
+            }
             for (auto& b : fpsPosButtons_)    b->handleEvent(event);
             for (auto& b : fpsFormatButtons_) b->handleEvent(event);
             for (auto& b : uiScaleButtons_)   b->handleEvent(event);
             for (auto& b : themeButtons_)     b->handleEvent(event);
             for (auto& b : languageButtons_)  b->handleEvent(event);
             wallpaperButton_->handleEvent(event);
-            clockOn_->handleEvent(event); clockOff_->handleEvent(event);
             for (auto& b : clockPosButtons_) b->handleEvent(event);
             consoleMaskSlider_->handleEvent(event);
             consolePanelAlphaSlider_->handleEvent(event);
             for (auto& b : consoleFontButtons_)      b->handleEvent(event);
             for (auto& b : consoleHistoryButtons_)   b->handleEvent(event);
             for (auto& b : consoleLineHeightButtons_)b->handleEvent(event);
-            consoleAutoScrollOn_->handleEvent(event);
-            consoleAutoScrollOff_->handleEvent(event);
-            consoleBlinkOn_->handleEvent(event);
-            consoleBlinkOff_->handleEvent(event);
             for (auto& b : consolePromptButtons_) b->handleEvent(event);
             break;
         case Tab::Graphics:
@@ -1037,11 +1069,12 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             break;
         case Tab::Audio:
             masterVolumeSlider_->handleEvent(event);
-            soundOn_->handleEvent(event);  soundOff_->handleEvent(event);
+            for (auto& row : audioToggles_) {
+                row->onButton->handleEvent(event);
+                row->offButton->handleEvent(event);
+            }
             soundVolumeSlider_->handleEvent(event);
-            bgmOn_->handleEvent(event);    bgmOff_->handleEvent(event);
             bgmVolumeSlider_->handleEvent(event);
-            gamepadOn_->handleEvent(event); gamepadOff_->handleEvent(event);
             break;
         case Tab::Keys: {
             // 监听模式：下一个非 ESC 键被绑定
@@ -1078,8 +1111,10 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             break;
         }
         case Tab::Other:
-            rememberOn_->handleEvent(event); rememberOff_->handleEvent(event);
-            autoPauseOn_->handleEvent(event); autoPauseOff_->handleEvent(event);
+            for (auto& row : otherToggles_) {
+                row->onButton->handleEvent(event);
+                row->offButton->handleEvent(event);
+            }
             for (auto& b : logRotateButtons_) b->handleEvent(event);
             for (auto& b : logKeepButtons_)   b->handleEvent(event);
             aboutButton_->handleEvent(event);
@@ -1135,17 +1170,16 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            if (fullscreenOn_->consumeClick() && !fullscreen_) {
-                fullscreen_ = true; refreshSelection(); applyFullscreen(); return;
-            }
-            if (fullscreenOff_->consumeClick() && fullscreen_) {
-                fullscreen_ = false; refreshSelection(); applyFullscreen(); return;
-            }
-            if (vsyncOn_->consumeClick() && !vsync_) {
-                vsync_ = true; refreshSelection(); applyVsync(); return;
-            }
-            if (vsyncOff_->consumeClick() && vsync_) {
-                vsync_ = false; refreshSelection(); applyVsync(); return;
+            // ⭐ 2 个 Toggle
+            for (auto& row : displayToggles_) {
+                if (row->onButton->consumeClick() && !row->currentValue) {
+                    if (row->onChanged) row->onChanged(true);
+                    return;
+                }
+                if (row->offButton->consumeClick() && row->currentValue) {
+                    if (row->onChanged) row->onChanged(false);
+                    return;
+                }
             }
             for (int i = 0; i < kaaCount; ++i)
                 if (antiAliasingButtons_[i]->consumeClick()) {
@@ -1175,13 +1209,16 @@ void SettingsScene::update(float /*dt*/) {
             break;
         }
         case Tab::Interface: {
-            if (fpsOn_->consumeClick() && !showFps_) {
-                showFps_ = true; refreshSelection();
-                preferences_->setBool("show_fps", true); return;
-            }
-            if (fpsOff_->consumeClick() && showFps_) {
-                showFps_ = false; refreshSelection();
-                preferences_->setBool("show_fps", false); return;
+            // ⭐ 4 个 Toggle
+            for (auto& row : interfaceToggles_) {
+                if (row->onButton->consumeClick() && !row->currentValue) {
+                    if (row->onChanged) row->onChanged(true);
+                    return;
+                }
+                if (row->offButton->consumeClick() && row->currentValue) {
+                    if (row->onChanged) row->onChanged(false);
+                    return;
+                }
             }
             for (int i = 0; i < kPosCount; ++i)
                 if (fpsPosButtons_[i]->consumeClick()) {
@@ -1226,14 +1263,6 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             if (wallpaperButton_->consumeClick()) { applyWallpaper(); return; }
-            if (clockOn_->consumeClick() && !showClock_) {
-                showClock_ = true; refreshSelection();
-                preferences_->setBool("show_clock", true); return;
-            }
-            if (clockOff_->consumeClick() && showClock_) {
-                showClock_ = false; refreshSelection();
-                preferences_->setBool("show_clock", false); return;
-            }
             for (int i = 0; i < kPosCount; ++i)
                 if (clockPosButtons_[i]->consumeClick()) {
                     if (clockPosition_ != i) {
@@ -1278,22 +1307,6 @@ void SettingsScene::update(float /*dt*/) {
                     }
                     return;
                 }
-            if (consoleAutoScrollOn_->consumeClick() && !consoleAutoScroll_) {
-                consoleAutoScroll_ = true; refreshSelection();
-                preferences_->setBool("console_auto_scroll", true); return;
-            }
-            if (consoleAutoScrollOff_->consumeClick() && consoleAutoScroll_) {
-                consoleAutoScroll_ = false; refreshSelection();
-                preferences_->setBool("console_auto_scroll", false); return;
-            }
-            if (consoleBlinkOn_->consumeClick() && !consoleBlinkCursor_) {
-                consoleBlinkCursor_ = true; refreshSelection();
-                preferences_->setBool("console_blink_cursor", true); return;
-            }
-            if (consoleBlinkOff_->consumeClick() && consoleBlinkCursor_) {
-                consoleBlinkCursor_ = false; refreshSelection();
-                preferences_->setBool("console_blink_cursor", false); return;
-            }
             for (int i = 0; i < kConsolePromptCount; ++i)
                 if (consolePromptButtons_[i]->consumeClick()) {
                     if (consolePrompt_ != i) {
@@ -1369,33 +1382,25 @@ void SettingsScene::update(float /*dt*/) {
                 SoundManager::instance().setMasterVolume(masterVolume_);
                 preferences_->setDouble("master_volume", masterVolume_);
             }
-            if (soundOn_->consumeClick() && !soundEnabled_) {
-                soundEnabled_ = true; refreshSelection(); applySound(); return;
-            }
-            if (soundOff_->consumeClick() && soundEnabled_) {
-                soundEnabled_ = false; refreshSelection(); applySound(); return;
+            for (auto& row : audioToggles_) {
+                if (row->onButton->consumeClick() && !row->currentValue) {
+                    if (row->onChanged) row->onChanged(true);
+                    return;
+                }
+                if (row->offButton->consumeClick() && row->currentValue) {
+                    if (row->onChanged) row->onChanged(false);
+                    return;
+                }
             }
             if (soundVolumeSlider_->consumeChanged()) {
                 soundVolume_ = soundVolumeSlider_->value() / 100.f;
                 SoundManager::instance().setSFXVolume(soundVolume_);
                 preferences_->setDouble("sound_volume", soundVolume_);
             }
-            if (bgmOn_->consumeClick() && !bgmEnabled_) {
-                bgmEnabled_ = true; refreshSelection(); applyBGM(); return;
-            }
-            if (bgmOff_->consumeClick() && bgmEnabled_) {
-                bgmEnabled_ = false; refreshSelection(); applyBGM(); return;
-            }
             if (bgmVolumeSlider_->consumeChanged()) {
                 bgmVolume_ = bgmVolumeSlider_->value() / 100.f;
                 SoundManager::instance().setMusicVolume(bgmVolume_);
                 preferences_->setDouble("bgm_volume", bgmVolume_);
-            }
-            if (gamepadOn_->consumeClick() && !gamepadEnabled_) {
-                gamepadEnabled_ = true; refreshSelection(); applyGamepad(); return;
-            }
-            if (gamepadOff_->consumeClick() && gamepadEnabled_) {
-                gamepadEnabled_ = false; refreshSelection(); applyGamepad(); return;
             }
             break;
         }
@@ -1411,19 +1416,15 @@ void SettingsScene::update(float /*dt*/) {
             break;
         }
         case Tab::Other: {
-            if (rememberOn_->consumeClick() && !rememberSize_) {
-                rememberSize_ = true; refreshSelection();
-                preferences_->setBool("remember_window_size", true); return;
-            }
-            if (rememberOff_->consumeClick() && rememberSize_) {
-                rememberSize_ = false; refreshSelection();
-                preferences_->setBool("remember_window_size", false); return;
-            }
-            if (autoPauseOn_->consumeClick() && !autoPauseOnBlur_) {
-                autoPauseOnBlur_ = true; refreshSelection(); applyAutoPause(); return;
-            }
-            if (autoPauseOff_->consumeClick() && autoPauseOnBlur_) {
-                autoPauseOnBlur_ = false; refreshSelection(); applyAutoPause(); return;
+            for (auto& row : otherToggles_) {
+                if (row->onButton->consumeClick() && !row->currentValue) {
+                    if (row->onChanged) row->onChanged(true);
+                    return;
+                }
+                if (row->offButton->consumeClick() && row->currentValue) {
+                    if (row->onChanged) row->onChanged(false);
+                    return;
+                }
             }
             for (int i = 0; i < kLogRotateCount; ++i)
                 if (logRotateButtons_[i]->consumeClick()) {
@@ -1548,8 +1549,8 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
     y += 2 * (kBtnH + kGapY) + 6.f;
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
-    r.toggle(labelFullscreen_, fullscreenOn_, fullscreenOff_);
-    r.toggle(labelVsync_,      vsyncOn_,      vsyncOff_);
+    r.toggle(*displayToggles_[0]);   // Fullscreen
+    r.toggle(*displayToggles_[1]);   // VSync
     r.multi (labelAntiAliasing_, antiAliasingButtons_, 96.f);
     r.multi (labelLogLevel_,     logLevelButtons_,     106.f);
     r.multi (labelFpsLimit_,     fpsLimitButtons_,     86.f);
@@ -1563,7 +1564,7 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
-    r.toggle(labelFps_,       fpsOn_,       fpsOff_);
+    r.toggle(*interfaceToggles_[0]);   // FPS 显示
     r.multi (labelFpsPos_,    fpsPosButtons_, 86.f);
     r.multi (labelFpsFormat_, fpsFormatButtons_, 114.f);
     r.multi (labelUiScale_,   uiScaleButtons_, 96.f);
@@ -1585,7 +1586,7 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     wallpaperButton_->render(window.native());
     r.y += 50.f;
 
-    r.toggle(labelClock_,     clockOn_, clockOff_);
+    r.toggle(*interfaceToggles_[1]);   // 时钟显示
     r.multi (labelClockPos_,  clockPosButtons_, 86.f);
 
     r.slider(labelConsoleMask_,       consoleMaskSlider_.get());
@@ -1593,8 +1594,8 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     r.multi (labelConsoleFont_,       consoleFontButtons_, 96.f);
     r.multi (labelConsoleHistory_,    consoleHistoryButtons_, 96.f);
     r.multi (labelConsoleLineHeight_, consoleLineHeightButtons_, 96.f);
-    r.toggle(labelConsoleAutoScroll_, consoleAutoScrollOn_, consoleAutoScrollOff_);
-    r.toggle(labelConsoleBlink_,      consoleBlinkOn_,      consoleBlinkOff_);
+    r.toggle(*interfaceToggles_[2]);   // 控制台自动滚动
+    r.toggle(*interfaceToggles_[3]);   // 控制台光标闪烁
     r.multi (labelConsolePrompt_,     consolePromptButtons_, 70.f);
 }
 
@@ -1633,11 +1634,11 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
     r.slider(labelMasterVolume_, masterVolumeSlider_.get());
-    r.toggle(labelSound_,        soundOn_, soundOff_);
+    r.toggle(*audioToggles_[0]);   // Sound
     r.slider(labelSoundVolume_,  soundVolumeSlider_.get());
-    r.toggle(labelBGM_,          bgmOn_,   bgmOff_);
+    r.toggle(*audioToggles_[1]);   // BGM
     r.slider(labelBGMVolume_,    bgmVolumeSlider_.get());
-    r.toggle(labelGamepad_,      gamepadOn_, gamepadOff_);
+    r.toggle(*audioToggles_[2]);   // Gamepad
 }
 
 void SettingsScene::renderKeysTab(Window& window, float contentX,
@@ -1682,8 +1683,8 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
-    r.toggle(labelRememberSize_, rememberOn_, rememberOff_);
-    r.toggle(labelAutoPause_,    autoPauseOn_, autoPauseOff_);
+    r.toggle(*otherToggles_[0]);   // RememberSize
+    r.toggle(*otherToggles_[1]);   // AutoPause
     r.multi (labelLogRotate_,    logRotateButtons_, 96.f);
     r.multi (labelLogKeep_,      logKeepButtons_,   96.f);
 
