@@ -136,6 +136,14 @@ int indexOfAnimSpeed(int idx) { if (idx < 0 || idx >= kanimSpeedCount) return 1;
 int indexOfPos(int idx)       { if (idx < 0 || idx >= kPosCount)       return 1; return idx; }
 int indexOfFpsFormat(int idx) { if (idx < 0 || idx >= kFpsFormatCount) return 1; return idx; }
 int indexOfConsolePrompt(int idx) { if (idx < 0 || idx >= kConsolePromptCount) return 0; return idx; }
+
+// ⭐ 初始生命值（1/3/5/10/100）↔ 索引
+int indexOfLives(int lives) {
+    const int kLives[] = {1, 3, 5, 10, 100};
+    for (int i = 0; i < 5; ++i)
+        if (kLives[i] == lives) return i;
+    return 0;
+}
 }
 
 // ============================================================
@@ -341,10 +349,67 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     };
 
     // Display
-    for (int i = 0; i < kResolutionCount; ++i)
-        resolutionButtons_.push_back(std::make_unique<Button>(
-            kResolutions[i].label, font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
+    auto makeMultiRow = [&](const char* labelKey,
+                            std::function<void(int)> onSelected) {
+        return std::make_unique<MultiRow>(font_, labelKey, std::move(onSelected));
+    };
+
+    // Resolution: 2×2 网格，按钮 280×46
+    {
+        auto row = makeMultiRow(Str::LabelResolution, [this](int i) {
+            selectedResolution_ = i; refreshSelection(); applyResolution();
+        });
+        row->columns = 2;
+        row->stepX   = kBtnW + kGapX;   // 296
+        row->stepY   = kBtnH + kGapY;   // 56
+        for (int i = 0; i < kResolutionCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kResolutions[i].label, font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{kBtnW, kBtnH}, 18));
+        }
+        displayMultiRows_.push_back(std::move(row));
+    }
+    // AntiAliasing
+    {
+        auto row = makeMultiRow(Str::LabelAntiAliasing, [this](int i) {
+            antiAliasingLevel_ = kaaLevels[i];
+            refreshSelection(); applyAntiAliasing();
+        });
+        for (int i = 0; i < kaaCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kAALabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        displayMultiRows_.push_back(std::move(row));
+    }
+    // LogLevel
+    {
+        auto row = makeMultiRow(Str::LabelLogLevel, [this](int i) {
+            logLevel_ = static_cast<int>(klogLevels[i]);
+            refreshSelection(); applyLogLevel();
+        });
+        row->stepX = 106.f;
+        for (int i = 0; i < klogCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kLogLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{96.f, 40.f}, 16));
+        }
+        displayMultiRows_.push_back(std::move(row));
+    }
+    // FpsLimit
+    {
+        auto row = makeMultiRow(Str::LabelFpsLimit, [this](int i) {
+            fpsLimit_ = kfpsLimits[i];
+            refreshSelection(); applyFpsLimit();
+        });
+        row->stepX = 86.f;
+        for (int i = 0; i < kfpsLimitCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{76.f, 40.f}, 16));
+        }
+        displayMultiRows_.push_back(std::move(row));
+    }
 
     // ⭐ 2 个 Toggle 用 ToggleRow
     displayToggles_.push_back(makeToggleRow(Str::LabelFullscreen, [this](bool v) {
@@ -353,15 +418,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     displayToggles_.push_back(makeToggleRow(Str::LabelVsync, [this](bool v) {
         vsync_ = v; refreshSelection(); applyVsync();
     }));
-    for (int i = 0; i < kaaCount; ++i)
-        antiAliasingButtons_.push_back(std::make_unique<Button>(
-            kAALabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < klogCount; ++i)
-        logLevelButtons_.push_back(std::make_unique<Button>(
-            kLogLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{96.f, 40.f}, 16));
-    for (int i = 0; i < kfpsLimitCount; ++i)
-        fpsLimitButtons_.push_back(std::make_unique<Button>(
-            kFpsLimitLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
 
     // Interface
     interfaceToggles_.push_back(makeToggleRow(Str::LabelFps, [this](bool v) {
@@ -430,13 +486,21 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             kConsolePromptLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
 
     // Graphics
+    // InitialLives
     {
         const char* kLivesLabels[] = {"1", "3", "5", "10", "100"};
+        auto row = makeMultiRow(Str::LabelInitialLives, [this](int i) {
+            const int kLives[] = {1, 3, 5, 10, 99};
+            initialLives_ = kLives[i];
+            refreshSelection();
+            preferences_->setInt("initial_lives", initialLives_);
+        });
         for (int i = 0; i < 5; ++i) {
-            initialLivesButtons_.push_back(std::make_unique<Button>(
+            row->addButton(std::make_unique<Button>(
                 kLivesLabels[i], font_,
                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
         }
+        graphicsMultiRows_.push_back(std::move(row));
     }
 
     graphicsToggles_.push_back(makeToggleRow(Str::LabelAnimation, [this](bool v) {
@@ -467,18 +531,59 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         showColliders_ = v; refreshSelection(); applyShowColliders();
     }));
 
-    for (int i = 0; i < kanimSpeedCount; ++i)
-        animationSpeedButtons_.push_back(std::make_unique<Button>(
-            kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kPosCount; ++i)
-        notificationPosButtons_.push_back(std::make_unique<Button>(
-            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
-    for (int i = 0; i < kButtonCornerCount; ++i)
-        buttonCornerButtons_.push_back(std::make_unique<Button>(
-            kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kButtonOutlineCount; ++i)
-        buttonOutlineButtons_.push_back(std::make_unique<Button>(
-            kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    // AnimationSpeed
+    {
+        auto row = makeMultiRow(Str::LabelAnimationSpeed, [this](int i) {
+            animationSpeedIndex_ = i;
+            refreshSelection(); applyAnimation();
+        });
+        for (int i = 0; i < kanimSpeedCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        graphicsMultiRows_.push_back(std::move(row));
+    }
+    // NotificationPos
+    {
+        auto row = makeMultiRow(Str::LabelNotificationPos, [this](int i) {
+            notificationPosition_ = i;
+            refreshSelection(); applyNotification();
+        });
+        row->stepX = 86.f;
+        for (int i = 0; i < kPosCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kPosLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{76.f, 40.f}, 16));
+        }
+        graphicsMultiRows_.push_back(std::move(row));
+    }
+    // ButtonCorner
+    {
+        auto row = makeMultiRow(Str::LabelButtonCorner, [this](int i) {
+            buttonCorner_ = kButtonCorners[i];
+            refreshSelection(); applyButtonStyle();
+        });
+        for (int i = 0; i < kButtonCornerCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        graphicsMultiRows_.push_back(std::move(row));
+    }
+    // ButtonOutline
+    {
+        auto row = makeMultiRow(Str::LabelButtonOutline, [this](int i) {
+            buttonOutline_ = kButtonOutlines[i];
+            refreshSelection(); applyButtonStyle();
+        });
+        for (int i = 0; i < kButtonOutlineCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                sf::Vector2f{86.f, 40.f}, 18));
+        }
+        graphicsMultiRows_.push_back(std::move(row));
+    }
 
     // Audio
     masterVolumeSlider_ = std::make_unique<Slider>(
@@ -509,11 +614,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
         autoPauseOnBlur_ = v; refreshSelection(); applyAutoPause();
     }));
     // ⭐ 2 个 Multi 用 MultiRow
-    auto makeMultiRow = [&](const char* labelKey,
-                            std::function<void(int)> onSelected) {
-        return std::make_unique<MultiRow>(font_, labelKey, std::move(onSelected));
-    };
-
     {
         auto row = makeMultiRow(Str::LabelLogRotate, [this](int i) {
             logRotateIndex_ = i; refreshSelection(); applyLogRotation();
@@ -585,10 +685,9 @@ void SettingsScene::refreshLabels() {
     setLabel(headingOther_,     Str::TabOther);
 
     // ===== Display tab =====
-    setLabel(labelResolution_,   Str::LabelResolution);
-    setLabel(labelAntiAliasing_, Str::LabelAntiAliasing);
-    setLabel(labelLogLevel_,     Str::LabelLogLevel);
-    setLabel(labelFpsLimit_,     Str::LabelFpsLimit);
+    // （分辨率/抗锯齿/日志级别/FPS 上限 由 displayMultiRows_ 接管）
+    setLabel(labelFullscreen_,   Str::LabelFullscreen);
+    setLabel(labelVsync_,        Str::LabelVsync);
 
     // ===== Interface tab =====
     setLabel(labelFpsPos_,               Str::LabelFpsPos);
@@ -611,11 +710,6 @@ void SettingsScene::refreshLabels() {
         row->onButton->setText(Str::T(Str::On));
         row->offButton->setText(Str::T(Str::Off));
     }
-    setLabel(labelAnimationSpeed_,  Str::LabelAnimationSpeed);
-    setLabel(labelInitialLives_,    Str::LabelInitialLives);
-    setLabel(labelNotificationPos_, Str::LabelNotificationPos);
-    setLabel(labelButtonCorner_,    Str::LabelButtonCorner);
-    setLabel(labelButtonOutline_,   Str::LabelButtonOutline);
 
     // ===== Audio tab =====
     setLabel(labelMasterVolume_, Str::LabelMasterVolume);
@@ -669,20 +763,11 @@ void SettingsScene::refreshLabels() {
     if (backButton_)      backButton_->setText(Str::T(Str::Back));
 
     // ===== 下拉选项按钮 =====
-    for (int i = 0; i < kaaCount && i < static_cast<int>(antiAliasingButtons_.size()); ++i)
-        antiAliasingButtons_[i]->setText(Str::T(kAALabels[i]));
-    for (int i = 0; i < klogCount && i < static_cast<int>(logLevelButtons_.size()); ++i)
-        logLevelButtons_[i]->setText(Str::T(kLogLabels[i]));
-    for (int i = 0; i < kfpsLimitCount && i < static_cast<int>(fpsLimitButtons_.size()); ++i)
-        fpsLimitButtons_[i]->setText(Str::T(kFpsLimitLabels[i]));
-
     for (int i = 0; i < kPosCount; ++i) {
         if (i < static_cast<int>(fpsPosButtons_.size()))
             fpsPosButtons_[i]->setText(Str::T(kPosLabels[i]));
         if (i < static_cast<int>(clockPosButtons_.size()))
             clockPosButtons_[i]->setText(Str::T(kPosLabels[i]));
-        if (i < static_cast<int>(notificationPosButtons_.size()))
-            notificationPosButtons_[i]->setText(Str::T(kPosLabels[i]));
     }
 
     for (int i = 0; i < kFpsFormatCount && i < static_cast<int>(fpsFormatButtons_.size()); ++i)
@@ -691,14 +776,14 @@ void SettingsScene::refreshLabels() {
         consoleFontButtons_[i]->setText(Str::T(kConsoleFontLabels[i]));
     for (int i = 0; i < kConsoleLineHeightCount && i < static_cast<int>(consoleLineHeightButtons_.size()); ++i)
         consoleLineHeightButtons_[i]->setText(Str::T(kConsoleLineHeightLabels[i]));
-    for (int i = 0; i < kanimSpeedCount && i < static_cast<int>(animationSpeedButtons_.size()); ++i)
-        animationSpeedButtons_[i]->setText(Str::T(kAnimSpeedLabels[i]));
-    for (int i = 0; i < kButtonCornerCount && i < static_cast<int>(buttonCornerButtons_.size()); ++i)
-        buttonCornerButtons_[i]->setText(Str::T(kButtonCornerLabels[i]));
-    for (int i = 0; i < kButtonOutlineCount && i < static_cast<int>(buttonOutlineButtons_.size()); ++i)
-        buttonOutlineButtons_[i]->setText(Str::T(kButtonOutlineLabels[i]));
 
     // 语言按钮保持"中文"/"English"字样（不翻译，否则用户无法识别）
+    for (auto& row : displayMultiRows_) {
+        row->refreshLabel();
+    }
+    for (auto& row : graphicsMultiRows_) {
+        row->refreshLabel();
+    }
     for (auto& row : otherMultiRows_) {
         row->refreshLabel();
     }
@@ -715,14 +800,13 @@ void SettingsScene::syncFocus() {
 
     switch (currentTab_) {
         case Tab::Display:
-            for (auto& b : resolutionButtons_) items.push_back(b.get());
+            for (auto& row : displayMultiRows_) {
+                for (auto& btn : row->buttons) items.push_back(btn.get());
+            }
             for (auto& row : displayToggles_) {
                 items.push_back(row->onButton.get());
                 items.push_back(row->offButton.get());
             }
-            for (auto& b : antiAliasingButtons_) items.push_back(b.get());
-            for (auto& b : logLevelButtons_)     items.push_back(b.get());
-            for (auto& b : fpsLimitButtons_)     items.push_back(b.get());
             break;
         case Tab::Interface:
             for (auto& row : interfaceToggles_) {
@@ -742,16 +826,14 @@ void SettingsScene::syncFocus() {
             for (auto& b : consolePromptButtons_) items.push_back(b.get());
             break;
             case Tab::Graphics:
-                for (auto& b : initialLivesButtons_) items.push_back(b.get());
+                for (auto& row : graphicsMultiRows_) {
+                    for (auto& btn : row->buttons) items.push_back(btn.get());
+                }
                 for (auto& row : graphicsToggles_) {
                     items.push_back(row->onButton.get());
                     items.push_back(row->offButton.get());
                 }
-                for (auto& b : animationSpeedButtons_) items.push_back(b.get());
-                for (auto& b : notificationPosButtons_) items.push_back(b.get());
-                for (auto& b : buttonCornerButtons_)  items.push_back(b.get());
-                for (auto& b : buttonOutlineButtons_) items.push_back(b.get());
-                break;;
+               break;
         case Tab::Audio:
             for (auto& row : audioToggles_) {
                 items.push_back(row->onButton.get());
@@ -782,8 +864,12 @@ void SettingsScene::syncFocus() {
 void SettingsScene::refreshSelection() {
     for (int i = 0; i < kTabCount; ++i)
         tabButtons_[i]->setSelected(i == static_cast<int>(currentTab_));
-    for (int i = 0; i < kResolutionCount; ++i)
-        resolutionButtons_[i]->setSelected(i == selectedResolution_);
+    if (displayMultiRows_.size() == 4) {
+        displayMultiRows_[0]->setSelected(selectedResolution_);
+        displayMultiRows_[1]->setSelected(indexOfAA(antiAliasingLevel_));
+        displayMultiRows_[2]->setSelected(indexOfLogLevel(logLevel_));
+        displayMultiRows_[3]->setSelected(indexOfFpsLimit(fpsLimit_));
+    }
 
     if (displayToggles_.size() == 2) {
         displayToggles_[0]->currentValue = fullscreen_;
@@ -793,16 +879,6 @@ void SettingsScene::refreshSelection() {
         displayToggles_[1]->onButton->setSelected(vsync_);
         displayToggles_[1]->offButton->setSelected(!vsync_);
     }
-
-    int aaIdx = indexOfAA(antiAliasingLevel_);
-    for (int i = 0; i < kaaCount; ++i)
-        antiAliasingButtons_[i]->setSelected(i == aaIdx);
-    int lgIdx = indexOfLogLevel(logLevel_);
-    for (int i = 0; i < klogCount; ++i)
-        logLevelButtons_[i]->setSelected(i == lgIdx);
-    int flIdx = indexOfFpsLimit(fpsLimit_);
-    for (int i = 0; i < kfpsLimitCount; ++i)
-        fpsLimitButtons_[i]->setSelected(i == flIdx);
 
     if (interfaceToggles_.size() == 4) {
         auto setRow = [](ToggleRow& row, bool v) {
@@ -858,26 +934,13 @@ void SettingsScene::refreshSelection() {
         setToggleRow(*graphicsToggles_[7], notificationEnabled_);
         setToggleRow(*graphicsToggles_[8], showColliders_);
     }
-
-    for (int i = 0; i < kanimSpeedCount; ++i)
-        animationSpeedButtons_[i]->setSelected(i == animationSpeedIndex_);
-    for (int i = 0; i < kPosCount; ++i)
-        notificationPosButtons_[i]->setSelected(i == notificationPosition_);
-
-    {
-        const int kLivesOptions[] = {1, 3, 5, 10, 100};
-        int idx = 0;
-        for (int i = 0; i < 5; ++i) if (kLivesOptions[i] == initialLives_) idx = i;
-        for (int i = 0; i < 5; ++i)
-            initialLivesButtons_[i]->setSelected(i == idx);
+    if (graphicsMultiRows_.size() == 5) {
+        graphicsMultiRows_[0]->setSelected(indexOfLives(initialLives_));
+        graphicsMultiRows_[1]->setSelected(animationSpeedIndex_);
+        graphicsMultiRows_[2]->setSelected(notificationPosition_);
+        graphicsMultiRows_[3]->setSelected(indexOfButtonCorner(buttonCorner_));
+        graphicsMultiRows_[4]->setSelected(indexOfButtonOutline(buttonOutline_));
     }
-
-    int bcIdx = indexOfButtonCorner(buttonCorner_);
-    for (int i = 0; i < kButtonCornerCount; ++i)
-        buttonCornerButtons_[i]->setSelected(i == bcIdx);
-    int boIdx = indexOfButtonOutline(buttonOutline_);
-    for (int i = 0; i < kButtonOutlineCount; ++i)
-        buttonOutlineButtons_[i]->setSelected(i == boIdx);
 
     if (audioToggles_.size() == 3) {
         auto setRow = [](ToggleRow& row, bool v) {
@@ -1050,14 +1113,13 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 
     switch (currentTab_) {
         case Tab::Display:
-            for (auto& b : resolutionButtons_) b->handleEvent(event);
+            for (auto& row : displayMultiRows_) {
+                for (auto& btn : row->buttons) btn->handleEvent(event);
+            }
             for (auto& row : displayToggles_) {
                 row->onButton->handleEvent(event);
                 row->offButton->handleEvent(event);
             }
-            for (auto& b : antiAliasingButtons_) b->handleEvent(event);
-            for (auto& b : logLevelButtons_)     b->handleEvent(event);
-            for (auto& b : fpsLimitButtons_)     b->handleEvent(event);
             break;
         case Tab::Interface:
             for (auto& row : interfaceToggles_) {
@@ -1079,15 +1141,13 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             for (auto& b : consolePromptButtons_) b->handleEvent(event);
             break;
         case Tab::Graphics:
-            for (auto& b : initialLivesButtons_) b->handleEvent(event);
+            for (auto& row : graphicsMultiRows_) {
+                for (auto& btn : row->buttons) btn->handleEvent(event);
+            }
             for (auto& row : graphicsToggles_) {
                 row->onButton->handleEvent(event);
                 row->offButton->handleEvent(event);
             }
-            for (auto& b : animationSpeedButtons_) b->handleEvent(event);
-            for (auto& b : notificationPosButtons_) b->handleEvent(event);
-            for (auto& b : buttonCornerButtons_)  b->handleEvent(event);
-            for (auto& b : buttonOutlineButtons_) b->handleEvent(event);
             break;
         case Tab::Audio:
             masterVolumeSlider_->handleEvent(event);
@@ -1185,14 +1245,18 @@ void SettingsScene::update(float /*dt*/) {
 
     switch (currentTab_) {
         case Tab::Display: {
-            for (int i = 0; i < kResolutionCount; ++i)
-                if (resolutionButtons_[i]->consumeClick()) {
-                    if (selectedResolution_ != i) {
-                        selectedResolution_ = i;
-                        refreshSelection(); applyResolution();
+            // ⭐ 4 组 Multi
+            for (auto& row : displayMultiRows_) {
+                for (size_t i = 0; i < row->buttons.size(); ++i) {
+                    if (row->buttons[i]->consumeClick()) {
+                        if (row->currentIndex != static_cast<int>(i)
+                            && row->onSelected) {
+                            row->onSelected(static_cast<int>(i));
+                        }
+                        return;
                     }
-                    return;
                 }
+            }
             // ⭐ 2 个 Toggle
             for (auto& row : displayToggles_) {
                 if (row->onButton->consumeClick() && !row->currentValue) {
@@ -1204,31 +1268,6 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             }
-            for (int i = 0; i < kaaCount; ++i)
-                if (antiAliasingButtons_[i]->consumeClick()) {
-                    if (antiAliasingLevel_ != kaaLevels[i]) {
-                        antiAliasingLevel_ = kaaLevels[i];
-                        refreshSelection(); applyAntiAliasing();
-                    }
-                    return;
-                }
-            for (int i = 0; i < klogCount; ++i)
-                if (logLevelButtons_[i]->consumeClick()) {
-                    int nl = static_cast<int>(klogLevels[i]);
-                    if (logLevel_ != nl) {
-                        logLevel_ = nl;
-                        refreshSelection(); applyLogLevel();
-                    }
-                    return;
-                }
-            for (int i = 0; i < kfpsLimitCount; ++i)
-                if (fpsLimitButtons_[i]->consumeClick()) {
-                    if (fpsLimit_ != kfpsLimits[i]) {
-                        fpsLimit_ = kfpsLimits[i];
-                        refreshSelection(); applyFpsLimit();
-                    }
-                    return;
-                }
             break;
         }
         case Tab::Interface: {
@@ -1341,20 +1380,19 @@ void SettingsScene::update(float /*dt*/) {
             break;
         }
         case Tab::Graphics: {
-            {
-                const int kLivesOptions[] = {1, 3, 5, 10, 100};
-                for (int i = 0; i < 5; ++i) {
-                    if (initialLivesButtons_[i]->consumeClick()) {
-                        if (initialLives_ != kLivesOptions[i]) {
-                            initialLives_ = kLivesOptions[i];
-                            refreshSelection();
-                            preferences_->setInt("initial_lives", initialLives_);
+            // ⭐ 5 组 Multi
+            for (auto& row : graphicsMultiRows_) {
+                for (size_t i = 0; i < row->buttons.size(); ++i) {
+                    if (row->buttons[i]->consumeClick()) {
+                        if (row->currentIndex != static_cast<int>(i)
+                            && row->onSelected) {
+                            row->onSelected(static_cast<int>(i));
                         }
                         return;
                     }
                 }
             }
-            // ⭐ 9 个 Toggle 一次循环
+            // ⭐ 9 个 Toggle
             for (auto& row : graphicsToggles_) {
                 if (row->onButton->consumeClick() && !row->currentValue) {
                     if (row->onChanged) row->onChanged(true);
@@ -1365,38 +1403,6 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             }
-            for (int i = 0; i < kanimSpeedCount; ++i)
-                if (animationSpeedButtons_[i]->consumeClick()) {
-                    if (animationSpeedIndex_ != i) {
-                        animationSpeedIndex_ = i;
-                        refreshSelection(); applyAnimation();
-                    }
-                    return;
-                }
-            for (int i = 0; i < kPosCount; ++i)
-                if (notificationPosButtons_[i]->consumeClick()) {
-                    if (notificationPosition_ != i) {
-                        notificationPosition_ = i;
-                        refreshSelection(); applyNotification();
-                    }
-                    return;
-                }
-            for (int i = 0; i < kButtonCornerCount; ++i)
-                if (buttonCornerButtons_[i]->consumeClick()) {
-                    if (std::abs(buttonCorner_ - kButtonCorners[i]) > 0.5f) {
-                        buttonCorner_ = kButtonCorners[i];
-                        refreshSelection(); applyButtonStyle();
-                    }
-                    return;
-                }
-            for (int i = 0; i < kButtonOutlineCount; ++i)
-                if (buttonOutlineButtons_[i]->consumeClick()) {
-                    if (std::abs(buttonOutline_ - kButtonOutlines[i]) > 0.5f) {
-                        buttonOutline_ = kButtonOutlines[i];
-                        refreshSelection(); applyButtonStyle();
-                    }
-                    return;
-                }
             break;
         }
         case Tab::Audio: {
@@ -1539,15 +1545,33 @@ struct RowDrawer {
         y += 50.f;
     }
 
-    // ⭐ MultiRow 版本
-    void multi(MultiRow& row, float gap = 96.f) {
+    // ⭐ MultiRow 版本（单行 + 网格）
+    void multi(MultiRow& row) {
         row.label.setPosition({contentX, y + 8.f});
         target.draw(row.label);
-        for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
-            row.buttons[i]->render(target);
+
+        if (row.columns <= 0) {
+            // 单行
+            for (size_t i = 0; i < row.buttons.size(); ++i) {
+                row.buttons[i]->setPosition(
+                    {ctrlX + static_cast<float>(i) * row.stepX, y});
+                row.buttons[i]->render(target);
+            }
+            y += row.stepY;
+        } else {
+            // 多行网格
+            const int cols = row.columns;
+            for (size_t i = 0; i < row.buttons.size(); ++i) {
+                int r = static_cast<int>(i) / cols;
+                int c = static_cast<int>(i) % cols;
+                row.buttons[i]->setPosition(
+                    {ctrlX + static_cast<float>(c) * row.stepX,
+                     y + static_cast<float>(r) * row.stepY});
+                row.buttons[i]->render(target);
+            }
+            int rows = (static_cast<int>(row.buttons.size()) + cols - 1) / cols;
+            y += static_cast<float>(rows) * row.stepY + 6.f;
         }
-        y += 50.f;
     }
 
     void slider(sf::Text& label, Slider* s) {
@@ -1566,23 +1590,13 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
     window.native().draw(headingDisplay_);
     y += 36.f;
 
-    labelResolution_.setPosition({contentX, y + 10.f});
-    window.native().draw(labelResolution_);
-    for (int i = 0; i < kResolutionCount; ++i) {
-        int row = i / 2, col = i % 2;
-        resolutionButtons_[i]->setPosition({
-            ctrlX + col * (kBtnW + kGapX),
-            y + row * (kBtnH + kGapY)});
-        resolutionButtons_[i]->render(window.native());
-    }
-    y += 2 * (kBtnH + kGapY) + 6.f;
-
     RowDrawer r{window.native(), contentX, ctrlX, y};
-    r.toggle(*displayToggles_[0]);   // Fullscreen
-    r.toggle(*displayToggles_[1]);   // VSync
-    r.multi (labelAntiAliasing_, antiAliasingButtons_, 96.f);
-    r.multi (labelLogLevel_,     logLevelButtons_,     106.f);
-    r.multi (labelFpsLimit_,     fpsLimitButtons_,     86.f);
+    r.multi (*displayMultiRows_[0]);   // Resolution (2×2 网格)
+    r.toggle(*displayToggles_[0]);     // Fullscreen
+    r.toggle(*displayToggles_[1]);     // VSync
+    r.multi (*displayMultiRows_[1]);   // AntiAliasing
+    r.multi (*displayMultiRows_[2]);   // LogLevel
+    r.multi (*displayMultiRows_[3]);   // FpsLimit
 }
 
 void SettingsScene::renderInterfaceTab(Window& window, float contentX,
@@ -1636,22 +1650,21 @@ void SettingsScene::renderGraphicsTab(Window& window, float contentX,
 
     RowDrawer r{window.native(), contentX, ctrlX, y};
 
-    r.multi (labelInitialLives_,   initialLivesButtons_, 86.f);
-
     // ⭐ 顺序必须和构造里 push_back 一致
-    r.toggle(*graphicsToggles_[0]);   // Animation
-    r.multi (labelAnimationSpeed_, animationSpeedButtons_, 96.f);
-    r.toggle(*graphicsToggles_[1]);   // Pseudo3D
-    r.toggle(*graphicsToggles_[2]);   // Parallax
-    r.toggle(*graphicsToggles_[3]);   // PlayerAnim
-    r.toggle(*graphicsToggles_[4]);   // LevelIntro
-    r.toggle(*graphicsToggles_[5]);   // Particles
-    r.toggle(*graphicsToggles_[6]);   // ScreenShake
-    r.toggle(*graphicsToggles_[7]);   // Notification
-    r.multi (labelNotificationPos_, notificationPosButtons_, 86.f);
-    r.multi (labelButtonCorner_,   buttonCornerButtons_, 96.f);
-    r.multi (labelButtonOutline_,  buttonOutlineButtons_, 96.f);
-    r.toggle(*graphicsToggles_[8]);   // ShowColliders
+    r.multi (*graphicsMultiRows_[0]);   // InitialLives
+    r.toggle(*graphicsToggles_[0]);     // Animation
+    r.multi (*graphicsMultiRows_[1]);   // AnimationSpeed
+    r.toggle(*graphicsToggles_[1]);     // Pseudo3D
+    r.toggle(*graphicsToggles_[2]);     // Parallax
+    r.toggle(*graphicsToggles_[3]);     // PlayerAnim
+    r.toggle(*graphicsToggles_[4]);     // LevelIntro
+    r.toggle(*graphicsToggles_[5]);     // Particles
+    r.toggle(*graphicsToggles_[6]);     // ScreenShake
+    r.toggle(*graphicsToggles_[7]);     // Notification
+    r.multi (*graphicsMultiRows_[2]);   // NotificationPos
+    r.multi (*graphicsMultiRows_[3]);   // ButtonCorner
+    r.multi (*graphicsMultiRows_[4]);   // ButtonOutline
+    r.toggle(*graphicsToggles_[8]);     // ShowColliders
 }
 
 void SettingsScene::renderAudioTab(Window& window, float contentX,
@@ -1714,8 +1727,8 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
 
     r.toggle(*otherToggles_[0]);   // RememberSize
     r.toggle(*otherToggles_[1]);   // AutoPause
-    r.multi (*otherMultiRows_[0], 96.f);   // LogRotate
-    r.multi (*otherMultiRows_[1], 96.f);   // LogKeep
+    r.multi (*otherMultiRows_[0]);   // LogRotate
+    r.multi (*otherMultiRows_[1]);   // LogKeep
 
     labelPlayerName_.setPosition({contentX, r.y + 8.f});
     window.native().draw(labelPlayerName_);

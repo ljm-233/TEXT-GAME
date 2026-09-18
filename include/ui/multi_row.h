@@ -20,6 +20,11 @@ struct MultiRow {
     int currentIndex = 0;
     std::function<void(int)> onSelected;
 
+    // ⭐ 布局参数
+    int   columns = 0;      // 0 = 单行；> 0 = 每行按钮数
+    float stepX   = 96.f;   // 水平步进（按钮原点间距）
+    float stepY   = 50.f;   // 单行 = y 步进；多行 = 每行垂直步进
+
     MultiRow(const sf::Font& font,
              const std::string& key,
              std::function<void(int)> cb)

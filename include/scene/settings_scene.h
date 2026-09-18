@@ -96,11 +96,9 @@ private:
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
     // ================= Display =================
-    std::vector<std::unique_ptr<Button>> resolutionButtons_;
-    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;   // ⭐ 2 个 Toggle
-    std::vector<std::unique_ptr<Button>> antiAliasingButtons_;
-    std::vector<std::unique_ptr<Button>> logLevelButtons_;
-    std::vector<std::unique_ptr<Button>> fpsLimitButtons_;
+    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;   // 2 个 Toggle
+    std::vector<std::unique_ptr<MultiRow>>  displayMultiRows_; // 4 个 Multi
+    // [0] Resolution  [1] AntiAliasing  [2] LogLevel  [3] FpsLimit
 
     // ================= Interface =================
     std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;   // ⭐ 4 个 Toggle
@@ -120,12 +118,10 @@ private:
     std::vector<std::unique_ptr<Button>> consolePromptButtons_;
 
     // ================= Graphics =================
-    std::vector<std::unique_ptr<Button>> initialLivesButtons_;
-    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;   // ⭐ 新增
-    std::vector<std::unique_ptr<Button>> animationSpeedButtons_;
-    std::vector<std::unique_ptr<Button>> notificationPosButtons_;
-    std::vector<std::unique_ptr<Button>> buttonCornerButtons_;
-    std::vector<std::unique_ptr<Button>> buttonOutlineButtons_;
+    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;   // 9 个 Toggle
+    std::vector<std::unique_ptr<MultiRow>>  graphicsMultiRows_; // 5 个 Multi
+    // [0] InitialLives  [1] AnimationSpeed  [2] NotificationPos
+    // [3] ButtonCorner  [4] ButtonOutline
 
     // ================= Audio =================
     std::unique_ptr<Slider> masterVolumeSlider_;
