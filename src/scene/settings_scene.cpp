@@ -508,12 +508,34 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     otherToggles_.push_back(makeToggleRow(Str::LabelAutoPause, [this](bool v) {
         autoPauseOnBlur_ = v; refreshSelection(); applyAutoPause();
     }));
-    for (int i = 0; i < kLogRotateCount; ++i)
-        logRotateButtons_.push_back(std::make_unique<Button>(
-            kLogRotateLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-    for (int i = 0; i < kLogKeepCount; ++i)
-        logKeepButtons_.push_back(std::make_unique<Button>(
-            std::to_string(kLogKeeps[i]), font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+    // ⭐ 2 个 Multi 用 MultiRow
+    auto makeMultiRow = [&](const char* labelKey,
+                            std::function<void(int)> onSelected) {
+        return std::make_unique<MultiRow>(font_, labelKey, std::move(onSelected));
+    };
+
+    {
+        auto row = makeMultiRow(Str::LabelLogRotate, [this](int i) {
+            logRotateIndex_ = i; refreshSelection(); applyLogRotation();
+        });
+        for (int i = 0; i < kLogRotateCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                kLogRotateLabels[i], font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+        }
+        otherMultiRows_.push_back(std::move(row));
+    }
+    {
+        auto row = makeMultiRow(Str::LabelLogKeep, [this](int i) {
+            logKeepIndex_ = i; refreshSelection(); applyLogRotation();
+        });
+        for (int i = 0; i < kLogKeepCount; ++i) {
+            row->addButton(std::make_unique<Button>(
+                std::to_string(kLogKeeps[i]), font_,
+                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+        }
+        otherMultiRows_.push_back(std::move(row));
+    }
     aboutButton_ = std::make_unique<Button>(Str::ButtonAbout, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 46.f}, 20);
     resetButton_ = std::make_unique<Button>(Str::ResetDefault, font_,
@@ -606,8 +628,6 @@ void SettingsScene::refreshLabels() {
     }
 
     // ===== Other tab =====
-    setLabel(labelLogRotate_,    Str::LabelLogRotate);
-    setLabel(labelLogKeep_,      Str::LabelLogKeep);
     setLabel(labelPlayerName_,   Str::LabelPlayerName);
     setLabel(hintUiScale_,       Str::HintUiScale);
 
@@ -677,10 +697,11 @@ void SettingsScene::refreshLabels() {
         buttonCornerButtons_[i]->setText(Str::T(kButtonCornerLabels[i]));
     for (int i = 0; i < kButtonOutlineCount && i < static_cast<int>(buttonOutlineButtons_.size()); ++i)
         buttonOutlineButtons_[i]->setText(Str::T(kButtonOutlineLabels[i]));
-    for (int i = 0; i < kLogRotateCount && i < static_cast<int>(logRotateButtons_.size()); ++i)
-        logRotateButtons_[i]->setText(Str::T(kLogRotateLabels[i]));
 
     // 语言按钮保持"中文"/"English"字样（不翻译，否则用户无法识别）
+    for (auto& row : otherMultiRows_) {
+        row->refreshLabel();
+    }
 }
 
 void SettingsScene::syncFocus() {
@@ -745,8 +766,9 @@ void SettingsScene::syncFocus() {
                 items.push_back(row->onButton.get());
                 items.push_back(row->offButton.get());
             }
-            for (auto& b : logRotateButtons_) items.push_back(b.get());
-            for (auto& b : logKeepButtons_)   items.push_back(b.get());
+            for (auto& row : otherMultiRows_) {
+                for (auto& btn : row->buttons) items.push_back(btn.get());
+            }
             items.push_back(aboutButton_.get());
             items.push_back(resetButton_.get());
             break;
@@ -877,10 +899,10 @@ void SettingsScene::refreshSelection() {
         setRow(*otherToggles_[0], rememberSize_);
         setRow(*otherToggles_[1], autoPauseOnBlur_);
     }
-    for (int i = 0; i < kLogRotateCount; ++i)
-        logRotateButtons_[i]->setSelected(i == logRotateIndex_);
-    for (int i = 0; i < kLogKeepCount; ++i)
-        logKeepButtons_[i]->setSelected(i == logKeepIndex_);
+    if (otherMultiRows_.size() == 2) {
+        otherMultiRows_[0]->setSelected(logRotateIndex_);
+        otherMultiRows_[1]->setSelected(logKeepIndex_);
+    }
 }
 
 // ============================================================
@@ -1115,8 +1137,9 @@ void SettingsScene::handleEvent(const sf::Event& event) {
                 row->onButton->handleEvent(event);
                 row->offButton->handleEvent(event);
             }
-            for (auto& b : logRotateButtons_) b->handleEvent(event);
-            for (auto& b : logKeepButtons_)   b->handleEvent(event);
+            for (auto& row : otherMultiRows_) {
+                for (auto& btn : row->buttons) btn->handleEvent(event);
+            }
             aboutButton_->handleEvent(event);
             resetButton_->handleEvent(event);
             break;
@@ -1426,22 +1449,17 @@ void SettingsScene::update(float /*dt*/) {
                     return;
                 }
             }
-            for (int i = 0; i < kLogRotateCount; ++i)
-                if (logRotateButtons_[i]->consumeClick()) {
-                    if (logRotateIndex_ != i) {
-                        logRotateIndex_ = i;
-                        refreshSelection(); applyLogRotation();
+            for (auto& row : otherMultiRows_) {
+                for (size_t i = 0; i < row->buttons.size(); ++i) {
+                    if (row->buttons[i]->consumeClick()) {
+                        if (row->currentIndex != static_cast<int>(i)
+                            && row->onSelected) {
+                            row->onSelected(static_cast<int>(i));
+                        }
+                        return;
                     }
-                    return;
                 }
-            for (int i = 0; i < kLogKeepCount; ++i)
-                if (logKeepButtons_[i]->consumeClick()) {
-                    if (logKeepIndex_ != i) {
-                        logKeepIndex_ = i;
-                        refreshSelection(); applyLogRotation();
-                    }
-                    return;
-                }
+            }
             if (aboutButton_->consumeClick()) {
                 std::string msg =
                     std::string(Str::T(Str::AboutTitle)) + "\n"
@@ -1517,6 +1535,17 @@ struct RowDrawer {
         for (size_t i = 0; i < btns.size(); ++i) {
             btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
             btns[i]->render(target);
+        }
+        y += 50.f;
+    }
+
+    // ⭐ MultiRow 版本
+    void multi(MultiRow& row, float gap = 96.f) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        for (size_t i = 0; i < row.buttons.size(); ++i) {
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
+            row.buttons[i]->render(target);
         }
         y += 50.f;
     }
@@ -1685,8 +1714,8 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
 
     r.toggle(*otherToggles_[0]);   // RememberSize
     r.toggle(*otherToggles_[1]);   // AutoPause
-    r.multi (labelLogRotate_,    logRotateButtons_, 96.f);
-    r.multi (labelLogKeep_,      logKeepButtons_,   96.f);
+    r.multi (*otherMultiRows_[0], 96.f);   // LogRotate
+    r.multi (*otherMultiRows_[1], 96.f);   // LogKeep
 
     labelPlayerName_.setPosition({contentX, r.y + 8.f});
     window.native().draw(labelPlayerName_);

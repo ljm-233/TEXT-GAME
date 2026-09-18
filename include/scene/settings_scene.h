@@ -18,6 +18,7 @@
 #include "ui_scale.h"
 #include "utf8.h"
 #include "toggle_row.h"
+#include "multi_row.h"
 
 class SettingsScene : public Scene {
 public:
@@ -138,8 +139,7 @@ private:
 
     // ================= Other =================
     std::vector<std::unique_ptr<ToggleRow>> otherToggles_;   // ⭐ 2 个 Toggle
-    std::vector<std::unique_ptr<Button>> logRotateButtons_;
-    std::vector<std::unique_ptr<Button>> logKeepButtons_;
+    std::vector<std::unique_ptr<MultiRow>> otherMultiRows_;  // ⭐ 2 个 Multi（logRotate / logKeep）
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
     std::unique_ptr<TextInput> playerNameInput_;
