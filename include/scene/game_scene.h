@@ -35,6 +35,8 @@ private:
     bool advanceToNextLevel();
     void syncFocus();
     void subscribeWorldEvents();
+    bool handleDebugKey(sf::Keyboard::Key k);
+    void renderDebugHud(sf::RenderTarget& rt, Window& window);
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
     void rebuildOverlayButtons();
@@ -96,6 +98,15 @@ private:
     std::vector<std::unique_ptr<Button>> overlayButtons_;
 
     SceneId   nextScene_ = SceneId::None;
+
+    // ⭐ 调试工具
+    bool     debugHud_           = false;
+    bool     debugInvincible_    = false;
+    bool     debugShowColliders_ = false;
+    bool     pendingScreenshot_  = false;
+    float    debugTimeScale_     = 1.f;
+    sf::Text debugText_;
+    sf::View lastWorldView_;
 
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;

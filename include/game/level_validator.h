@@ -1,5 +1,7 @@
 #pragma once
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 class Level;
@@ -17,6 +19,12 @@ struct ValidationReport {
 
     int reachablePlatforms = 0;
     int totalPlatforms = 0;
+
+    // ⭐ 可达性可视化数据
+    std::set<std::pair<int,int>> allPlatformTops;       // 所有平台顶面 tile
+    std::set<std::pair<int,int>> reachablePlatformTops; // 从出生点可达的平台顶面
+    std::set<std::pair<int,int>> reachableSpawns;       // 可达的 spawn tile
+    std::pair<int,int> spawnTile{-1, -1};               // 出生点 tile
 
     bool ok() const {
         return spawnValid && goalReachable && unreachable.empty();

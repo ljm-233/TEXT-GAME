@@ -35,6 +35,10 @@ public:
     bool isInvincible() const { return invincibleTimer_ > 0.f; }
     void bounce();
 
+    // ⭐ 调试：持续无敌（重生后仍保持）
+    void setInvincible(bool e);
+    bool isInvinciblePersistent() const { return invinciblePersistent_; }
+
     void setVelocityY(float vy) { vel_.y = vy; onGround_ = false; jumpConsumed_ = true; }
     void setPositionY(float y) { pos_.y = y; onGround_ = false; }
     void moveBy(Vec2 delta) { pos_ += delta; }
@@ -87,6 +91,7 @@ private:
     bool  jumpConsumed_   = false;
 
     float invincibleTimer_ = 0.f;
+    bool  invinciblePersistent_ = false;
 
     bool animationEnabled_ = true;
     bool gamepadEnabled_   = true;

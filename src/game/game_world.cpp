@@ -458,6 +458,15 @@ void GameWorld::respawnAtCheckpoint() {
     }
 }
 
+void GameWorld::killAllEnemies() {
+    for (auto& obj : objects_) {
+        if (obj->type() == GameObject::Type::Enemy) {
+            static_cast<Enemy*>(obj.get())->kill();
+        }
+    }
+}
+
+
 void GameWorld::reset() {
     lives_ = initialLives_;
     coins_ = 0;

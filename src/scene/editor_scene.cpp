@@ -1,6 +1,8 @@
 #include "editor_scene.h"
 #include "text_strings.h"
 #include "level_codec.h"
+#include "level.h"
+#include "level_validator.h"
 #include "utf8.h"
 #include <algorithm>
 #include <cmath>
@@ -376,6 +378,8 @@ void EditorScene::undo() {
     undoStack_.pop_back();
     refreshDimensions();
     geometryDirty_ = true;
+    reachDirty_ = true;
+    levelIconsDirty_ = true;
     showFlash(Str::T(Str::EditorUndone), 0.8f);
 }
 
@@ -417,6 +421,8 @@ void EditorScene::resizeLevel(int newW, int newH) {
     width_ = newW;
     height_ = newH;
     geometryDirty_ = true;
+    reachDirty_ = true;
+    levelIconsDirty_ = true;
 
     showFlash(Str::T(Str::EditorHudSize) + std::to_string(newW) + " x " + std::to_string(newH), 1.0f);
 }
@@ -459,6 +465,8 @@ void EditorScene::loadFile() {
 
     undoStack_.clear();
     geometryDirty_ = true;
+    reachDirty_ = true;
+    levelIconsDirty_ = true;
 }
 
 void EditorScene::saveFile() {
@@ -534,6 +542,8 @@ void EditorScene::importShareCode() {
     }
     refreshDimensions();
     geometryDirty_ = true;
+    reachDirty_ = true;
+    levelIconsDirty_ = true;
 
     showFlash("已导入 " + std::to_string(width_) + " x " + std::to_string(height_), 2.0f);
     logger_->info("分享码已导入 (" + std::to_string(code.size()) + " 字符)");
@@ -557,26 +567,62 @@ const char* EditorScene::tileAt(int tx, int ty) const {
     return &lines_[ty][tx];
 }
 
-void EditorScene::paintAt(sf::Vector2i tile) {
-    char* p = tileAt(tile.x, tile.y);
+void EditorScene::paintCell(int tx, int ty, char newChar) {
+    char* p = tileAt(tx, ty);
     if (!p) return;
-
-    char newChar = rightDown_ ? ' ' : brush_;
-
-    if (newChar == 'P') {
-        for (int y = 0; y < height_; ++y) {
-            for (int x = 0; x < width_; ++x) {
-                if (x == tile.x && y == tile.y) continue;
-                char* c = tileAt(x, y);
-                if (c && *c == 'P') *c = ' ';
-            }
-        }
-    }
-
     if (*p != newChar) {
         *p = newChar;
         geometryDirty_ = true;
+        reachDirty_ = true;
+        levelIconsDirty_ = true;
     }
+}
+
+void EditorScene::paintLine(sf::Vector2i from, sf::Vector2i to, char newChar) {
+    int x0 = from.x, y0 = from.y;
+    int x1 = to.x,   y1 = to.y;
+    int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (true) {
+        paintCell(x0, y0, newChar);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+void EditorScene::paintRect(sf::Vector2i a, sf::Vector2i b, char newChar) {
+    int x0 = std::min(a.x, b.x), x1 = std::max(a.x, b.x);
+    int y0 = std::min(a.y, b.y), y1 = std::max(a.y, b.y);
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+            paintCell(x, y, newChar);
+}
+
+void EditorScene::enforceUniquePlayer(int keepX, int keepY) {
+    bool kept = (keepX >= 0 && keepY >= 0);
+    for (int y = 0; y < height_; ++y) {
+        for (int x = 0; x < width_; ++x) {
+            char* c = tileAt(x, y);
+            if (!c || *c != 'P') continue;
+            if (keepX >= 0 && keepY >= 0) {
+                if (x == keepX && y == keepY) continue;
+                *c = ' ';
+                geometryDirty_ = true;
+            } else {
+                if (!kept) { kept = true; }
+                else { *c = ' '; geometryDirty_ = true; }
+            }
+        }
+    }
+}
+
+void EditorScene::paintAt(sf::Vector2i tile) {
+    char newChar = rightDown_ ? ' ' : brush_;
+    paintCell(tile.x, tile.y, newChar);
+    if (newChar == 'P') enforceUniquePlayer(tile.x, tile.y);
 }
 
 // ============================================================
@@ -732,6 +778,15 @@ void EditorScene::handleEvent(const sf::Event& event) {
             return;
         }
 
+        // ⭐ 可达性可视化开关
+        if (kp->code == sf::Keyboard::Key::T && !kp->control) {
+            showReachability_ = !showReachability_;
+            reachDirty_ = true;
+            showFlash(showReachability_ ? Str::T(Str::EditorReachOn)
+                                        : Str::T(Str::EditorReachOff), 0.8f);
+            return;
+        }
+
         // 缩放：0 键重置为 100%
         if (kp->code == sf::Keyboard::Key::Num0 &&
             (kp->control || kp->system)) {
@@ -763,6 +818,11 @@ void EditorScene::handleEvent(const sf::Event& event) {
         }
     }
 
+    auto shiftDown = []() {
+        return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift)
+            || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+    };
+
     if (const auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mb->button == sf::Mouse::Button::Left) {
             int idx = hitTestBrushBar(mb->position, lastWinSize_);
@@ -776,13 +836,20 @@ void EditorScene::handleEvent(const sf::Event& event) {
             pushUndo();
             leftDown_ = true;
             auto t = screenToTile(mb->position, lastWinSize_);
-            paintAt(t);
+            dragStartTile_ = t;
+            dragLastTile_  = t;
+            // Shift 按下：矩形模式，松手时才填充
+            if (!shiftDown()) {
+                paintAt(t);
+            }
         }
         if (mb->button == sf::Mouse::Button::Right) {
             if (hitTestBrushBar(mb->position, lastWinSize_) >= 0) return;
             pushUndo();
             rightDown_ = true;
             auto t = screenToTile(mb->position, lastWinSize_);
+            dragStartTile_ = t;
+            dragLastTile_  = t;
             paintAt(t);
         }
         if (mb->button == sf::Mouse::Button::Middle) {
@@ -791,16 +858,45 @@ void EditorScene::handleEvent(const sf::Event& event) {
                              static_cast<float>(mb->position.y)};
         }
     }
+
     if (const auto* mb = event.getIf<sf::Event::MouseButtonReleased>()) {
-        if (mb->button == sf::Mouse::Button::Left)  leftDown_  = false;
-        if (mb->button == sf::Mouse::Button::Right) rightDown_ = false;
+        if (mb->button == sf::Mouse::Button::Left) {
+            if (leftDown_ && shiftDown()
+                && dragStartTile_.x >= 0) {
+                auto t = screenToTile(mb->position, lastWinSize_);
+                paintRect(dragStartTile_, t, brush_);
+                if (brush_ == 'P') enforceUniquePlayer(-1, -1);
+            }
+            leftDown_ = false;
+            dragStartTile_ = {-1, -1};
+            dragLastTile_  = {-1, -1};
+        }
+        if (mb->button == sf::Mouse::Button::Right) {
+            rightDown_ = false;
+            dragStartTile_ = {-1, -1};
+            dragLastTile_  = {-1, -1};
+        }
         if (mb->button == sf::Mouse::Button::Middle) middleDown_ = false;
     }
 
     if (const auto* mm = event.getIf<sf::Event::MouseMoved>()) {
         if (hitTestBrushBar(mm->position, lastWinSize_) >= 0) return;
         auto t = screenToTile(mm->position, lastWinSize_);
-        if (leftDown_ || rightDown_) paintAt(t);
+
+        if (leftDown_) {
+            if (!shiftDown()) {
+                paintLine(dragLastTile_, t, brush_);
+                if (brush_ == 'P') enforceUniquePlayer(t.x, t.y);
+                dragLastTile_ = t;
+            } else {
+                // 矩形模式：只更新预览终点
+                dragLastTile_ = t;
+            }
+        }
+        if (rightDown_) {
+            paintLine(dragLastTile_, t, ' ');
+            dragLastTile_ = t;
+        }
     }
 
     if (const auto* ws = event.getIf<sf::Event::MouseWheelScrolled>()) {
@@ -921,7 +1017,86 @@ void EditorScene::render(Window& window) {
     if (tileVA_.getVertexCount() > 0)
         rt.draw(tileVA_);
 
-    // 特殊元素图标 + 同时统计
+    // ⭐ 可达性可视化叠加
+    if (showReachability_) {
+        if (reachDirty_) {
+            Level tmp;
+            std::string text;
+            for (const auto& l : lines_) { text += l; text += '\n'; }
+            tmp.loadFromString(text);
+            reachReport_ = LevelValidator::validate(tmp);
+            reachDirty_ = false;
+        }
+
+        const float tsF = static_cast<float>(tileSize_);
+        sf::RectangleShape hl({tsF, tsF});
+
+        for (int y = 0; y < height_; ++y) {
+            for (int x = 0; x < width_; ++x) {
+                sf::Color color = sf::Color::Transparent;
+                bool has = false;
+
+                // 平台顶面
+                if (reachReport_.allPlatformTops.count({x, y})) {
+                    color = reachReport_.reachablePlatformTops.count({x, y})
+                        ? sf::Color(80, 220, 100, 100)    // 可达：淡绿
+                        : sf::Color(230, 70, 70, 100);    // 不可达：淡红
+                    has = true;
+                }
+
+                // spawn 元素
+                if (reachReport_.reachableSpawns.count({x, y})) {
+                    color = sf::Color(60, 240, 120, 150); // 可达 spawn：亮绿
+                    has = true;
+                }
+                for (const auto& u : reachReport_.unreachable) {
+                    if (u.tileX == x && u.tileY == y) {
+                        color = sf::Color(255, 50, 50, 170); // 不可达 spawn：亮红
+                        has = true;
+                        break;
+                    }
+                }
+
+                // 出生点
+                if (reachReport_.spawnTile.first == x
+                    && reachReport_.spawnTile.second == y) {
+                    color = sf::Color(80, 160, 255, 180);
+                    has = true;
+                }
+
+                if (has) {
+                    hl.setPosition({x * tsF, y * tsF});
+                    hl.setFillColor(color);
+                    rt.draw(hl);
+                }
+            }
+        }
+    }
+
+    // ⭐ Shift 矩形拖拽预览
+    if (leftDown_ && dragStartTile_.x >= 0) {
+        bool shift = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift)
+                  || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+        if (shift) {
+            const float tsF = static_cast<float>(tileSize_);
+            int x0 = std::min(dragStartTile_.x, dragLastTile_.x);
+            int x1 = std::max(dragStartTile_.x, dragLastTile_.x);
+            int y0 = std::min(dragStartTile_.y, dragLastTile_.y);
+            int y1 = std::max(dragStartTile_.y, dragLastTile_.y);
+
+            sf::RectangleShape rect({
+                (x1 - x0 + 1) * tsF,
+                (y1 - y0 + 1) * tsF
+            });
+            rect.setPosition({x0 * tsF, y0 * tsF});
+            rect.setFillColor(sf::Color(255, 240, 120, 80));
+            rect.setOutlineThickness(2.f / zoom_);
+            rect.setOutlineColor(sf::Color(255, 240, 120, 220));
+            rt.draw(rect);
+        }
+    }
+
+    // 统计（纯循环，便宜）
     int statPlayer = 0, statEnemy = 0, statCoin = 0, statGoal = 0;
     int statSpike = 0, statJump = 0, statCheckpoint = 0;
     int statKey = 0, statDoor = 0, statPlatform = 0;
@@ -931,11 +1106,6 @@ void EditorScene::render(Window& window) {
         for (int x = 0; x < width_; ++x) {
             const char* c = tileAt(x, y);
             if (!c || *c == ' ' || *c == '#') continue;
-            drawTileIcon(rt, *c,
-                         static_cast<float>(x) * ts,
-                         static_cast<float>(y) * ts,
-                         ts);
-
             switch (*c) {
                 case 'P': ++statPlayer; break;
                 case 'E': ++statEnemy; break;
@@ -948,6 +1118,54 @@ void EditorScene::render(Window& window) {
                 case 'L': ++statDoor; break;
                 case 'M': case 'V': ++statPlatform; break;
                 default: break;
+            }
+        }
+    }
+
+    // ⭐ 特殊元素图标预渲染
+    if (levelIconsRTAvailable_) {
+        unsigned rtw = static_cast<unsigned>(width_ * tileSize_);
+        unsigned rth = static_cast<unsigned>(height_ * tileSize_);
+        if (rtw == 0 || rth == 0 || rtw > 4096 || rth > 4096) {
+            levelIconsRTAvailable_ = false;
+        } else if (levelIconsDirty_
+                   || rtw != levelIconsRTW_
+                   || rth != levelIconsRTH_) {
+            if (levelIconsRT_.resize({rtw, rth})) {
+                levelIconsRT_.clear(sf::Color::Transparent);
+                for (int y = 0; y < height_; ++y) {
+                    for (int x = 0; x < width_; ++x) {
+                        const char* c = tileAt(x, y);
+                        if (!c || *c == ' ' || *c == '#') continue;
+                        drawTileIcon(levelIconsRT_, *c,
+                                     static_cast<float>(x) * ts,
+                                     static_cast<float>(y) * ts,
+                                     ts);
+                    }
+                }
+                levelIconsRT_.display();
+                levelIconsDirty_ = false;
+                levelIconsRTW_ = rtw;
+                levelIconsRTH_ = rth;
+            } else {
+                levelIconsRTAvailable_ = false;
+            }
+        }
+    }
+
+    if (levelIconsRTAvailable_) {
+        sf::Sprite s(levelIconsRT_.getTexture());
+        rt.draw(s);
+    } else {
+        // 大关卡退回到每帧绘制
+        for (int y = 0; y < height_; ++y) {
+            for (int x = 0; x < width_; ++x) {
+                const char* c = tileAt(x, y);
+                if (!c || *c == ' ' || *c == '#') continue;
+                drawTileIcon(rt, *c,
+                             static_cast<float>(x) * ts,
+                             static_cast<float>(y) * ts,
+                             ts);
             }
         }
     }
@@ -998,7 +1216,9 @@ void EditorScene::render(Window& window) {
        << "    " << Str::T(Str::EditorHudSize)  << width_ << " x " << height_
        << "    " << Str::T(Str::EditorHudZoom)  << zoomPct << "%"
        << "    " << Str::T(Str::EditorHudGrid)  << (showGrid_ ? Str::T(Str::On) : Str::T(Str::Off))
-       << "    " << Str::T(Str::EditorHudUndo)  << undoStack_.size();
+       << "    " << Str::T(Str::EditorHudUndo)  << undoStack_.size()
+       << "    " << (showReachability_ ? Str::T(Str::EditorReachOn)
+                                       : Str::T(Str::EditorReachOff));
     hudText_.setString(toSf(h1.str()));
     hudText_.setPosition({20.f, 10.f});
     rt.draw(hudText_);
@@ -1029,50 +1249,77 @@ void EditorScene::render(Window& window) {
     hintText_.setPosition({20.f, winH - kBrushBarHeight - 22.f});
     rt.draw(hintText_);
 
-    // 笔刷条
-    sf::RectangleShape brushBar({winW, kBrushBarHeight});
-    brushBar.setPosition({0.f, winH - kBrushBarHeight});
-    brushBar.setFillColor(sf::Color(15, 15, 25, 220));
-    brushBar.setOutlineThickness(2.f);
-    brushBar.setOutlineColor(sf::Color(60, 60, 90));
-    rt.draw(brushBar);
-
+    // ⭐ 笔刷条预渲染
     sf::Vector2i mousePos = sf::Mouse::getPosition(window.native());
-    for (int i = 0; i < kBrushCount; ++i) {
-        const auto& b = kBrushes[i];
-        sf::FloatRect r = brushButtonRect(i, winSize);
+    int hoverIdx = hitTestBrushBar(mousePos, winSize);
 
-        const bool selected = (b.ch == brush_);
-        const bool hovered = r.contains({static_cast<float>(mousePos.x),
-                                          static_cast<float>(mousePos.y)});
+    if (brushBarDirty_
+        || hoverIdx != lastBrushBarHover_
+        || brush_ != lastBrushBarSelected_
+        || static_cast<unsigned>(winW) != lastBrushBarWinW_) {
+        unsigned bw = static_cast<unsigned>(winW);
+        unsigned bh = static_cast<unsigned>(kBrushBarHeight);
+        if (brushBarRT_.resize({bw, bh})) {
+            brushBarRT_.clear(sf::Color::Transparent);
+            const float barY = winH - kBrushBarHeight;
 
-        sf::RectangleShape btn({r.size.x, r.size.y});
-        btn.setPosition({r.position.x, r.position.y});
-        sf::Color bg = b.color;
-        bg.a = selected ? 255 : (hovered ? 220 : 160);
-        btn.setFillColor(bg);
-        btn.setOutlineThickness(selected ? 3.f : (hovered ? 2.f : 1.f));
-        btn.setOutlineColor(selected ? sf::Color(255, 255, 255)
-                                     : sf::Color(0, 0, 0, 150));
-        rt.draw(btn);
+            sf::RectangleShape bgShape({winW, kBrushBarHeight});
+            bgShape.setPosition({0.f, 0.f});
+            bgShape.setFillColor(sf::Color(15, 15, 25, 220));
+            bgShape.setOutlineThickness(2.f);
+            bgShape.setOutlineColor(sf::Color(60, 60, 90));
+            brushBarRT_.draw(bgShape);
 
-        {
-            float iconSize = r.size.y * 0.5f;
-            float iconX = r.position.x + (r.size.x - iconSize) * 0.5f;
-            float iconY = r.position.y + 2.f;
-            drawTileIcon(rt, b.ch, iconX, iconY, iconSize);
+            for (int i = 0; i < kBrushCount; ++i) {
+                const auto& b = kBrushes[i];
+                sf::FloatRect r = brushButtonRect(i, winSize);
+                sf::FloatRect localR(
+                    {r.position.x, r.position.y - barY},
+                    {r.size.x, r.size.y});
+
+                const bool selected = (b.ch == brush_);
+                const bool hovered  = (i == hoverIdx);
+
+                sf::RectangleShape btn({localR.size.x, localR.size.y});
+                btn.setPosition({localR.position.x, localR.position.y});
+                sf::Color bg = b.color;
+                bg.a = selected ? 255 : (hovered ? 220 : 160);
+                btn.setFillColor(bg);
+                btn.setOutlineThickness(selected ? 3.f : (hovered ? 2.f : 1.f));
+                btn.setOutlineColor(selected ? sf::Color(255, 255, 255)
+                                             : sf::Color(0, 0, 0, 150));
+                brushBarRT_.draw(btn);
+
+                {
+                    float iconSize = localR.size.y * 0.5f;
+                    float iconX = localR.position.x + (localR.size.x - iconSize) * 0.5f;
+                    float iconY = localR.position.y + 2.f;
+                    drawTileIcon(brushBarRT_, b.ch, iconX, iconY, iconSize);
+                }
+
+                sf::Text nameText(*font_, toSf(Str::T(b.name)), 14);
+                nameText.setFillColor(sf::Color(255, 255, 255));
+                nameText.setOutlineThickness(2.f);
+                nameText.setOutlineColor(sf::Color(0, 0, 0, 220));
+                auto nb = nameText.getLocalBounds();
+                nameText.setOrigin({nb.position.x + nb.size.x / 2.f,
+                                    nb.position.y + nb.size.y / 2.f});
+                nameText.setPosition({localR.position.x + localR.size.x / 2.f,
+                                      localR.position.y + localR.size.y - 12.f});
+                brushBarRT_.draw(nameText);
+            }
+            brushBarRT_.display();
+            lastBrushBarHover_    = hoverIdx;
+            lastBrushBarSelected_ = brush_;
+            lastBrushBarWinW_     = static_cast<unsigned>(winW);
+            brushBarDirty_ = false;
         }
+    }
 
-        sf::Text nameText(*font_, toSf(Str::T(b.name)), 14);
-        nameText.setFillColor(sf::Color(255, 255, 255));
-        nameText.setOutlineThickness(2.f);
-        nameText.setOutlineColor(sf::Color(0, 0, 0, 220));
-        auto nb = nameText.getLocalBounds();
-        nameText.setOrigin({nb.position.x + nb.size.x / 2.f,
-                            nb.position.y + nb.size.y / 2.f});
-        nameText.setPosition({r.position.x + r.size.x / 2.f,
-                              r.position.y + r.size.y - 12.f});
-        rt.draw(nameText);
+    {
+        sf::Sprite bs(brushBarRT_.getTexture());
+        bs.setPosition({0.f, winH - kBrushBarHeight});
+        rt.draw(bs);
     }
 
     // Flash 提示

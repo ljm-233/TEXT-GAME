@@ -54,6 +54,9 @@ public:
     void reset();
     void respawnAtCheckpoint();   // 从最近的存档点重生（生命重置，金币保留）
 
+    // ⭐ 调试：清空所有敌人
+    void killAllEnemies();
+
     int lives() const { return lives_; }
     int coins() const { return coins_; }
     int totalCoins() const { return totalCoins_; }

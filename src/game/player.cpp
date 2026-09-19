@@ -48,7 +48,7 @@ void Player::respawn(Vec2 spawn) {
     jumpBufferTimer_ = 0.f;
     jumpConsumed_ = false;
     fellOut_ = false;
-    invincibleTimer_ = 0.f;
+    invincibleTimer_ = invinciblePersistent_ ? 999999.f : 0.f;
     justJumped_ = false;
     justLanded_ = false;
     prevOnGround_ = false;
@@ -70,6 +70,11 @@ void Player::bounce() {
     vel_.y = GameConst::kPlayerBounceSpeed;
     onGround_ = false;
     jumpConsumed_ = true;
+}
+
+void Player::setInvincible(bool e) {
+    invinciblePersistent_ = e;
+    invincibleTimer_ = e ? 999999.f : 0.f;
 }
 
 void Player::handleEvent(const sf::Event& event) {

@@ -150,11 +150,14 @@ elseif(UNIX)
     target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_LINUX)
 endif()
 
+find_package(OpenGL REQUIRED)
+
 target_link_libraries(text_game PRIVATE
     SFML::Graphics
     SFML::Window
     SFML::System
     SFML::Audio
+    OpenGL::GL
 )
 
 # ⭐ Windows: 隐藏控制台窗口（Release / RelWithDebInfo / MinSizeRel）

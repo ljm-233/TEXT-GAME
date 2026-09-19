@@ -152,10 +152,18 @@ ValidationReport LevelValidator::validate(const Level& level) {
     const std::vector<Platform> platforms = findPlatforms(level);
     report.totalPlatforms = static_cast<int>(platforms.size());
 
+    // ⭐ 记录所有平台顶面（用于可视化）
+    for (const auto& p : platforms) {
+        for (int x = p.minX; x <= p.maxX; ++x) {
+            report.allPlatformTops.insert({x, p.y});
+        }
+    }
+
     // 出生点所在平台
     const Vec2 spawn = level.playerSpawn();
     const int spawnTileX = static_cast<int>(spawn.x) / ts;
     const int spawnTileY = static_cast<int>(spawn.y) / ts;
+    report.spawnTile = {spawnTileX, spawnTileY};
 
     const int spawnPlatformIdx =
         findPlatformBelow(platforms, spawnTileX, spawnTileY);
@@ -169,13 +177,24 @@ ValidationReport LevelValidator::validate(const Level& level) {
         findReachablePlatforms(platforms, spawnPlatformIdx, ts);
     report.reachablePlatforms = static_cast<int>(reachable.size());
 
+    // ⭐ 记录可达平台顶面（用于可视化）
+    for (int idx : reachable) {
+        const auto& p = platforms[idx];
+        for (int x = p.minX; x <= p.maxX; ++x) {
+            report.reachablePlatformTops.insert({x, p.y});
+        }
+    }
+
     // 检查所有 spawn 元素
     auto checkSpawn = [&](const std::vector<Vec2>& spawns, const char* kindName) {
         for (const auto& s : spawns) {
             const int tx = static_cast<int>(s.x) / ts;
             const int ty = static_cast<int>(s.y) / ts;
             const int pIdx = findPlatformBelow(platforms, tx, ty);
-            if (pIdx < 0 || !reachable.count(pIdx)) {
+            if (pIdx >= 0 && reachable.count(pIdx)) {
+                // ⭐ 可达：记录到 reachableSpawns
+                report.reachableSpawns.insert({tx, ty});
+            } else {
                 report.unreachable.push_back({kindName, tx, ty});
             }
         }
@@ -196,6 +215,7 @@ ValidationReport LevelValidator::validate(const Level& level) {
         const int pIdx = findPlatformBelow(platforms, gx, gy);
         if (pIdx >= 0 && reachable.count(pIdx)) {
             report.goalReachable = true;
+            report.reachableSpawns.insert({gx, gy});
         } else {
             report.unreachable.push_back({"goal", gx, gy});
         }

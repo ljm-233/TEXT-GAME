@@ -10,7 +10,13 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <SFML/OpenGL.hpp>
+#include <chrono>
+#include <cstdint>
+#include <ctime>
+#include <iomanip>
 #include <sstream>
+#include <vector>
 #include <type_traits>
 #include <variant>
 
@@ -35,7 +41,11 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
       overlayHint_(font, sf::String(), 24),
       overlaySubHint_(font, sf::String(), 20),
       overlayTime_(font, sf::String(), 22),
-      overlayStars_(font, sf::String(), 56) {
+      overlayStars_(font, sf::String(), 56),
+      debugText_(font, sf::String(), 14) {
+    debugText_.setFillColor(sf::Color(255, 255, 130));
+    debugText_.setOutlineThickness(2.f);
+    debugText_.setOutlineColor(sf::Color(0, 0, 0, 200));
 
     hudText_.setFillColor(sf::Color::White);
     overlayTitle_.setFillColor(sf::Color(255, 255, 255));
@@ -220,11 +230,157 @@ bool GameScene::loadLevel(int index) {
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
 
+    // ⭐ 调试：切关 / 重载时清除暂停
+    paused_ = false;
+    if (pauseMenu_) pauseMenu_.reset();
+
+    // ⭐ 调试：保持无敌状态
+    if (debugInvincible_) {
+        world_->player().setInvincible(true);
+    }
+
     subscribeWorldEvents();
     syncFocus();
 
     return true;
 }
+
+bool GameScene::handleDebugKey(sf::Keyboard::Key k) {
+    switch (k) {
+        case sf::Keyboard::Key::F1:
+            debugHud_ = !debugHud_;
+            NotificationSystem::instance().push(
+                debugHud_ ? "调试 HUD: 开" : "调试 HUD: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F2:
+            debugInvincible_ = !debugInvincible_;
+            if (world_) world_->player().setInvincible(debugInvincible_);
+            NotificationSystem::instance().push(
+                debugInvincible_ ? "无敌: 开" : "无敌: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F3:
+            if (world_) world_->killAllEnemies();
+            NotificationSystem::instance().push(
+                "已清空敌人", NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F4:
+            loadLevel(levelIndex_);
+            NotificationSystem::instance().push(
+                "重载关卡 " + std::to_string(levelIndex_),
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F5:
+            if (levelIndex_ > 1) {
+                loadLevel(levelIndex_ - 1);
+                NotificationSystem::instance().push(
+                    "关卡 " + std::to_string(levelIndex_),
+                    NotificationType::Info, 1.2f);
+            }
+            return true;
+
+        case sf::Keyboard::Key::F6:
+            if (levelIndex_ < kMaxLevels) {
+                loadLevel(levelIndex_ + 1);
+                NotificationSystem::instance().push(
+                    "关卡 " + std::to_string(levelIndex_),
+                    NotificationType::Info, 1.2f);
+            }
+            return true;
+
+        case sf::Keyboard::Key::F7: {
+            // 1.0 → 0.5 → 0.25 → 0.1 → 1.0
+            if (debugTimeScale_ > 0.75f)      debugTimeScale_ = 0.5f;
+            else if (debugTimeScale_ > 0.4f)  debugTimeScale_ = 0.25f;
+            else if (debugTimeScale_ > 0.15f) debugTimeScale_ = 0.1f;
+            else                              debugTimeScale_ = 1.f;
+
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "慢动作: %.2fx",
+                          static_cast<double>(debugTimeScale_));
+            NotificationSystem::instance().push(buf, NotificationType::Info, 1.2f);
+            return true;
+        }
+
+        case sf::Keyboard::Key::F8:
+            debugShowColliders_ = !debugShowColliders_;
+            NotificationSystem::instance().push(
+                debugShowColliders_ ? "碰撞盒: 开" : "碰撞盒: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F9:
+            pendingScreenshot_ = true;
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+void GameScene::renderDebugHud(sf::RenderTarget& rt, Window& window) {
+    if (!world_) return;
+
+    const auto& level  = world_->level();
+    const auto& player = world_->player();
+
+    Vec2 pos  = player.position();
+    Vec2 vel  = player.velocity();
+    Vec2 cam  = world_->cameraCenter();
+
+    // 鼠标世界坐标
+    sf::Vector2i mousePix = sf::Mouse::getPosition(window.native());
+    sf::Vector2f mouseWorld =
+        window.native().mapPixelToCoords(mousePix, lastWorldView_);
+    int ts = level.tileSize();
+    int tx = static_cast<int>(std::floor(mouseWorld.x / ts));
+    int ty = static_cast<int>(std::floor(mouseWorld.y / ts));
+    char tileChar = ' ';
+    if (tx >= 0 && tx < level.width() && ty >= 0 && ty < level.height()) {
+        tileChar = level.tileAt(tx, ty);
+    }
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1);
+    oss << "关卡 " << levelIndex_;
+    if (!level.name().empty()) oss << " [" << level.name() << "]";
+    oss << "  " << level.width() << "x" << level.height();
+    oss << "\n玩家 (" << pos.x << ", " << pos.y << ")";
+    oss << "  vel (" << vel.x << ", " << vel.y << ")";
+    oss << "\n" << (player.onGround() ? "地面" : "空中");
+    if (player.isInvincible()) oss << "  无敌";
+    if (player.isInvinciblePersistent()) oss << " ⚡";
+    oss << "\n相机 (" << cam.x << ", " << cam.y << ")";
+    oss << "\n金币 " << world_->coins() << "/" << world_->totalCoins()
+        << "  生命 " << world_->lives();
+    oss << "\n鼠标 tile(" << tx << ", " << ty << ") '" << tileChar << "'";
+    oss << "\n[F1]HUD [F2]无敌 [F3]杀敌 [F4]重载 [F5]上关 [F6]下关";
+    oss << " [F7]慢动作 [F8]碰撞盒 [F9]截图";
+
+    debugText_.setString(toSf(oss.str()));
+
+    // 背景
+    auto b = debugText_.getLocalBounds();
+    const float padX = 8.f, padY = 6.f;
+    sf::RectangleShape bg({
+        b.size.x + padX * 2.f,
+        b.size.y + padY * 2.f
+    });
+    bg.setPosition({12.f, 42.f});
+    bg.setFillColor(sf::Color(0, 0, 0, 160));
+    bg.setOutlineThickness(1.f);
+    bg.setOutlineColor(sf::Color(120, 120, 160, 180));
+    rt.draw(bg);
+
+    debugText_.setPosition({12.f + padX - b.position.x, 42.f + padY - b.position.y});
+    rt.draw(debugText_);
+}
+
 
 void GameScene::syncFocus() {
     // 暂停菜单打开时，焦点交给 PauseMenu 管理，这里不动
@@ -448,6 +604,11 @@ void GameScene::refreshOverlayLayout(float winW, float winH) {
 }
 
 void GameScene::handleEvent(const sf::Event& event) {
+    // ⭐ 调试快捷键：优先响应
+    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (handleDebugKey(kp->code)) return;
+    }
+
     if (paused_) {
         pauseMenu_->handleEvent(event);
         return;
@@ -537,6 +698,9 @@ void GameScene::update(float dt) {
         }
         return;
     }
+
+    // ⭐ 慢动作（只在游戏逻辑生效，不影响暂停菜单和计时 UI）
+    dt *= debugTimeScale_;
 
     // ⭐ 检测世界状态变化，同步焦点（Playing ↔ LevelComplete）
     if (world_) {
@@ -638,7 +802,8 @@ void GameScene::render(Window& window) {
         worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
     }
 
-    world_->setShowColliders(preferences_->getBool("show_colliders", false));
+    world_->setShowColliders(
+        debugShowColliders_ || preferences_->getBool("show_colliders", false));
     world_->setScreenShake(preferences_->getBool("screen_shake", true));
     world_->setParticles(preferences_->getBool("particles", true));
     world_->setPseudo3D(preferences_->getBool("pseudo_3d", true));
@@ -647,6 +812,7 @@ void GameScene::render(Window& window) {
     Vec2 camCenter = world_->cameraCenter();
     worldView_.setCenter({camCenter.x, camCenter.y});
     rt.setView(worldView_);
+    lastWorldView_ = worldView_;   // ⭐ 供调试 HUD 用
 
     if (parallax_ && preferences_->getBool("parallax", true)) {
         float camLeft = camCenter.x - kLogicalW * 0.5f;
@@ -661,6 +827,11 @@ void GameScene::render(Window& window) {
     refreshHud();
     hudText_.setPosition({20.f, 16.f});
     rt.draw(hudText_);
+
+    // ⭐ 调试 HUD
+    if (debugHud_) {
+        renderDebugHud(rt, window);
+    }
 
     if (intro_) intro_->render(rt, winW, winH);
 
@@ -681,5 +852,65 @@ void GameScene::render(Window& window) {
         c.a = static_cast<std::uint8_t>(t * 200.f);
         flash.setFillColor(c);
         rt.draw(flash);
+    }
+
+    // ⭐ 截图（用 glReadPixels 抓当前帧缓冲）
+    if (pendingScreenshot_) {
+        pendingScreenshot_ = false;
+
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        int vw = vp[2];
+        int vh = vp[3];
+
+        if (vw > 0 && vh > 0) {
+            std::vector<std::uint8_t> pixels(
+                static_cast<std::size_t>(vw) * vh * 4);
+            glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+            sf::Image img({static_cast<unsigned>(vw),
+                           static_cast<unsigned>(vh)});
+            // glReadPixels 原点在左下，sf::Image 原点在左上 → 翻转 Y
+            for (int y = 0; y < vh; ++y) {
+                int srcY = vh - 1 - y;
+                for (int x = 0; x < vw; ++x) {
+                    std::size_t si =
+                        (static_cast<std::size_t>(srcY) * vw + x) * 4;
+                    img.setPixel(
+                        {static_cast<unsigned>(x), static_cast<unsigned>(y)},
+                        sf::Color(pixels[si + 0], pixels[si + 1],
+                                  pixels[si + 2], pixels[si + 3]));
+                }
+            }
+
+            namespace fs = std::filesystem;
+            fs::path dir = fs::current_path() / "screenshots";
+            std::error_code ec;
+            fs::create_directories(dir, ec);
+
+            auto now = std::chrono::system_clock::now();
+            std::time_t tt = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+#ifdef _WIN32
+            localtime_s(&tm, &tt);
+#else
+            localtime_r(&tt, &tm);
+#endif
+            char buf[32];
+            std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tm);
+
+            fs::path file = dir / (std::string("shot_") + buf + ".png");
+            if (img.saveToFile(file.string())) {
+                NotificationSystem::instance().push(
+                    "截图已保存: screenshots/" + file.filename().string(),
+                    NotificationType::Success, 2.f);
+            } else {
+                NotificationSystem::instance().push(
+                    "截图保存失败", NotificationType::Error, 2.f);
+            }
+        } else {
+            NotificationSystem::instance().push(
+                "截图失败: viewport 为空", NotificationType::Error, 2.f);
+        }
     }
 }
