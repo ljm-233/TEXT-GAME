@@ -40,6 +40,22 @@ private:
     void refreshLabels();
     void refreshSelection();
     void syncFocus();
+    void resetGraphicsPost();
+    void applyPreset(int idx);
+
+    bool anySliderEditing() const {
+        for (auto* s : {saturationSlider_.get(), contrastSlider_.get(),
+                        brightnessSlider_.get(), gammaSlider_.get(),
+                        vignetteSlider_.get(), bloomStrengthSlider_.get(),
+                        bloomThresholdSlider_.get(), chromaticSlider_.get(),
+                        grainSlider_.get(), scanlineSlider_.get(),
+                        ditherSlider_.get(), consoleMaskSlider_.get(),
+                        consolePanelAlphaSlider_.get(), masterVolumeSlider_.get(),
+                        soundVolumeSlider_.get(), bgmVolumeSlider_.get()}) {
+            if (s && s->isEditing()) return true;
+        }
+        return false;
+    }
     void applyResolution();
     void applyFullscreen();
     void applyWindowMode();
@@ -114,6 +130,22 @@ private:
     // [0] InitialLives  [1] AnimationSpeed  [2] NotificationPos
     // [3] ButtonCorner  [4] ButtonOutline
 
+    // ================= Graphics 预设 =================
+    std::unique_ptr<MultiRow> presetRow_;
+
+    // ================= Graphics 后处理 Slider =================
+    std::unique_ptr<Slider> saturationSlider_;
+    std::unique_ptr<Slider> contrastSlider_;
+    std::unique_ptr<Slider> brightnessSlider_;
+    std::unique_ptr<Slider> gammaSlider_;
+    std::unique_ptr<Slider> vignetteSlider_;
+    std::unique_ptr<Slider> bloomStrengthSlider_;
+    std::unique_ptr<Slider> bloomThresholdSlider_;
+    std::unique_ptr<Slider> chromaticSlider_;
+    std::unique_ptr<Slider> grainSlider_;
+    std::unique_ptr<Slider> scanlineSlider_;
+    std::unique_ptr<Slider> ditherSlider_;
+
     // ================= Audio =================
     std::vector<std::unique_ptr<ToggleRow>> audioToggles_;
     // [0] Sound  [1] BGM  [2] Gamepad
@@ -133,6 +165,7 @@ private:
     std::unique_ptr<TextInput> playerNameInput_;
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
+    std::unique_ptr<Button> resetGraphicsButton_;
 
     std::unique_ptr<Button> backButton_;
     std::unique_ptr<ConfirmDialog> resetConfirm_;
@@ -147,6 +180,18 @@ private:
     sf::Text labelMasterVolume_, labelSoundVolume_, labelBGMVolume_;
     sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
+    // ⭐ 后处理
+    sf::Text labelPostSaturation_;
+    sf::Text labelPostContrast_;
+    sf::Text labelPostBrightness_;
+    sf::Text labelPostGamma_;
+    sf::Text labelPostVignette_;
+    sf::Text labelPostBloomStrength_;
+    sf::Text labelPostBloomThreshold_;
+    sf::Text labelPostChromatic_;
+    sf::Text labelPostGrain_;
+    sf::Text labelPostScanline_;
+    sf::Text labelPostDither_;
 
     // ================= 状态 =================
     int     selectedResolution_ = 0;

@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include "upscaler.h"
+#include "postprocess.h"
 
 class Window {
 public:
@@ -39,22 +40,28 @@ public:
     sf::RenderWindow& native();
     void requestMaximize();
 
-    // ⭐ 渲染缩放（0.25 ~ 1.0）——软渲染弱机用
+    // ⭐ 渲染缩放
+    //   < 1.0：低分辨率渲染 + upscaler 上采样
+    //   = 1.0：直接渲染到窗口
+    //   > 1.0：超采样渲染 + 降采样（抗锯齿）
     void setRenderScale(float s);
     float getRenderScale() const { return renderScale_; }
 
-    // ⭐ 绘制目标：renderScale >= 1 时返回窗口，否则返回中间 RenderTexture
+    // ⭐ 绘制目标
     sf::RenderTarget& target();
 
     // ⭐ 每帧：beginFrame() → Scene 用 target() 画 → endFrame()
     void beginFrame();
     void endFrame();
 
-    // ⭐ 加载超分 shader（shaderDir 是 upscale.vert/frag 所在目录）
+    // ⭐ 加载超分 shader（shaderDir 是 shader 所在目录）
     void loadUpscaler(const std::string& shaderDir);
 
     void setUpscaleMode(int mode);
     int  getUpscaleMode() const;
+
+    // ⭐ 后处理
+    PostProcessor& postProcess() { return postProcessor_; }
 
 private:
     void applyView();
@@ -69,8 +76,13 @@ private:
     // ⭐ 渲染缩放
     sf::RenderTexture rt_;
     float renderScale_ = 1.0f;
+
     // ⭐ 超分辨率
     Upscaler upscaler_;
     bool     upscaleLoaded_ = false;
     bool  rtNeedsResize_ = true;
+
+    // ⭐ 后处理
+    PostProcessor postProcessor_;
+    sf::RenderTexture ppInputRT_;
 };

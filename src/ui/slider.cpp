@@ -6,10 +6,17 @@
 #include <cmath>
 #include <string>
 
+namespace {
+constexpr float kInputW = 70.f;
+constexpr float kInputH = 26.f;
+constexpr float kResetW = 26.f;
+constexpr float kResetH = 26.f;
+constexpr float kGap    = 8.f;
+}
+
 Slider::Slider(const sf::Font& font, float minValue, float maxValue, float initialValue,
                sf::Vector2f position, sf::Vector2f size)
-      : valueText_(font, sf::String(), scaledFontSize(20)),
-        position_(position),
+      : position_(position),
         size_(size),
         min_(minValue),
         max_(maxValue),
@@ -26,7 +33,25 @@ Slider::Slider(const sf::Font& font, float minValue, float maxValue, float initi
     handle_.setSize({10.f, size_.y + 4.f});
     handle_.setFillColor(getTheme().textPrimary);
 
-    valueText_.setFillColor(getTheme().textPrimary);
+    // ⭐ 数字输入框
+    valueInput_ = std::make_unique<TextInput>(
+        font, sf::Vector2f{0.f, 0.f}, sf::Vector2f{kInputW, kInputH},
+        "", 16, 8);
+    valueInput_->setText(std::to_string(static_cast<int>(value_)));
+    valueInput_->setOnSubmit([this](const std::string& s) {
+        try {
+            float v = std::stof(s);
+            setValueFromText(v);
+        } catch (...) {
+            valueInput_->setText(std::to_string(static_cast<int>(value_)));
+        }
+        valueInput_->setFocused(false);
+    });
+
+    // ⭐ 重置按钮
+    resetButton_ = std::make_unique<Button>(
+        "R", font, sf::Vector2f{0.f, 0.f},
+        sf::Vector2f{kResetW, kResetH}, 16);
 
     updateLayout();
 }
@@ -34,6 +59,15 @@ Slider::Slider(const sf::Font& font, float minValue, float maxValue, float initi
 void Slider::setValue(float v) {
     value_ = std::clamp(v, min_, max_);
     updateLayout();
+}
+
+void Slider::setValueFromText(float v) {
+    v = std::clamp(v, min_, max_);
+    if (std::abs(v - value_) > 0.001f) {
+        value_ = v;
+        changed_ = true;
+        updateLayout();
+    }
 }
 
 void Slider::setPosition(sf::Vector2f p) {
@@ -54,11 +88,24 @@ void Slider::updateLayout() {
     float handleX = position_.x + ratio * w - handleW / 2.f;
     handle_.setPosition({handleX, position_.y - 2.f});
 
-    std::string v = std::to_string(static_cast<int>(value_));
-    valueText_.setString(toSf(v));
-    auto b = valueText_.getLocalBounds();
-    valueText_.setPosition(
-        {position_.x + w + 16.f, position_.y + h / 2.f - b.size.y / 2.f - b.position.y});
+    // ⭐ 数字输入框
+    float inputX = position_.x + w + 12.f;
+    float inputY = position_.y + h / 2.f - kInputH / 2.f;
+    valueInput_->setPosition({inputX, inputY});
+    valueInput_->setSize({kInputW, kInputH});
+
+    // ⭐ 重置按钮（输入框右侧）
+    float resetX = inputX + kInputW + kGap;
+    float resetY = position_.y + h / 2.f - kResetH / 2.f;
+    resetButton_->setPosition({resetX, resetY});
+
+    // ⭐ 值变了就同步显示（用户正在编辑时不打断）
+    if (!valueInput_->isFocused()) {
+        std::string newText = std::to_string(static_cast<int>(value_));
+        if (valueInput_->text() != newText) {
+            valueInput_->setText(newText);
+        }
+    }
 }
 
 void Slider::setValueFromMouse(float mouseX) {
@@ -73,10 +120,38 @@ void Slider::setValueFromMouse(float mouseX) {
 }
 
 void Slider::handleEvent(const sf::Event& event) {
+    // ⭐ 先交给输入框和重置按钮
+    valueInput_->handleEvent(event);
+    resetButton_->handleEvent(event);
+
+    // ⭐ 重置按钮被点击
+    if (resetButton_->consumeClick()) {
+        setValueFromText(defaultValue_);
+        valueInput_->setFocused(false);
+        return;
+    }
+
     if (const auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mb->button == sf::Mouse::Button::Left) {
             float mx = static_cast<float>(mb->position.x);
             float my = static_cast<float>(mb->position.y);
+
+            // 点击落在输入框上：不进入拖拽
+            auto ip = valueInput_->position();
+            auto is = valueInput_->size();
+            if (mx >= ip.x && mx <= ip.x + is.x &&
+                my >= ip.y && my <= ip.y + is.y) {
+                return;
+            }
+
+            // 点击落在重置按钮上：不进入拖拽
+            auto rp = resetButton_->position();
+            auto rs = resetButton_->size();
+            if (mx >= rp.x && mx <= rp.x + rs.x &&
+                my >= rp.y && my <= rp.y + rs.y) {
+                return;
+            }
+
             if (mx >= position_.x && mx <= position_.x + size_.x &&
                 my >= position_.y - 8.f && my <= position_.y + size_.y + 8.f) {
                 dragging_ = true;
@@ -103,15 +178,14 @@ bool Slider::consumeChanged() {
 }
 
 void Slider::render(sf::RenderTarget& target) {
-    // 每帧刷新颜色（主题可能变了）
     track_.setFillColor(getTheme().buttonNormal);
     track_.setOutlineColor(getTheme().outline);
     fill_.setFillColor(getTheme().buttonSelected);
     handle_.setFillColor(getTheme().textPrimary);
-    valueText_.setFillColor(getTheme().textPrimary);
 
     target.draw(track_);
     target.draw(fill_);
     target.draw(handle_);
-    target.draw(valueText_);
+    valueInput_->render(target);
+    resetButton_->render(target);
 }

@@ -324,6 +324,30 @@ bool GameWorld::checkGoalReached() const {
 void GameWorld::renderShadow(sf::RenderTarget& target,
                              Vec2 worldPos,
                              float width, float height) const {
+    // ⭐ 一次性生成径向渐变阴影纹理
+    if (!shadowTexReady_) {
+        constexpr unsigned kSize = 64;
+        sf::Image img({kSize, kSize}, sf::Color::Transparent);
+        const float half = kSize * 0.5f;
+        for (unsigned y = 0; y < kSize; ++y) {
+            for (unsigned x = 0; x < kSize; ++x) {
+                float dx = (x + 0.5f) - half;
+                float dy = (y + 0.5f) - half;
+                float r = std::sqrt(dx * dx + dy * dy) / half;
+                if (r >= 1.f) continue;
+                // ⭐ 内 40% 完全不透明，外部到边缘平滑衰减
+                float t = std::clamp((r - 0.4f) / 0.6f, 0.f, 1.f);
+                float a = 1.f - t;
+                a = a * a;   // 边缘再柔一点
+                auto a8 = static_cast<std::uint8_t>(a * 255.f);
+                img.setPixel({x, y}, sf::Color(0, 0, 0, a8));
+            }
+        }
+        (void)shadowTex_.loadFromImage(img);
+        shadowTex_.setSmooth(true);
+        shadowTexReady_ = true;
+    }
+
     int ts = level_->tileSize();
     int tx = static_cast<int>(worldPos.x / ts);
 
@@ -342,16 +366,17 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
     float alphaFactor = std::clamp(1.f - distance / 300.f, 0.2f, 1.f);
     float scaleFactor = std::clamp(1.f - distance / 500.f, 0.5f, 1.f);
 
-    float rx = (width * 0.5f) * scaleFactor;
+    float rx = (width * 0.70f) * scaleFactor;
     float ry = rx * 0.35f;
 
-    sf::CircleShape shadow(rx);
-    shadow.setOrigin({rx, ry});
-    shadow.setScale({1.f, 0.35f});
-    shadow.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
-    shadow.setFillColor(sf::Color(0, 0, 0,
-        static_cast<std::uint8_t>(120 * alphaFactor)));
-    target.draw(shadow);
+    // ⭐ 用 sprite 绘制渐变阴影
+    sf::Sprite s(shadowTex_);
+    s.setOrigin({32.f, 32.f});   // 纹理中心
+    s.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
+    s.setScale({rx / 32.f, ry / 32.f});
+    s.setColor(sf::Color(255, 255, 255,
+        static_cast<std::uint8_t>(200 * alphaFactor)));
+    target.draw(s);
 }
 
 void GameWorld::renderDebugColliders(sf::RenderTarget& target) {

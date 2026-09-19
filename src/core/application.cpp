@@ -167,6 +167,21 @@ void Application::registerDependencies() {
         // ⭐ 加载超分 shader（失败则自动回退到双线性）
         auto paths = container_.resolve<Paths>();
         win->loadUpscaler((paths->assetsDir() / "shaders").string());
+        // ⭐ 恢复后处理参数
+        {
+            auto& pp = win->postProcess();
+            pp.setSaturation(static_cast<float>(prefs->getDouble("post_saturation", 1.0)));
+            pp.setContrast  (static_cast<float>(prefs->getDouble("post_contrast",   1.0)));
+            pp.setBrightness(static_cast<float>(prefs->getDouble("post_brightness", 1.0)));
+            pp.setGamma     (static_cast<float>(prefs->getDouble("post_gamma",      1.0)));
+            pp.setVignette  (static_cast<float>(prefs->getDouble("post_vignette",   0.0)));
+            pp.setBloomStrength (static_cast<float>(prefs->getDouble("post_bloom_strength",  0.0)));
+            pp.setBloomThreshold(static_cast<float>(prefs->getDouble("post_bloom_threshold", 0.7)));
+            pp.setChromatic     (static_cast<float>(prefs->getDouble("post_chromatic",       0.0)));
+            pp.setGrain         (static_cast<float>(prefs->getDouble("post_grain",           0.0)));
+            pp.setScanline      (static_cast<float>(prefs->getDouble("post_scanline",        0.0)));
+            pp.setDither        (static_cast<float>(prefs->getDouble("post_dither",          0.0)));
+        }
         win->setUpscaleMode(prefs->getInt("upscale_mode", 1));
 
         // ⭐ 启动时根据 window_mode 决定窗口状态

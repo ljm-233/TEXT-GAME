@@ -99,9 +99,6 @@ vec3 fsrRcas(sampler2D tex, vec2 uv, vec2 texSize, float sharpness) {
 
 void main() {
     vec2 uv = gl_FragCoord.xy / uOutputSize;
-
     vec3 col = fsrEasu(uSource, uv, uSourceSize, uOutputSize);
-    col = fsrRcas(uSource, uv, uSourceSize, 0.9);
-
     fragColor = vec4(col, texture(uSource, uv).a);
 }

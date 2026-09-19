@@ -25,12 +25,10 @@ sf::Image makeWindowIcon() {
     const sf::Color kBorder (45, 110, 45);
     const sf::Color kBlack  (15, 15, 15);
 
-    // 绿色方块身体
     for (unsigned y = 8; y < 56; ++y)
         for (unsigned x = 8; x < 56; ++x)
             setPixel(x, y, kBody);
 
-    // 深绿边框
     for (unsigned x = 8; x < 56; ++x) {
         setPixel(x, 8, kBorder);
         setPixel(x, 55, kBorder);
@@ -40,7 +38,6 @@ sf::Image makeWindowIcon() {
         setPixel(55, y, kBorder);
     }
 
-    // 眼睛
     for (unsigned y = 20; y < 28; ++y)
         for (unsigned x = 16; x < 24; ++x)
             setPixel(x, y, kBlack);
@@ -48,12 +45,10 @@ sf::Image makeWindowIcon() {
         for (unsigned x = 40; x < 48; ++x)
             setPixel(x, y, kBlack);
 
-    // 嘴横线
     for (unsigned x = 20; x < 44; ++x)
         for (unsigned y = 36; y < 40; ++y)
             setPixel(x, y, kBlack);
 
-    // 嘴两个竖
     for (unsigned y = 36; y < 48; ++y) {
         for (unsigned x = 20; x < 24; ++x)
             setPixel(x, y, kBlack);
@@ -62,6 +57,12 @@ sf::Image makeWindowIcon() {
     }
 
     return img;
+}
+
+// ⭐ 是否需要经过中间 RenderTexture
+bool needsRT(float scale, bool postActive) {
+    if (scale < 0.99f || scale > 1.01f) return true;
+    return postActive;
 }
 
 } // namespace
@@ -134,6 +135,7 @@ void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
     window_.setFramerateLimit(framerateLimit_);
     applyView();
     applyIcon();
+    rtNeedsResize_ = true;
 }
 
 void Window::setTitle(const std::string& title) {
@@ -164,17 +166,17 @@ void Window::requestMaximize() {
     HWND hwnd = reinterpret_cast<HWND>(window_.getNativeHandle());
     ShowWindow(hwnd, SW_MAXIMIZE);
 #else
-    // Linux / macOS：撑满桌面分辨率（Wayland 下可能被 compositor 忽略）
     auto mode = sf::VideoMode::getDesktopMode();
     window_.setSize({mode.size.x, mode.size.y});
 #endif
 }
+
 // ============================================================
 // 渲染缩放
 // ============================================================
 
 void Window::setRenderScale(float s) {
-    s = std::clamp(s, 0.10f, 1.0f);
+    s = std::clamp(s, 0.10f, 2.0f);
     if (std::abs(s - renderScale_) < 0.01f) return;
     renderScale_ = s;
     rtNeedsResize_ = true;
@@ -183,15 +185,16 @@ void Window::setRenderScale(float s) {
 void Window::loadUpscaler(const std::string& shaderDir) {
     upscaler_.load(shaderDir);
     upscaleLoaded_ = true;
+    postProcessor_.load(shaderDir);
 }
 
 sf::RenderTarget& Window::target() {
-    if (renderScale_ >= 0.99f) return window_;
+    if (!needsRT(renderScale_, postProcessor_.isActive())) return window_;
     return rt_;
 }
 
 void Window::beginFrame() {
-    if (renderScale_ >= 0.99f) return;
+    if (!needsRT(renderScale_, postProcessor_.isActive())) return;
 
     auto winSize = window_.getSize();
     if (winSize.x == 0 || winSize.y == 0) return;
@@ -201,22 +204,23 @@ void Window::beginFrame() {
 
     if (rtNeedsResize_ || rt_.getSize() != sf::Vector2u{rw, rh}) {
         if (!rt_.resize({rw, rh})) {
-            renderScale_ = 1.0f;   // 失败回退
+            renderScale_ = 1.0f;
             return;
         }
+        rt_.setSmooth(true);
         rtNeedsResize_ = false;
     }
 
-    // ⭐ rt 逻辑坐标系 = 窗口尺寸（draw 调用仍用逻辑坐标）
     rt_.setView(sf::View(sf::FloatRect(
         {0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
 }
 
 void Window::endFrame() {
-    if (renderScale_ >= 0.99f) {
+    if (!needsRT(renderScale_, postProcessor_.isActive())) {
         window_.display();
         return;
     }
+
     rt_.display();
 
     auto winSize = window_.getSize();
@@ -228,8 +232,29 @@ void Window::endFrame() {
 
     window_.setView(window_.getDefaultView());
 
-    // ⭐ 优先用超分 shader，失败或未加载则普通 sprite 缩放
-    if (upscaleLoaded_ && upscaler_.isLoaded()) {
+    const bool isSupersample = renderScale_ > 1.01f;
+    const bool useUpscaler   = !isSupersample
+                             && renderScale_ < 0.99f
+                             && upscaleLoaded_ && upscaler_.isLoaded();
+    const bool usePost       = postProcessor_.isActive();
+
+    if (usePost && useUpscaler) {
+        if (ppInputRT_.getSize() != winSize) {
+            if (!ppInputRT_.resize(winSize)) {
+                upscaler_.draw(window_, rt_.getTexture(), rtSize, winSize);
+                window_.display();
+                return;
+            }
+            ppInputRT_.setSmooth(true);
+        }
+        ppInputRT_.clear();
+        ppInputRT_.setView(ppInputRT_.getDefaultView());
+        upscaler_.draw(ppInputRT_, rt_.getTexture(), rtSize, winSize);
+        ppInputRT_.display();
+        postProcessor_.draw(window_, ppInputRT_.getTexture(), winSize, winSize);
+    } else if (usePost) {
+        postProcessor_.draw(window_, rt_.getTexture(), rtSize, winSize);
+    } else if (useUpscaler) {
         upscaler_.draw(window_, rt_.getTexture(), rtSize, winSize);
     } else {
         sf::Sprite s(rt_.getTexture());
@@ -239,6 +264,7 @@ void Window::endFrame() {
         });
         window_.draw(s);
     }
+
     window_.display();
 }
 

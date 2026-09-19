@@ -58,6 +58,10 @@ constexpr const char* RenderScale50    = "50%";
 constexpr const char* RenderScale33    = "33%";
 constexpr const char* RenderScale25    = "25%";
 constexpr const char* RenderScale10    = "10%";
+// ⭐ 超采样
+constexpr const char* RenderScale200   = "200%";
+constexpr const char* RenderScale150   = "150%";
+constexpr const char* RenderScale125   = "125%";
 constexpr const char* LabelConsoleMask = "控制台遮罩";
 constexpr const char* LabelConsoleFont = "控制台字号";
 constexpr const char* LabelConsoleHistory = "控制台历史";
@@ -342,5 +346,26 @@ constexpr const char* LabelWindowMode = "窗口模式";
 constexpr const char* WinModeWindowed = "窗口";
 constexpr const char* WinModeMaximized = "最大化";
 constexpr const char* WinModeFullscreen = "全屏";
+// ===== 后处理 =====
+constexpr const char* LabelPostSaturation = "饱和度";
+constexpr const char* LabelPostContrast   = "对比度";
+constexpr const char* LabelPostBrightness = "亮度";
+constexpr const char* LabelPostGamma      = "伽马";
+constexpr const char* LabelPostVignette   = "暗角";
+constexpr const char* LabelPostBloomStrength  = "泛光强度";
+constexpr const char* LabelPostBloomThreshold = "泛光阈值";
+constexpr const char* LabelPostChromatic      = "色差";
+constexpr const char* LabelPostGrain          = "胶片颗粒";
+constexpr const char* LabelPostScanline       = "扫描线";
+constexpr const char* LabelPostDither         = "抖动";
+constexpr const char* ResetGraphics           = "重置画面";
+
+// ===== 画面预设 =====
+constexpr const char* LabelPreset       = "预设";
+constexpr const char* PresetDefault     = "原版";
+constexpr const char* PresetCRT         = "复古 CRT";
+constexpr const char* PresetCinematic   = "电影感";
+constexpr const char* PresetPixel8      = "像素 8-bit";
+constexpr const char* PresetNight       = "夜晚";
 
 } // namespace Str

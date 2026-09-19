@@ -77,6 +77,8 @@ private:
     Checkpoint* activeCheckpoint_ = nullptr;   // 当前激活的存档点（最多一个）
 
     Camera camera_;
+    mutable sf::Texture shadowTex_;
+    mutable bool shadowTexReady_ = false;
     ParticleSystem particles_;
     EventBus bus_;
 
