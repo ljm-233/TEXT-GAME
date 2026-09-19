@@ -75,14 +75,14 @@ private:
     void resetAllPreferences();
 
     // ===== 渲染子函数 =====
-    void renderTabs         (Window& window);
-    void renderDisplayTab   (Window& window, float contentX, float ctrlX, float y);
-    void renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
-    void renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
-    void renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
-    void renderKeysTab      (Window& window, float contentX, float ctrlX, float y);
-    void renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
-    void renderBackButton   (Window& window);
+    void  renderTabs         (Window& window);
+    float renderDisplayTab   (Window& window, float contentX, float ctrlX, float y);
+    float renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
+    float renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
+    float renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
+    float renderKeysTab      (Window& window, float contentX, float ctrlX, float y);
+    float renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
+    void  renderBackButton   (Window& window);
 
     // ===== 依赖 =====
     std::shared_ptr<Background>    background_;
@@ -231,6 +231,7 @@ private:
     float layoutScale_       = 1.0f;   // 根据窗口高度算
     float contentScroll_     = 0.f;    // 当前滚动偏移（像素）
     float contentTotalH_     = 0.f;    // 当前 Tab 内容总高度
+    float contentViewTop_    = 0.f;    // 内容区可见范围顶部
     float contentViewH_      = 0.f;    // 可用高度
     float lastWinH_          = 0.f;    // 用于检测窗口尺寸变化
     sf::FloatRect contentClipRect_;    // 内容区裁剪范围（用于 scissor/手动裁剪）

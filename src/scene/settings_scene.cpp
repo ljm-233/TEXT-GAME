@@ -1186,11 +1186,33 @@ void SettingsScene::handleEvent(const sf::Event& event) {
     if (resetConfirm_) { resetConfirm_->handleEvent(event); return; }
     if (aboutDialog_)  { aboutDialog_->handleEvent(event);  return; }
 
+    // ⭐ 内容区滚动：鼠标滚轮
+    if (const auto* ws = event.getIf<sf::Event::MouseWheelScrolled>()) {
+        if (contentTotalH_ > contentViewH_) {
+            contentScroll_ -= ws->delta * 40.f;
+            contentScroll_ = std::clamp(contentScroll_, 0.f,
+                                        contentTotalH_ - contentViewH_);
+        }
+        return;
+    }
+
     bool inputFocused = playerNameInput_ && playerNameInput_->isFocused();
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == sf::Keyboard::Key::Escape && !inputFocused) {
             nextScene_ = SceneId::Back;
             return;
+        }
+        // ⭐ PgUp / PgDn 滚动
+        if (!inputFocused && contentTotalH_ > contentViewH_) {
+            if (kp->code == sf::Keyboard::Key::PageUp) {
+                contentScroll_ = std::max(0.f, contentScroll_ - contentViewH_);
+                return;
+            }
+            if (kp->code == sf::Keyboard::Key::PageDown) {
+                contentScroll_ = std::min(contentTotalH_ - contentViewH_,
+                                          contentScroll_ + contentViewH_);
+                return;
+            }
         }
     }
     for (auto& b : tabButtons_) b->handleEvent(event);
@@ -1598,8 +1620,9 @@ struct RowDrawer {
 };
 }
 
-void SettingsScene::renderDisplayTab(Window& window, float contentX,
-                                     float ctrlX, float y) {
+float SettingsScene::renderDisplayTab(Window& window, float contentX,
+                                      float ctrlX, float y) {
+    float startY = y;
     headingDisplay_.setPosition({contentX, y});
     window.native().draw(headingDisplay_);
     y += 36.f;
@@ -1612,10 +1635,12 @@ void SettingsScene::renderDisplayTab(Window& window, float contentX,
     r.multi (*displayMultiRows_[1]);   // AntiAliasing
     r.multi (*displayMultiRows_[2]);   // LogLevel
     r.multi (*displayMultiRows_[3]);   // FpsLimit
+    return r.y - startY;
 }
 
-void SettingsScene::renderInterfaceTab(Window& window, float contentX,
+float SettingsScene::renderInterfaceTab(Window& window, float contentX,
                                        float ctrlX, float y) {
+    float startY = y;
     headingInterface_.setPosition({contentX, y});
     window.native().draw(headingInterface_);
     y += 36.f;
@@ -1656,10 +1681,12 @@ void SettingsScene::renderInterfaceTab(Window& window, float contentX,
     r.toggle(*interfaceToggles_[2]);   // 控制台自动滚动
     r.toggle(*interfaceToggles_[3]);   // 控制台光标闪烁
     r.multi (*interfaceMultiRows_[9]); // ConsolePrompt
+    return r.y - startY;
 }
 
-void SettingsScene::renderGraphicsTab(Window& window, float contentX,
+float SettingsScene::renderGraphicsTab(Window& window, float contentX,
                                       float ctrlX, float y) {
+    float startY = y;
     headingGraphics_.setPosition({contentX, y});
     window.native().draw(headingGraphics_);
     y += 36.f;
@@ -1682,10 +1709,12 @@ void SettingsScene::renderGraphicsTab(Window& window, float contentX,
     r.multi (*graphicsMultiRows_[3]);   // ButtonCorner
     r.multi (*graphicsMultiRows_[4]);   // ButtonOutline
     r.toggle(*graphicsToggles_[8]);     // ShowColliders
+    return r.y - startY;
 }
 
-void SettingsScene::renderAudioTab(Window& window, float contentX,
+float SettingsScene::renderAudioTab(Window& window, float contentX,
                                    float ctrlX, float y) {
+    float startY = y;
     headingAudio_.setPosition({contentX, y});
     window.native().draw(headingAudio_);
     y += 36.f;
@@ -1699,10 +1728,12 @@ void SettingsScene::renderAudioTab(Window& window, float contentX,
     r.toggle(*audioToggles_[1]);   // BGM
     r.slider(labelBGMVolume_,    bgmVolumeSlider_.get());
     r.toggle(*audioToggles_[2]);   // Gamepad
+    return r.y - startY;
 }
 
-void SettingsScene::renderKeysTab(Window& window, float contentX,
+float SettingsScene::renderKeysTab(Window& window, float contentX,
                                   float ctrlX, float y) {
+    float startY = y;
     headingKeys_.setPosition({contentX, y});
     window.native().draw(headingKeys_);
     y += 36.f;
@@ -1733,10 +1764,12 @@ void SettingsScene::renderKeysTab(Window& window, float contentX,
     hint.setFillColor(sf::Color(180, 180, 200));
     hint.setPosition({contentX, y + 8.f});
     window.native().draw(hint);
+    return y - startY;
 }
 
-void SettingsScene::renderOtherTab(Window& window, float contentX,
+float SettingsScene::renderOtherTab(Window& window, float contentX,
                                    float ctrlX, float y) {
+    float startY = y;
     headingOther_.setPosition({contentX, y});
     window.native().draw(headingOther_);
     y += 36.f;
@@ -1762,6 +1795,7 @@ void SettingsScene::renderOtherTab(Window& window, float contentX,
 
     resetButton_->setPosition({contentX + 220.f, r.y});
     resetButton_->render(window.native());
+    return r.y - startY;
 }
 
 void SettingsScene::renderBackButton(Window& window) {
@@ -1781,35 +1815,62 @@ void SettingsScene::render(Window& window) {
     float w  = static_cast<float>(size.x);
     float h  = static_cast<float>(size.y);
 
-    // ⭐ 根据窗口高度更新缩放
-    float newScale = std::clamp(h / 720.f, 0.65f, 1.0f);
-    if (std::abs(newScale - layoutScale_) > 0.01f || h != lastWinH_) {
-        layoutScale_ = newScale;
-        lastWinH_ = h;
-        contentScroll_ = 0.f;   // 尺寸变了重置滚动
+    // ⭐ 行高缩放：480→0.65，600→0.83，720+→1.0
+    layoutScale_ = std::clamp(h / 720.f, 0.65f, 1.0f);
+
+    // ⭐ 内容区范围（Tab 按钮占左侧，不在滚动区）
+    contentViewTop_ = 40.f;
+    contentViewH_   = h - contentViewTop_ - 90.f;   // 底部留 90 给"返回"按钮
+    if (contentViewH_ < 100.f) contentViewH_ = 100.f;
+
+    // ⭐ 焦点自动滚动（用上一帧的 contentTotalH_ 判断）
+    Button* focused = FocusGroup::instance().focused();
+    if (focused && contentTotalH_ > contentViewH_) {
+        float btnTop    = focused->position().y;
+        float btnBottom = btnTop + focused->size().y;
+        float viewBot   = contentViewTop_ + contentViewH_;
+
+        if (btnTop < contentViewTop_) {
+            contentScroll_ -= (contentViewTop_ - btnTop);
+        } else if (btnBottom > viewBot) {
+            contentScroll_ += (btnBottom - viewBot);
+        }
+        contentScroll_ = std::clamp(contentScroll_, 0.f,
+                                    std::max(0.f, contentTotalH_ - contentViewH_));
     }
 
     renderTabs(window);
 
+    // ⭐ 内容起始 y（含滚动偏移）
+    float startY = contentViewTop_ - contentScroll_;
+
     switch (currentTab_) {
         case Tab::Display:
-            renderDisplayTab(window, kContentX, kCtrlX, 60.f);
+            contentTotalH_ = renderDisplayTab(window, kContentX, kCtrlX, startY);
             break;
         case Tab::Interface:
-            renderInterfaceTab(window, kContentX, kCtrlX, 50.f);
+            contentTotalH_ = renderInterfaceTab(window, kContentX, kCtrlX, startY);
             break;
         case Tab::Graphics:
-            renderGraphicsTab(window, kContentX, kCtrlX, 50.f);
+            contentTotalH_ = renderGraphicsTab(window, kContentX, kCtrlX, startY);
             break;
         case Tab::Audio:
-            renderAudioTab(window, kContentX, kCtrlX, 60.f);
+            contentTotalH_ = renderAudioTab(window, kContentX, kCtrlX, startY);
             break;
         case Tab::Keys:
-            renderKeysTab(window, kContentX, kCtrlX, 60.f);
+            contentTotalH_ = renderKeysTab(window, kContentX, kCtrlX, startY);
             break;
         case Tab::Other:
-            renderOtherTab(window, kContentX, kCtrlX, 60.f);
+            contentTotalH_ = renderOtherTab(window, kContentX, kCtrlX, startY);
             break;
+    }
+
+    // ⭐ 滚动范围限制
+    if (contentTotalH_ <= contentViewH_) {
+        contentScroll_ = 0.f;
+    } else {
+        contentScroll_ = std::clamp(contentScroll_, 0.f,
+                                    contentTotalH_ - contentViewH_);
     }
 
     renderBackButton(window);

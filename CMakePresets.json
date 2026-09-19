@@ -70,14 +70,6 @@
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
-    {
-      "name": "release-legacy",
-      "inherits": "release",
-      "displayName": "Release (Legacy Atom)",
-      "cacheVariables": {
-        "LEGACY_BUILD": "ON"
-      }
-    },
 
     {
       "name": "tests",
