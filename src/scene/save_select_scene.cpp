@@ -165,7 +165,7 @@ void SaveSelectScene::update(float /*dt*/) {
 
 void SaveSelectScene::render(Window& window) {
     window.clear();
-    if (background_) background_->render(window.native());
+    if (background_) background_->render(window.target());
 
     auto size = window.native().getSize();
     float w = static_cast<float>(size.x);
@@ -184,24 +184,24 @@ void SaveSelectScene::render(Window& window) {
     for (size_t i = 0; i < saveButtons_.size(); ++i) {
         saveButtons_[i]->setPosition({leftX, startY});
         deleteButtons_[i]->setPosition({leftX + btnW + gapX, startY});
-        saveButtons_[i]->render(window.native());
-        deleteButtons_[i]->render(window.native());
+        saveButtons_[i]->render(window.target());
+        deleteButtons_[i]->render(window.target());
         startY += 55.f + gap;
     }
 
     newButton_->setPosition({(w - 520.f) / 2.f, startY});
-    newButton_->render(window.native());
+    newButton_->render(window.target());
 
     backButton_->setPosition({(w - 160.f) / 2.f, h - 90.f});
-    backButton_->render(window.native());
+    backButton_->render(window.target());
 
     if (confirm_) {
         confirm_->relayout({w, h});
-        confirm_->render(window.native());
+        confirm_->render(window.target());
     }
 
     if (newSaveDialog_) {
         newSaveDialog_->relayout({w, h});
-        newSaveDialog_->render(window.native());
+        newSaveDialog_->render(window.target());
     }
 }

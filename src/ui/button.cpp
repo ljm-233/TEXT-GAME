@@ -23,24 +23,27 @@ Button::Button(const std::string& label,
     shape_.setPosition(position_);
     text_.setFillColor(getTheme().textPrimary);
     refreshShape();
-    centerText();
+    recomputeTextOrigin();
+    updateTextPosition();
 }
 
 void Button::setPosition(sf::Vector2f p) {
     position_ = p;
     shape_.setPosition(position_);
-    centerText();
+    updateTextPosition();      // ⭐ 只更新位置，不重算 origin
 }
 
 void Button::setSize(sf::Vector2f s) {
     size_ = s;
     refreshShape();
-    centerText();
+    recomputeTextOrigin();
+    updateTextPosition();
 }
 
 void Button::setText(const std::string& text) {
     text_.setString(toSf(text));
-    centerText();
+    recomputeTextOrigin();
+    updateTextPosition();
 }
 
 void Button::setSelected(bool s) {
@@ -49,10 +52,20 @@ void Button::setSelected(bool s) {
 
 void Button::setFocused(bool f) {
     focused_ = f;
+    // refreshShape 里的脏标记会检测 focused_ 变化，无需手动调用
 }
 
 void Button::refreshShape() {
     const auto& style = getButtonStyle();
+
+    // ⭐ 脏标记：size / focus / style 都没变则跳过
+    if (size_ == lastShapeSize_
+        && focused_ == lastShapeFocused_
+        && style.cornerRadius == lastShapeCorner_
+        && style.outlineThickness == lastShapeOutline_) {
+        return;
+    }
+
     float maxR = std::min(size_.x, size_.y) / 2.f;
     float r = std::clamp(style.cornerRadius, 0.f, maxR);
 
@@ -86,6 +99,12 @@ void Button::refreshShape() {
     float outline = style.outlineThickness;
     if (focused_) outline = std::max(outline, 4.f);
     shape_.setOutlineThickness(outline);
+
+    // ⭐ 记录本次状态
+    lastShapeSize_    = size_;
+    lastShapeFocused_ = focused_;
+    lastShapeCorner_  = style.cornerRadius;
+    lastShapeOutline_ = style.outlineThickness;
 }
 
 void Button::updateColors(float dt) {
@@ -110,15 +129,25 @@ void Button::updateColors(float dt) {
         return;
     }
 
+    // ⭐ 目标未变则跳过插值（省去 exp / lerp）
+    if (currentFill_ == targetFill
+        && currentOutline_ == targetOutline
+        && currentText_ == targetText) {
+        return;
+    }
+
     currentFill_    = Anim::approach(currentFill_,    targetFill,    dt);
     currentOutline_ = Anim::approach(currentOutline_, targetOutline, dt);
     currentText_    = Anim::approach(currentText_,    targetText,    dt);
 }
 
-void Button::centerText() {
+void Button::recomputeTextOrigin() {
     auto b = text_.getLocalBounds();
     text_.setOrigin({b.position.x + b.size.x / 2.f,
                      b.position.y + b.size.y / 2.f});
+}
+
+void Button::updateTextPosition() {
     text_.setPosition({position_.x + size_.x / 2.f,
                        position_.y + size_.y / 2.f});
 }
@@ -163,18 +192,7 @@ void Button::render(sf::RenderTarget& target) {
     float dt = animClock_.restart().asSeconds();
     updateColors(dt);
 
-    // ⭐ 只在 size / focus / style 变化时重建形状
-    const auto& style = getButtonStyle();
-    if (size_ != lastShapeSize_ ||
-        focused_ != lastShapeFocused_ ||
-        style.cornerRadius != lastShapeCorner_ ||
-        style.outlineThickness != lastShapeOutline_) {
-        refreshShape();
-        lastShapeSize_ = size_;
-        lastShapeFocused_ = focused_;
-        lastShapeCorner_ = style.cornerRadius;
-        lastShapeOutline_ = style.outlineThickness;
-    }
+    refreshShape();   // 内部有脏标记，未变则早退
 
     shape_.setFillColor(currentFill_);
     shape_.setOutlineColor(currentOutline_);

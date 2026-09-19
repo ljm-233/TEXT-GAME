@@ -31,7 +31,8 @@ public:
 
 private:
     bool contains(sf::Vector2f point) const;
-    void centerText();
+    void recomputeTextOrigin();   // 只在 setSize / setText / 构造时调
+    void updateTextPosition();    // 只在 setPosition / setSize / setText 时调
     void refreshShape();
     void updateColors(float dt);
 

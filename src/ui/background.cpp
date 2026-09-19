@@ -93,11 +93,15 @@ void Background::fitToWindow(unsigned windowWidth, unsigned windowHeight) {
 void Background::render(sf::RenderTarget& target) {
     if (!loaded_ || !sprite_)
         return;
-    auto size = target.getSize();
-    if (size.x != lastW_ || size.y != lastH_) {
-        fitToWindow(size.x, size.y);
-        lastW_ = size.x;
-        lastH_ = size.y;
+    // ⭐ 用 view 尺寸推导逻辑尺寸（render 缩放下 getSize 返回 framebuffer 像素）
+    auto vs = target.getView().getSize();
+    unsigned lw = static_cast<unsigned>(vs.x);
+    unsigned lh = static_cast<unsigned>(vs.y);
+    if (lw == 0 || lh == 0) return;
+    if (lw != lastW_ || lh != lastH_) {
+        fitToWindow(lw, lh);
+        lastW_ = lw;
+        lastH_ = lh;
     }
     target.draw(*sprite_);
 }

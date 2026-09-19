@@ -6,19 +6,14 @@
 #include "text_input.h"
 #include "preferences.h"
 #include "runtime_config.h"
-#include "text_strings.h"
 #include "window.h"
 #include "resolution.h"
 #include "confirm_dialog.h"
 #include "theme.h"
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
-#include "ui_scale.h"
-#include "utf8.h"
 #include "toggle_row.h"
 #include "multi_row.h"
+#include <memory>
+#include <vector>
 
 class SettingsScene : public Scene {
 public:
@@ -44,9 +39,10 @@ private:
     // ===== 应用状态 =====
     void refreshLabels();
     void refreshSelection();
-    void syncFocus();              // ⭐ 新增
+    void syncFocus();
     void applyResolution();
     void applyFullscreen();
+    void applyWindowMode();
     void applyVsync();
     void applyAntiAliasing();
     void applyLogLevel();
@@ -75,14 +71,16 @@ private:
     void resetAllPreferences();
 
     // ===== 渲染子函数 =====
-    void  renderTabs         (Window& window);
+    void renderTabs         (Window& window);
     float renderDisplayTab   (Window& window, float contentX, float ctrlX, float y);
     float renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
     float renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
     float renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
     float renderKeysTab      (Window& window, float contentX, float ctrlX, float y);
     float renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
-    void  renderBackButton   (Window& window);
+
+    // ⭐ 设计坐标系 View（UI 整体缩放）
+    void updateDesignView();
 
     // ===== 依赖 =====
     std::shared_ptr<Background>    background_;
@@ -96,143 +94,124 @@ private:
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
     // ================= Display =================
-    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;   // 2 个 Toggle
-    std::vector<std::unique_ptr<MultiRow>>  displayMultiRows_; // 4 个 Multi
+    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;
+    std::vector<std::unique_ptr<MultiRow>>  displayMultiRows_;
     // [0] Resolution  [1] AntiAliasing  [2] LogLevel  [3] FpsLimit
 
     // ================= Interface =================
-    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;   // 4 个 Toggle
-    std::vector<std::unique_ptr<MultiRow>>  interfaceMultiRows_; // 10 个 Multi
+    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;
+    std::vector<std::unique_ptr<MultiRow>>  interfaceMultiRows_;
     // [0] FpsPos  [1] FpsFormat  [2] UiScale  [3] Theme  [4] Language
     // [5] ClockPos  [6] ConsoleFont  [7] ConsoleHistory
     // [8] ConsoleLineHeight  [9] ConsolePrompt
     std::unique_ptr<Button> wallpaperButton_;
-
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
 
     // ================= Graphics =================
-    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;   // 9 个 Toggle
-    std::vector<std::unique_ptr<MultiRow>>  graphicsMultiRows_; // 5 个 Multi
+    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;
+    std::vector<std::unique_ptr<MultiRow>>  graphicsMultiRows_;
     // [0] InitialLives  [1] AnimationSpeed  [2] NotificationPos
     // [3] ButtonCorner  [4] ButtonOutline
 
     // ================= Audio =================
+    std::vector<std::unique_ptr<ToggleRow>> audioToggles_;
+    // [0] Sound  [1] BGM  [2] Gamepad
     std::unique_ptr<Slider> masterVolumeSlider_;
-    std::vector<std::unique_ptr<ToggleRow>> audioToggles_;   // ⭐ 3 个 Toggle
     std::unique_ptr<Slider> soundVolumeSlider_;
     std::unique_ptr<Slider> bgmVolumeSlider_;
 
     // ================= Keys =================
-    std::vector<std::unique_ptr<Button>> keyBindingButtons_;   // 5 个动作的按钮
-    int listeningAction_ = -1;                                 // -1 = 不在监听
+    std::vector<std::unique_ptr<Button>> keyBindingButtons_;
+    int listeningAction_ = -1;
 
     // ================= Other =================
-    std::vector<std::unique_ptr<ToggleRow>> otherToggles_;   // ⭐ 2 个 Toggle
-    std::vector<std::unique_ptr<MultiRow>> otherMultiRows_;  // ⭐ 2 个 Multi（logRotate / logKeep）
+    std::vector<std::unique_ptr<ToggleRow>> otherToggles_;
+    // [0] RememberSize  [1] AutoPause
+    std::vector<std::unique_ptr<MultiRow>>  otherMultiRows_;
+    // [0] LogRotate  [1] LogKeep
+    std::unique_ptr<TextInput> playerNameInput_;
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
-    std::unique_ptr<TextInput> playerNameInput_;
 
     std::unique_ptr<Button> backButton_;
     std::unique_ptr<ConfirmDialog> resetConfirm_;
     std::unique_ptr<ConfirmDialog> aboutDialog_;
 
-    // ================= 标签 =================
+    // ================= 标题 / 标签 =================
     sf::Text headingDisplay_, headingInterface_, headingGraphics_;
     sf::Text headingAudio_, headingKeys_, headingOther_;
 
-    sf::Text labelResolution_, labelFullscreen_, labelVsync_;
-    sf::Text labelAntiAliasing_, labelLogLevel_, labelFpsLimit_;
-
-    sf::Text labelFps_, labelFpsPos_, labelFpsFormat_, labelUiScale_;
-    sf::Text labelTheme_, labelLanguage_, labelWallpaper_;
-    sf::Text labelClock_, labelClockPos_;
+    sf::Text labelWallpaper_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
-    sf::Text labelConsoleFont_, labelConsoleHistory_;
-    sf::Text labelConsoleLineHeight_, labelConsoleAutoScroll_;
-    sf::Text labelConsoleBlink_, labelConsolePrompt_;
-
-    sf::Text labelAnimation_, labelAnimationSpeed_;
-    sf::Text labelNotification_, labelNotificationPos_;
-    sf::Text labelPseudo3D_, labelParallax_;
-    sf::Text labelPlayerAnim_, labelLevelIntro_;
-    sf::Text labelInitialLives_;
-    sf::Text labelParticles_, labelScreenShake_, labelShowColliders_;
-    sf::Text labelButtonCorner_, labelButtonOutline_;
-
-    sf::Text labelMasterVolume_;
-    sf::Text labelSound_, labelSoundVolume_;
-    sf::Text labelBGM_, labelBGMVolume_;
-    sf::Text labelGamepad_;
-
-    sf::Text labelRememberSize_, labelAutoPause_;
-    sf::Text labelLogRotate_, labelLogKeep_, labelPlayerName_;
+    sf::Text labelMasterVolume_, labelSoundVolume_, labelBGMVolume_;
+    sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
 
     // ================= 状态 =================
-    int     selectedResolution_;
-    bool    fullscreen_;
-    bool    vsync_;
-    int     antiAliasingLevel_;
-    int     logLevel_;
-    int     fpsLimit_;
+    int     selectedResolution_ = 0;
+    bool    fullscreen_         = false;
+    bool    vsync_              = true;
+    int     antiAliasingLevel_  = 8;
+    int     logLevel_           = 2;
+    int     fpsLimit_           = 60;
 
-    bool    showFps_;
-    int     fpsPosition_;
-    int     fpsFormat_;
-    float   uiScale_;
-    ThemeId themeId_;
-    int     languageIdx_ = 0;
-    bool    showClock_;
-    int     clockPosition_;
-    int     consoleMask_;
-    int     consolePanelAlpha_;
-    int     consoleFontSize_;
-    int     consoleHistoryLines_;
-    int     consoleLineHeight_;
-    bool    consoleAutoScroll_;
-    bool    consoleBlinkCursor_;
-    int     consolePrompt_;
+    bool    showFps_            = false;
+    int     fpsPosition_        = 1;
+    int     fpsFormat_          = 1;
+    float   uiScale_            = 1.0f;
+    float   fontScale_          = 1.0f;
+    float   renderScale_        = 1.0f;
+    ThemeId themeId_            = ThemeId::Dark;
+    int     languageIdx_        = 0;
+    bool    showClock_          = false;
+    int     clockPosition_      = 0;
+    int     consoleMask_        = 160;
+    int     consolePanelAlpha_  = 220;
+    int     consoleFontSize_    = 18;
+    int     consoleHistoryLines_= 200;
+    int     consoleLineHeight_  = 26;
+    bool    consoleAutoScroll_  = true;
+    bool    consoleBlinkCursor_ = true;
+    int     consolePrompt_      = 0;
 
-    bool    animationEnabled_;
-    int     animationSpeedIndex_;
-    bool    notificationEnabled_;
-    int     notificationPosition_;
-    bool    pseudo3D_;
-    bool    parallaxEnabled_;
-    bool    playerAnimEnabled_;
-    bool    levelIntroEnabled_;
-    bool    particlesEnabled_;
-    bool    screenShake_;
-    bool    showColliders_;
-    float   buttonCorner_;
-    float   buttonOutline_;
-    int     initialLives_;
+    bool    animationEnabled_   = true;
+    int     animationSpeedIndex_= 1;
+    bool    notificationEnabled_= true;
+    int     notificationPosition_= 1;
+    bool    pseudo3D_           = true;
+    bool    parallaxEnabled_    = true;
+    bool    playerAnimEnabled_  = true;
+    bool    levelIntroEnabled_  = true;
+    bool    particlesEnabled_   = true;
+    bool    screenShake_        = true;
+    bool    showColliders_      = false;
+    float   buttonCorner_       = 6.f;
+    float   buttonOutline_      = 2.f;
+    int     initialLives_       = 1;
 
-    float   masterVolume_;
-    bool    soundEnabled_;
-    float   soundVolume_;
-    bool    bgmEnabled_;
-    float   bgmVolume_;
-    bool    gamepadEnabled_;
+    float   masterVolume_       = 1.0f;
+    bool    soundEnabled_       = true;
+    float   soundVolume_        = 0.6f;
+    bool    bgmEnabled_         = true;
+    float   bgmVolume_          = 0.4f;
+    bool    gamepadEnabled_     = true;
 
-    bool    rememberSize_;
-    bool    autoPauseOnBlur_;
-    int     logRotateIndex_;
-    int     logKeepIndex_;
+    int     windowMode_         = 0;   // 0=窗口 1=最大化 2=全屏
+    bool    rememberSize_       = true;
+    bool    autoPauseOnBlur_    = true;
+    int     logRotateIndex_     = 0;
+    int     logKeepIndex_       = 1;
 
     SceneId nextScene_ = SceneId::None;
-
-    // 语言版本追踪：语言变化时刷新所有 UI 文字
     int lastLangVersion_ = -1;
 
-    // ⭐ 小屏布局缩放 + 滚动
-    float layoutScale_       = 1.0f;   // 根据窗口高度算
-    float contentScroll_     = 0.f;    // 当前滚动偏移（像素）
-    float contentTotalH_     = 0.f;    // 当前 Tab 内容总高度
-    float contentViewTop_    = 0.f;    // 内容区可见范围顶部
-    float contentViewH_      = 0.f;    // 可用高度
-    float lastWinH_          = 0.f;    // 用于检测窗口尺寸变化
-    sf::FloatRect contentClipRect_;    // 内容区裁剪范围（用于 scissor/手动裁剪）
+    // ⭐ 设计坐标系（固定 1280×720，由 View 缩放到窗口）
+    sf::View designView_;
+    static constexpr float kDesignW = 1280.f;
+    static constexpr float kDesignH = 720.f;
+    // ⭐ uiScale > 1.0 时内容溢出，滚轮可上下平移
+    float contentScroll_ = 0.f;
+    float contentTotalH_ = 0.f;   // 上一帧内容底部 y
+    int upscaleMode_ = 1;   // 0=关 1=双三次
 };

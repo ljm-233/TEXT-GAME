@@ -131,8 +131,8 @@ void Game::updateWindowTitle(const Scene& scene) {
 }
 
 void Game::renderOverlays() {
-    auto& rt = window_->native();
-    auto winSize = rt.getSize();
+    auto& rt = window_->target();
+    auto winSize = window_->native().getSize();   // ⭐ 逻辑尺寸
     float winW = static_cast<float>(winSize.x);
     float winH = static_cast<float>(winSize.y);
 
@@ -274,10 +274,14 @@ void Game::run() {
         // 每帧检测标题变化
         updateWindowTitle(scene);
 
+        // ⭐ 渲染缩放：beginFrame → 绘制 → endFrame
+        window_->beginFrame();
+
         scene.render(*window_);
 
         renderOverlays();
-        window_->display();
+
+        window_->endFrame();
 
         SceneId next = scene.nextScene();
         if (next != SceneId::None && next != sceneManager_->currentId()) {

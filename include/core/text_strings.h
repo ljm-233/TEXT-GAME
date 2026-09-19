@@ -46,6 +46,18 @@ constexpr const char* LabelAntiAliasing = "抗锯齿";
 constexpr const char* LabelLogLevel = "日志级别";
 constexpr const char* LabelFps = "帧率显示";
 constexpr const char* LabelUiScale = "界面缩放";
+constexpr const char* LabelFontScale = "字体缩放";
+constexpr const char* LabelRenderScale = "渲染缩放";
+constexpr const char* LabelUpscaleMode = "超分辨率";
+constexpr const char* UpscaleOff      = "关";
+constexpr const char* UpscaleBicubic  = "双三次";
+constexpr const char* UpscaleFsr1     = "FSR1";
+constexpr const char* RenderScale100   = "100%";
+constexpr const char* RenderScale75    = "75%";
+constexpr const char* RenderScale50    = "50%";
+constexpr const char* RenderScale33    = "33%";
+constexpr const char* RenderScale25    = "25%";
+constexpr const char* RenderScale10    = "10%";
 constexpr const char* LabelConsoleMask = "控制台遮罩";
 constexpr const char* LabelConsoleFont = "控制台字号";
 constexpr const char* LabelConsoleHistory = "控制台历史";
@@ -325,5 +337,10 @@ constexpr const char* KeyActionPause   = "暂停";
 constexpr const char* KeyActionRestart = "重开";
 constexpr const char* KeyPressNew      = "按下新键...";
 constexpr const char* KeyBindHint      = "点击按钮后按新键绑定，Esc 取消";
+
+constexpr const char* LabelWindowMode = "窗口模式";
+constexpr const char* WinModeWindowed = "窗口";
+constexpr const char* WinModeMaximized = "最大化";
+constexpr const char* WinModeFullscreen = "全屏";
 
 } // namespace Str

@@ -252,9 +252,9 @@ bool Console::isShutdown() const {
 }
 
 void Console::render(sf::RenderTarget& target) {
-    auto size = target.getSize();
-    float w = static_cast<float>(size.x);
-    float h = static_cast<float>(size.y);
+    auto vs = target.getView().getSize();
+    float w = vs.x;
+    float h = vs.y;
 
     const float margin = 24.f;
     const float lineH = static_cast<float>(lineHeight_);

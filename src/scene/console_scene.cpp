@@ -281,8 +281,8 @@ void ConsoleScene::handleEvent(const sf::Event& event) {
 void ConsoleScene::update(float /*dt*/) {}
 
 void ConsoleScene::render(Window& window) {
-    auto& rt = window.native();
-    auto size = rt.getSize();
+    auto& rt = window.target();
+    auto size = window.native().getSize();
     float w = static_cast<float>(size.x);
     float h = static_cast<float>(size.y);
 

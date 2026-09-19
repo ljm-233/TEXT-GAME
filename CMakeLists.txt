@@ -51,27 +51,6 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options(-finput-charset=UTF-8 -fexec-charset=UTF-8)
     endif()
 endif()
-
-# ============================================================
-# 老设备优化（Atom N455 / 低端 x86）
-#   开启后：
-#     - 从 -O3 降级到 -O2，减少代码膨胀，降低 I-cache 压力
-#     - -march=bonnell 针对 Intel Atom (Bonnell 微架构) 生成代码
-#     - -flto 链接时优化
-#   用 cmake --preset release-legacy 或 -DLEGACY_BUILD=ON 开启
-# ============================================================
-option(LEGACY_BUILD "Optimize for low-end CPUs (Atom N455 etc.)" OFF)
-if(LEGACY_BUILD AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message(STATUS "=== 启用老设备优化（Atom Bonnell）===")
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-march=bonnell -mtune=bonnell -O2)
-        add_link_options(-flto=auto)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        add_compile_options(-march=bonnell -mtune=bonnell -O2 -flto)
-    endif()
-    add_compile_definitions(TEXTGAME_LEGACY_BUILD=1)
-endif()
-
 # ============================================================
 # Sanitizer（-DSANITIZE=ON 开启）
 # ============================================================

@@ -614,8 +614,8 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
 }
 
 void GameScene::render(Window& window) {
-    auto& rt = window.native();
-    auto winSize = rt.getSize();
+    auto& rt = window.target();
+    auto winSize = window.native().getSize();
     float winW = static_cast<float>(winSize.x);
     float winH = static_cast<float>(winSize.y);
 

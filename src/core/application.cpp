@@ -56,6 +56,7 @@ void Application::registerDependencies() {
         auto prefs = container_.resolve<Preferences>();
 
         setUiScale(static_cast<float>(prefs->getDouble("ui_scale", 1.0)));
+        setFontScale(static_cast<float>(prefs->getDouble("font_scale", 1.0)));
         setTheme(static_cast<ThemeId>(prefs->getInt("theme", 0)));
 
         ButtonStyle bs;
@@ -161,6 +162,18 @@ void Application::registerDependencies() {
             std::make_shared<Window>(w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
         win->setVsync(vsync);
         win->setFramerateLimit(static_cast<unsigned>(fpsLimit));
+        win->setRenderScale(static_cast<float>(prefs->getDouble("render_scale", 1.0)));
+
+        // ⭐ 加载超分 shader（失败则自动回退到双线性）
+        auto paths = container_.resolve<Paths>();
+        win->loadUpscaler((paths->assetsDir() / "shaders").string());
+        win->setUpscaleMode(prefs->getInt("upscale_mode", 1));
+
+        // ⭐ 启动时根据 window_mode 决定窗口状态
+        int wmode = prefs->getInt("window_mode", 0);
+        if (wmode == 1 && !fs) {
+            win->requestMaximize();
+        }
         return win;
     });
 

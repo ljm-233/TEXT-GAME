@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
 VERSION="0.1.0"
-BUILD_DIR="$ROOT/build/release-package"
+BUILD_DIR="${TEXTGAME_BUILD_DIR:-$ROOT/build/release-package}"
 APP_NAME="TEXT-GAME"
 APP_ID="text-game"
 APPDIR="$ROOT/build/AppDir"

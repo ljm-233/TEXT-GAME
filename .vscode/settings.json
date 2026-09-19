@@ -4,10 +4,7 @@
         "--background-index",
         "--clang-tidy"
     ],
-    "C_Cpp.intelliSenseEngine": "disabled",
-    "files.associations": {
-        "*.tcc": "cpp",
-        "*.inc": "cpp"
-    },
-    "files.encoding": "utf8"
+    "cmake.configurePreset": "debug",
+    "cmake.buildPreset": "debug",
+    "cmake.useCMakePresets": "always"
 }

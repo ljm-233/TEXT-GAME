@@ -1,5 +1,12 @@
 #include "window.h"
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <algorithm>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -92,7 +99,7 @@ void Window::close() {
     window_.close();
 }
 void Window::clear() {
-    window_.clear(sf::Color::Black);
+    target().clear(sf::Color::Black);
 }
 void Window::display() {
     window_.display();
@@ -113,7 +120,7 @@ bool Window::isKeyPressed(sf::Keyboard::Key key) const {
 }
 
 void Window::draw(const sf::Drawable& drawable) {
-    window_.draw(drawable);
+    target().draw(drawable);
 }
 
 void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
@@ -150,4 +157,95 @@ sf::RenderWindow& Window::native() {
 
 bool Window::isFocused() const {
     return window_.hasFocus();
+}
+
+void Window::requestMaximize() {
+#if defined(_WIN32)
+    HWND hwnd = reinterpret_cast<HWND>(window_.getNativeHandle());
+    ShowWindow(hwnd, SW_MAXIMIZE);
+#else
+    // Linux / macOS：撑满桌面分辨率（Wayland 下可能被 compositor 忽略）
+    auto mode = sf::VideoMode::getDesktopMode();
+    window_.setSize({mode.size.x, mode.size.y});
+#endif
+}
+// ============================================================
+// 渲染缩放
+// ============================================================
+
+void Window::setRenderScale(float s) {
+    s = std::clamp(s, 0.10f, 1.0f);
+    if (std::abs(s - renderScale_) < 0.01f) return;
+    renderScale_ = s;
+    rtNeedsResize_ = true;
+}
+
+void Window::loadUpscaler(const std::string& shaderDir) {
+    upscaler_.load(shaderDir);
+    upscaleLoaded_ = true;
+}
+
+sf::RenderTarget& Window::target() {
+    if (renderScale_ >= 0.99f) return window_;
+    return rt_;
+}
+
+void Window::beginFrame() {
+    if (renderScale_ >= 0.99f) return;
+
+    auto winSize = window_.getSize();
+    if (winSize.x == 0 || winSize.y == 0) return;
+
+    unsigned rw = std::max(1u, static_cast<unsigned>(winSize.x * renderScale_));
+    unsigned rh = std::max(1u, static_cast<unsigned>(winSize.y * renderScale_));
+
+    if (rtNeedsResize_ || rt_.getSize() != sf::Vector2u{rw, rh}) {
+        if (!rt_.resize({rw, rh})) {
+            renderScale_ = 1.0f;   // 失败回退
+            return;
+        }
+        rtNeedsResize_ = false;
+    }
+
+    // ⭐ rt 逻辑坐标系 = 窗口尺寸（draw 调用仍用逻辑坐标）
+    rt_.setView(sf::View(sf::FloatRect(
+        {0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
+}
+
+void Window::endFrame() {
+    if (renderScale_ >= 0.99f) {
+        window_.display();
+        return;
+    }
+    rt_.display();
+
+    auto winSize = window_.getSize();
+    auto rtSize  = rt_.getSize();
+    if (rtSize.x == 0 || rtSize.y == 0 || winSize.x == 0 || winSize.y == 0) {
+        window_.display();
+        return;
+    }
+
+    window_.setView(window_.getDefaultView());
+
+    // ⭐ 优先用超分 shader，失败或未加载则普通 sprite 缩放
+    if (upscaleLoaded_ && upscaler_.isLoaded()) {
+        upscaler_.draw(window_, rt_.getTexture(), rtSize, winSize);
+    } else {
+        sf::Sprite s(rt_.getTexture());
+        s.setScale({
+            static_cast<float>(winSize.x) / static_cast<float>(rtSize.x),
+            static_cast<float>(winSize.y) / static_cast<float>(rtSize.y)
+        });
+        window_.draw(s);
+    }
+    window_.display();
+}
+
+void Window::setUpscaleMode(int mode) {
+    upscaler_.setMode(mode);
+}
+
+int Window::getUpscaleMode() const {
+    return upscaler_.getMode();
 }

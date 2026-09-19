@@ -33,6 +33,7 @@ private:
     Button exitButton_;
 
     float elapsed_ = 0.f;
+    float lastCx_  = -1.f;
     static constexpr float kButtonDelay = 0.10f;
     static constexpr float kButtonRise  = 0.4f;
 

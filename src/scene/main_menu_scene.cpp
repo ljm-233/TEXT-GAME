@@ -27,6 +27,7 @@ void MainMenuScene::refreshLabels() {
 void MainMenuScene::onEnter() {
     nextScene_ = SceneId::None;
     elapsed_ = 0.f;
+    lastCx_  = -1.f;   // ⭐ 重置，保证下次进来重新算位置
     refreshLabels();
     FocusGroup::instance().setItems({
         &startButton_, &levelSelectButton_, &editorButton_,
@@ -36,6 +37,7 @@ void MainMenuScene::onEnter() {
 
 void MainMenuScene::onResume() {
     nextScene_ = SceneId::None;
+    lastCx_  = -1.f;   // ⭐ 从其他场景返回时也重新算位置（分辨率可能变了）
     refreshLabels();
     FocusGroup::instance().setItems({
         &startButton_, &levelSelectButton_, &editorButton_,
@@ -83,7 +85,7 @@ void MainMenuScene::update(float dt) {
 
 void MainMenuScene::render(Window& window) {
     window.clear();
-    if (background_) background_->render(window.native());
+    if (background_) background_->render(window.target());
 
     auto size = window.native().getSize();
     float cx = static_cast<float>(size.x) / 2.f;
@@ -99,14 +101,24 @@ void MainMenuScene::render(Window& window) {
         &calculatorButton_, &settingsButton_, &exitButton_
     };
 
+    // ⭐ 动画结束时刻 + 窗口尺寸变化判断
+    const float animEnd =
+        static_cast<float>(kCount - 1) * kButtonDelay + kButtonRise + 0.1f;
+    const bool animDone    = elapsed_ > animEnd;
+    const bool sizeChanged = (cx != lastCx_);
+
     for (int i = 0; i < kCount; ++i) {
         float targetY = startY + static_cast<float>(i) * (btnH + gap);
 
-        float delay = static_cast<float>(i) * kButtonDelay;
-        float t = std::clamp((elapsed_ - delay) / kButtonRise, 0.f, 1.f);
-        float yOffset = (1.f - t) * 80.f;
+        if (!animDone || sizeChanged) {
+            float delay = static_cast<float>(i) * kButtonDelay;
+            float t = std::clamp((elapsed_ - delay) / kButtonRise, 0.f, 1.f);
+            float yOffset = (1.f - t) * 80.f;
+            btns[i]->setPosition({cx - btnW / 2.f, targetY + yOffset});
+        }
 
-        btns[i]->setPosition({cx - btnW / 2.f, targetY + yOffset});
-        btns[i]->render(window.native());
+        btns[i]->render(window.target());
     }
+
+    lastCx_ = cx;
 }

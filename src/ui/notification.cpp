@@ -38,9 +38,9 @@ void NotificationSystem::render(sf::RenderTarget& target) {
     if (!enabled_ || !font_ || queue_.empty())
         return;
 
-    auto winSize = target.getSize();
-    float w = static_cast<float>(winSize.x);
-    float h = static_cast<float>(winSize.y);
+    auto vs = target.getView().getSize();
+    float w = vs.x;
+    float h = vs.y;
 
     const float width = kWidth;
     const float height = kHeight;

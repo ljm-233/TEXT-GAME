@@ -134,7 +134,7 @@ void LevelSelectScene::render(Window& window) {
     refreshLabels();
     
     window.clear();
-    if (background_) background_->render(window.native());
+    if (background_) background_->render(window.target());
 
     auto size = window.native().getSize();
     float w = static_cast<float>(size.x);
@@ -146,7 +146,7 @@ void LevelSelectScene::render(Window& window) {
         titleText_.setOrigin({b.position.x + b.size.x / 2.f,
                               b.position.y + b.size.y / 2.f});
         titleText_.setPosition({cx, 80.f});
-        window.native().draw(titleText_);
+        window.target().draw(titleText_);
     }
 
     {
@@ -154,7 +154,7 @@ void LevelSelectScene::render(Window& window) {
         saveNameText_.setOrigin({b.position.x + b.size.x / 2.f,
                                  b.position.y + b.size.y / 2.f});
         saveNameText_.setPosition({cx, 150.f});
-        window.native().draw(saveNameText_);
+        window.target().draw(saveNameText_);
     }
 
     if (!hasSave_) {
@@ -162,7 +162,7 @@ void LevelSelectScene::render(Window& window) {
         hintText_.setOrigin({b.position.x + b.size.x / 2.f,
                              b.position.y + b.size.y / 2.f});
         hintText_.setPosition({cx, h / 2.f});
-        window.native().draw(hintText_);
+        window.target().draw(hintText_);
     } else {
         const float btnSize  = 120.f;
         const float gapX     = 30.f;
@@ -181,7 +181,7 @@ void LevelSelectScene::render(Window& window) {
             float y = h / 2.f - 60.f + row * (btnSize + gapY);
 
             levelButtons_[i]->setPosition({x, y});
-            levelButtons_[i]->render(window.native());
+            levelButtons_[i]->render(window.target());
 
             int stars = 0;
             if (i < static_cast<int>(save_.levelStars.size())) {
@@ -221,11 +221,11 @@ void LevelSelectScene::render(Window& window) {
                     x + btnSize * 0.5f,
                     y + btnSize + 6.f
                 });
-                window.native().draw(starText_);
+                window.target().draw(starText_);
             }
         }
     }
 
     backButton_->setPosition({cx - 90.f, h - 100.f});
-    backButton_->render(window.native());
+    backButton_->render(window.target());
 }

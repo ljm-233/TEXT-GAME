@@ -881,8 +881,8 @@ void EditorScene::update(float dt) {
 // ============================================================
 
 void EditorScene::render(Window& window) {
-    auto& rt = window.native();
-    auto winSize = rt.getSize();
+    auto& rt = window.target();
+    auto winSize = window.native().getSize();
     lastWinSize_ = winSize;
 
     float winW = static_cast<float>(winSize.x);
