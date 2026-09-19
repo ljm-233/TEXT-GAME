@@ -6,6 +6,7 @@
 #include "keybindings.h"
 #include "game_constants.h"
 #include "focus_group.h"
+#include "gamepad.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -24,6 +25,20 @@ namespace {
 // ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
 constexpr float kBaseTime = 30.f;
 constexpr float kPerCoinTime = 3.f;
+
+// ⭐ 作用域计时器（EMA 平滑写入）
+struct ScopeTimer {
+    using Clock = std::chrono::high_resolution_clock;
+    Clock::time_point t0;
+    float& out;
+    explicit ScopeTimer(float& target)
+        : t0(Clock::now()), out(target) {}
+    ~ScopeTimer() {
+        auto t1 = Clock::now();
+        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        out = out * 0.9f + ms * 0.1f;
+    }
+};
 }
 
 GameScene::GameScene(std::shared_ptr<Background>  background,
@@ -42,10 +57,14 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
       overlaySubHint_(font, sf::String(), 20),
       overlayTime_(font, sf::String(), 22),
       overlayStars_(font, sf::String(), 56),
-      debugText_(font, sf::String(), 14) {
+      debugText_(font, sf::String(), 14),
+      perfText_(font, sf::String(), 14) {
     debugText_.setFillColor(sf::Color(255, 255, 130));
     debugText_.setOutlineThickness(2.f);
     debugText_.setOutlineColor(sf::Color(0, 0, 0, 200));
+    perfText_.setFillColor(sf::Color(160, 240, 255));
+    perfText_.setOutlineThickness(2.f);
+    perfText_.setOutlineColor(sf::Color(0, 0, 0, 200));
 
     hudText_.setFillColor(sf::Color::White);
     overlayTitle_.setFillColor(sf::Color(255, 255, 255));
@@ -107,6 +126,7 @@ void GameScene::subscribeWorldEvents() {
 
         std::visit([this, particlesOn](const auto& ev) {
             using T = std::decay_t<decltype(ev)>;
+            auto& gp = Gamepad::instance();
 
             if constexpr (std::is_same_v<T, EvJumped>) {
                 SoundManager::instance().playJump();
@@ -114,23 +134,32 @@ void GameScene::subscribeWorldEvents() {
             } else if constexpr (std::is_same_v<T, EvLanded>) {
                 SoundManager::instance().playLand();
                 if (particlesOn) world_->particles().emitLand(ev.pos, ev.intensity);
+                // ⭐ 重落地才振动
+                if (ev.intensity > 1.0f) {
+                    gp.vibrate(0.f, 0.20f, 0.05f);
+                }
             } else if constexpr (std::is_same_v<T, EvCoined>) {
                 SoundManager::instance().playCoin();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
+                gp.vibrate(0.f, 0.15f, 0.03f);
             } else if constexpr (std::is_same_v<T, EvStomped>) {
                 SoundManager::instance().playStomp();
                 if (particlesOn) world_->particles().emitStomp(ev.pos);
                 hitstopTimer_ = 0.06f;
+                gp.vibrate(0.f, 0.30f, 0.08f);
             } else if constexpr (std::is_same_v<T, EvHurt>) {
                 SoundManager::instance().playHurt();
                 if (particlesOn) world_->particles().emitHurt(ev.pos);
                 hitstopTimer_ = 0.04f;
+                gp.vibrate(0.40f, 0.60f, 0.15f);
             } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
                 SoundManager::instance().playCheckpoint();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
+                gp.vibrate(0.f, 0.25f, 0.10f);
             } else if constexpr (std::is_same_v<T, EvJumpPad>) {
                 SoundManager::instance().playJump();
                 if (particlesOn) world_->particles().emitJump(ev.pos);
+                gp.vibrate(0.30f, 0.50f, 0.10f);
             } else if constexpr (std::is_same_v<T, EvLevelComplete>) {
                 finalCoins_      = world_->coins();
                 finalTotalCoins_ = world_->totalCoins();
@@ -139,7 +168,6 @@ void GameScene::subscribeWorldEvents() {
                 saveManager_->updateProgress(save_.filename,
                                              world_->coins(), levelIndex_);
 
-                // ⭐ PB 检测
                 newRecord_ = (prevBestTime_ <= 0.f || levelTime_ < prevBestTime_);
                 if (newRecord_) {
                     saveManager_->setLevelBestTime(save_.filename,
@@ -153,6 +181,9 @@ void GameScene::subscribeWorldEvents() {
                         Str::T(Str::NotifStarSuffix),
                     NotificationType::Success, 5.f);
 
+                // ⭐ 庆祝振动
+                gp.vibrate(0.70f, 0.80f, 0.40f);
+
                 screenFlashTimer_    = 0.35f;
                 screenFlashDuration_ = 0.35f;
                 screenFlashColor_    = sf::Color(120, 255, 150);
@@ -162,7 +193,9 @@ void GameScene::subscribeWorldEvents() {
                     Str::T(Str::NotifLifeExhausted),
                     NotificationType::Error, 4.f);
 
-                // 不闪屏——延迟由 GameWorld 处理
+                // ⭐ 长振
+                gp.vibrate(0.60f, 0.70f, 0.30f);
+
                 levelTime_ = 0.f;
                 lastOverlayState_ = GameWorld::State::Playing;
             }
@@ -318,6 +351,13 @@ bool GameScene::handleDebugKey(sf::Keyboard::Key k) {
             pendingScreenshot_ = true;
             return true;
 
+        case sf::Keyboard::Key::F10:
+            perfHud_ = !perfHud_;
+            NotificationSystem::instance().push(
+                perfHud_ ? "性能面板: 开" : "性能面板: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
         default:
             return false;
     }
@@ -379,6 +419,52 @@ void GameScene::renderDebugHud(sf::RenderTarget& rt, Window& window) {
 
     debugText_.setPosition({12.f + padX - b.position.x, 42.f + padY - b.position.y});
     rt.draw(debugText_);
+}
+
+void GameScene::renderPerfHud(sf::RenderTarget& rt, Window& window,
+                              float winW, float /*winH*/) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2);
+
+    float fps = (perfFrameMs_ > 0.01f) ? (1000.f / perfFrameMs_) : 0.f;
+    float endFrameMs = window.upscalePostMs();
+
+    oss << "性能面板 [F10]\n";
+    oss << "帧时间      " << perfFrameMs_ << " ms";
+    oss << "  (" << std::setprecision(1) << fps << " FPS)\n";
+    oss << std::setprecision(2);
+    oss << "update      " << perfUpdateMs_ << " ms\n";
+    oss << "render      " << perfRenderMs_ << " ms\n";
+    oss << "上采样+后处理 " << endFrameMs << " ms\n";
+    oss << "渲染缩放    " << std::setprecision(0)
+        << static_cast<int>(window.getRenderScale() * 100.f) << "%\n";
+    oss << "超分模式    ";
+    switch (window.getUpscaleMode()) {
+        case 0: oss << "关";       break;
+        case 1: oss << "双三次";   break;
+        case 2: oss << "FSR1";     break;
+        default: oss << "?";       break;
+    }
+
+    perfText_.setString(toSf(oss.str()));
+
+    auto b = perfText_.getLocalBounds();
+    const float padX = 10.f, padY = 8.f;
+    float boxW = b.size.x + padX * 2.f;
+    float boxH = b.size.y + padY * 2.f;
+
+    float bx = winW - boxW - 12.f;
+    float by = 42.f;
+
+    sf::RectangleShape bg({boxW, boxH});
+    bg.setPosition({bx, by});
+    bg.setFillColor(sf::Color(0, 0, 0, 170));
+    bg.setOutlineThickness(1.f);
+    bg.setOutlineColor(sf::Color(160, 220, 255, 180));
+    rt.draw(bg);
+
+    perfText_.setPosition({bx + padX - b.position.x, by + padY - b.position.y});
+    rt.draw(perfText_);
 }
 
 
@@ -682,6 +768,10 @@ void GameScene::handleEvent(const sf::Event& event) {
 }
 
 void GameScene::update(float dt) {
+    // ⭐ 帧时间（含 vsync 等待）+ update 耗时
+    perfFrameMs_ = perfFrameClock_.restart().asSeconds() * 1000.f;
+    ScopeTimer timer(perfUpdateMs_);
+
     if (screenFlashTimer_ > 0.f) screenFlashTimer_ -= dt;
 
     if (paused_) {
@@ -778,6 +868,8 @@ void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH)
 }
 
 void GameScene::render(Window& window) {
+    ScopeTimer timer(perfRenderMs_);
+
     auto& rt = window.target();
     auto winSize = window.native().getSize();
     float winW = static_cast<float>(winSize.x);
@@ -831,6 +923,11 @@ void GameScene::render(Window& window) {
     // ⭐ 调试 HUD
     if (debugHud_) {
         renderDebugHud(rt, window);
+    }
+
+    // ⭐ 性能面板
+    if (perfHud_) {
+        renderPerfHud(rt, window, winW, winH);
     }
 
     if (intro_) intro_->render(rt, winW, winH);

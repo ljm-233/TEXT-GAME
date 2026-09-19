@@ -9,6 +9,7 @@
 #include "sound_manager.h"
 #include "focus_group.h"
 #include "keybindings.h"
+#include "gamepad.h"
 #include <algorithm>
 #include <cmath>
 #include "lang.h"
@@ -197,6 +198,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelMasterVolume_   (font, toSf(Str::LabelMasterVolume),   fontSizeInView(20)),
       labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    fontSizeInView(20)),
       labelBGMVolume_      (font, toSf(Str::LabelBGMVolume),      fontSizeInView(20)),
+      labelVibrationIntensity_(font, toSf(Str::LabelVibrationIntensity), fontSizeInView(20)),
       labelPlayerName_     (font, toSf(Str::LabelPlayerName),     fontSizeInView(20)),
       hintUiScale_         (font, toSf(Str::HintUiScale),         fontSizeInView(14)),
       labelPostSaturation_ (font, toSf(Str::LabelPostSaturation), fontSizeInView(20)),
@@ -300,6 +302,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     for (auto* t : {&labelWallpaper_,
                     &labelConsoleMask_, &labelConsolePanelAlpha_,
                     &labelMasterVolume_, &labelSoundVolume_, &labelBGMVolume_,
+                    &labelVibrationIntensity_,
                     &labelPlayerName_,
                     &labelPostSaturation_, &labelPostContrast_,
                     &labelPostBrightness_, &labelPostGamma_,
@@ -862,6 +865,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     audioToggles_.push_back(makeToggleRow(Str::LabelGamepad, [this](bool v) {
         gamepadEnabled_ = v; refreshSelection(); applyGamepad();
     }));
+    audioToggles_.push_back(makeToggleRow(Str::LabelGamepadVibration, [this](bool v) {
+        gamepadVibrationEnabled_ = v; refreshSelection(); applyGamepadVibration();
+    }));
+
+    gamepadVibrationSlider_ = std::make_unique<Slider>(
+        font_, 0.f, 100.f, gamepadVibrationIntensity_ * 100.f,
+        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    gamepadVibrationSlider_->setDefaultValue(100.f);
 
     // ───────────── Other ─────────────
     otherToggles_.push_back(makeToggleRow(Str::LabelRememberSize, [this](bool v) {
@@ -954,6 +965,7 @@ void SettingsScene::refreshLabels() {
     setLabel(labelMasterVolume_,     Str::LabelMasterVolume);
     setLabel(labelSoundVolume_,      Str::LabelSoundVolume);
     setLabel(labelBGMVolume_,        Str::LabelBGMVolume);
+    setLabel(labelVibrationIntensity_, Str::LabelVibrationIntensity);
     setLabel(labelPlayerName_,       Str::LabelPlayerName);
     setLabel(hintUiScale_,           Str::HintUiScale);
     setLabel(labelPostSaturation_,   Str::LabelPostSaturation);
@@ -1111,10 +1123,11 @@ void SettingsScene::refreshSelection() {
     }
 
     // Audio
-    if (audioToggles_.size() == 3) {
+    if (audioToggles_.size() == 4) {
         setToggleRow(*audioToggles_[0], soundEnabled_);
         setToggleRow(*audioToggles_[1], bgmEnabled_);
         setToggleRow(*audioToggles_[2], gamepadEnabled_);
+        setToggleRow(*audioToggles_[3], gamepadVibrationEnabled_);
     }
 
     // Other
@@ -1294,6 +1307,10 @@ void SettingsScene::applyBGM() {
 void SettingsScene::applyGamepad() {
     preferences_->setBool("gamepad_enabled", gamepadEnabled_);
     FocusGroup::instance().setEnabled(gamepadEnabled_);
+}
+void SettingsScene::applyGamepadVibration() {
+    preferences_->setBool("gamepad_vibration_enabled", gamepadVibrationEnabled_);
+    Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
 }
 void SettingsScene::applyAutoPause()      { preferences_->setBool("auto_pause_on_blur", autoPauseOnBlur_); }
 void SettingsScene::applyConsolePrompt()  { preferences_->setInt("console_prompt", consolePrompt_); }
@@ -1508,6 +1525,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             }
             soundVolumeSlider_->handleEvent(ev);
             bgmVolumeSlider_->handleEvent(ev);
+            gamepadVibrationSlider_->handleEvent(ev);
             break;
         case Tab::Keys: {
             if (listeningAction_ >= 0) {
@@ -1758,6 +1776,12 @@ void SettingsScene::update(float /*dt*/) {
                 bgmVolume_ = bgmVolumeSlider_->value() / 100.f;
                 SoundManager::instance().setMusicVolume(bgmVolume_);
                 preferences_->setDouble("bgm_volume", bgmVolume_);
+            }
+            if (gamepadVibrationSlider_->consumeChanged()) {
+                gamepadVibrationIntensity_ = gamepadVibrationSlider_->value() / 100.f;
+                Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
+                preferences_->setDouble("gamepad_vibration_intensity",
+                                        gamepadVibrationIntensity_);
             }
             break;
         }
@@ -2063,6 +2087,8 @@ float SettingsScene::renderAudioTab(Window& window, float contentX,
     r.toggle(*audioToggles_[1]);   // BGM
     r.slider(labelBGMVolume_,    bgmVolumeSlider_.get());
     r.toggle(*audioToggles_[2]);   // Gamepad
+    r.toggle(*audioToggles_[3]);   // GamepadVibration
+    r.slider(labelVibrationIntensity_, gamepadVibrationSlider_.get());
     return r.y;
 }
 

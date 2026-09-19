@@ -5,7 +5,7 @@
 
 一个用 C++20 和 SFML 3 **从零构建**的 2D 平台跳跃游戏。
 
-不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景栈、配置系统、日志、UI 组件、动画、通知、音效、多语言）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器、关卡验证器）。
+不依赖任何游戏引擎，从物理系统到 UI 组件全部手写。包含完整的引擎层（依赖注入、事件总线、场景栈、配置系统、日志、UI 组件、动画、通知、音效、多语言、渲染管线）和游戏本体（自写 AABB 物理、ASCII 关卡、玩家控制、敌人、金币、移动平台、弹跳板、存档点、关卡编辑器、关卡验证器、可达性可视化）。
 
 ## 🚧 当前状态
 
@@ -19,11 +19,17 @@
 | 物理系统 | ✅ 完成 | AABB 瓦片扫描 / 固定时间步长 / 单一激活存档点 |
 | 摄像机 | ✅ 完成 | 前瞻 / 死区 / 屏幕震动 / 受击停顿 |
 | 存档系统 | ✅ 完成 | 创建 / 删除 / 星级 / 进度 / **每关最佳时间（PB）** |
-| 设置系统 | ✅ 完成 | 6 个 Tab / 50+ 项，含初始生命（1/3/5/10/99） |
+| 设置系统 | ✅ 完成 | 6 个 Tab / 70+ 项，含初始生命（1/3/5/10/99） |
 | 控制台 | ✅ 完成 | streambuf 重定向 / 命令系统 / 计算器 |
-| 关卡编辑器 | ✅ 完成 | 绘制 / 撤销 / 缩放 / 尺寸调整 / 文件切换 / 元素统计 / **分享码导出导入** |
+| 关卡编辑器 | ✅ 完成 | 拖拽绘制 / Shift 矩形 / 撤销 / 缩放 / 分享码 / **可达性可视化** |
+| 关卡验证 | ✅ 完成 | BFS 可达性分析 / 命令行工具 / 编辑器内可视化 |
+| 渲染管线 | ✅ 完成 | 渲染缩放 / 超采样 / 双三次 / FSR1 上采样 |
+| 后处理 | ✅ 完成 | 色彩分级 / 暗角 / 泛光 / 色差 / 颗粒 / 扫描线 / 抖动 / 5 套预设 |
+| 软阴影 | ✅ 完成 | 径向渐变纹理，替代原硬边圆盘 |
+| 调试工具 | ✅ 完成 | F1~F10 快捷键 / 性能面板 / 截图 / 慢动作 / 碰撞盒 |
 | 多语言 | ✅ 完成 | 中文 / 繁體中文 / English / 日本語 / 한국어 |
 | 桌面集成 | ✅ 完成 | Linux AppImage / Windows NSIS 安装包 / 自定义图标 |
+| 手柄振动 | ⚠️ **接口保留** | SFML 3 已移除振动 API，接口和设置项保留待后续接入 |
 | **关卡内容** | ⚠️ **进行中** | 5 个第一版关卡，1~4 关存在可达性问题，待重做 |
 | **测试覆盖** | ⚠️ **部分** | 62 个单元测试用例，纯逻辑覆盖较好，游戏对象部分覆盖 |
 | 开发工具 | ✅ 完成 | Sanitizer / clang-tidy / CMake Presets / 覆盖率 / 关卡验证器 / 硬编码检测 |
@@ -32,10 +38,12 @@
 
 - 部分 UI 控件（SettingsScene / EditorScene）的回归测试靠手动
 - Wayland 下窗口图标无法通过 SFML API 设置（协议限制）
+- 手柄振动因 SFML 3 API 缺失未实现
 
 ### 短期路线
 
 1. 依次重做 `level2~5`
+2. 手柄振动（等 SFML 更新或接入原生 API）
 
 ## 📸 截图
 
@@ -74,7 +82,7 @@
 
 ### 生命与存档
 
-- **初始生命**：在 **设置 → 画面 → 初始生命** 中选择 `1 / 3 / 5 / 10 / 100`
+- **初始生命**：在 **设置 → 画面 → 初始生命** 中选择 `1 / 3 / 5 / 10 / 99`
 - **存档点**：一个关卡内**最多只有一个激活的存档点**。激活新的会自动取消旧的
 - **重生规则**：
   - 掉图 / 被敌人撞 / 踩尖刺后，若还有生命 → 从**最近的存档点**重生
@@ -117,6 +125,88 @@
 #  ...
 ```
 
+### 调试快捷键
+
+游戏内按下列快捷键，无需退出即可调试：
+
+| 键 | 功能 |
+| :--- | :--- |
+| **F1** | 调试 HUD（关卡信息 / 玩家坐标速度 / 鼠标 tile） |
+| **F2** | 无敌开关（重生后保留） |
+| **F3** | 清空所有敌人 |
+| **F4** | 重载当前关卡文件（配合编辑器使用） |
+| **F5** | 上一关 |
+| **F6** | 下一关 |
+| **F7** | 慢动作 1x / 0.5x / 0.25x / 0.1x 循环 |
+| **F8** | 显示所有碰撞盒 |
+| **F9** | 截图到 `./screenshots/` |
+| **F10** | 性能面板（帧时间 / update / render / 上采样耗时） |
+
+## 🎨 画面系统
+
+### 渲染管线
+
+```
+Scene 绘制 ──> RenderTexture (rt_)
+                    │
+                    ├─ renderScale < 1.0 ──> [Upscaler: 双三次/FSR1]
+                    │
+                    ├─ renderScale > 1.0 ──> [超采样降采样]
+                    │
+                    └─ [PostProcessor: 色彩分级 + 泛光 + 色差 + ...]
+                                    │
+                                    v
+                              window.display()
+```
+
+### 超分辨率
+
+`设置 → 界面 → 超分辨率` 三档：
+
+| 模式 | 说明 |
+| :--- | :--- |
+| **关** | 双线性上采样（最省性能） |
+| **双三次** | Catmull-Rom + 轻度锐化 |
+| **FSR1** | Lanczos2 EASU（边缘自适应上采样） |
+
+配合 `渲染缩放`（`10%` ~ `200%`）使用：
+
+- **< 100%**：低分辨率渲染 + 超分上采样 → 性能提升
+- **= 100%**：直接渲染到窗口
+- **> 100%**：超采样渲染 + 降采样 → 抗锯齿
+
+### 后处理
+
+`设置 → 画面` 下方，共 11 个可调项，每项都有滑条、数字输入框、单独重置按钮：
+
+| 效果 | 说明 |
+| :--- | :--- |
+| **饱和度** | 0% = 灰度，100% = 原色，200% = 过饱和 |
+| **对比度** | 50% ~ 200% |
+| **亮度** | 50% ~ 200% |
+| **伽马** | 50% ~ 250% |
+| **暗角** | 屏幕边缘压暗 |
+| **泛光强度** | 高亮区域外扩（金币 / 终点 / 跳台） |
+| **泛光阈值** | 越低越多物体发光 |
+| **色差** | R/B 通道径向偏移（CRT 感） |
+| **胶片颗粒** | 每帧微动的随机噪声 |
+| **扫描线** | 每隔一行变暗（CRT 感） |
+| **抖动** | 4×4 Bayer 矩阵，8-bit 复古质感 |
+
+### 画面预设
+
+`设置 → 画面 → 预设` 一键切换：
+
+| 预设 | 效果 |
+| :--- | :--- |
+| **原版** | 全部归默认（干净） |
+| **复古 CRT** | 色差 + 扫描线 + 暗角 + 颗粒 |
+| **电影感** | 泛光 + 暗角 + 高对比 + 轻色差 |
+| **像素 8-bit** | 抖动 + 扫描线 + 低强度泛光 |
+| **夜晚** | 压暗 + 泛光 + 色差（配合深色主题） |
+
+预设只影响后处理参数，不改动其他画面设置。点预设后可继续手动微调。
+
 ## 🗺 关卡设计规范
 
 ### 玩家能力上限
@@ -142,7 +232,21 @@
 - [ ] 钥匙 `K` 和门 `L` 之间有绕路，不是直线
 - [ ] 存档点 `S` 放在关卡中段，且玩家会自然路过
 
-### 验证关卡
+### 在编辑器里验证
+
+编辑器内按 **T** 打开可达性可视化：
+
+| 颜色 | 含义 |
+| :--- | :--- |
+| 🟢 淡绿 | 从出生点可达的平台顶面 |
+| 🔴 淡红 | 不可达的平台顶面 |
+| 🟩 亮绿 | 可达的金币 / 敌人 / 钥匙 / 门 / 存档 / 跳台 / 终点 |
+| 🟥 亮红 | 不可达的 spawn |
+| 🟦 蓝色 | 玩家出生点 |
+
+一眼就能看出哪块跳不上、哪个金币收不到，不用切场景试玩。
+
+### 命令行验证
 
 ```bash
 ./build/debug/validate_levels assets/levels
@@ -172,8 +276,15 @@ TEXT-GAME/
 │   │   ├── ja.txt
 │   │   ├── ko.txt
 │   │   └── zh-TW.txt
-│   └── levels/               # ASCII 关卡文件
-│       ├── level1.txt ~ level5.txt
+│   ├── levels/               # ASCII 关卡文件
+│   │   ├── level1.txt ~ level5.txt
+│   │   └── editor.txt
+│   └── shaders/              # GLSL 着色器
+│       ├── upscale.frag      # 双三次上采样
+│       ├── fsr1.frag         # FSR1 EASU
+│       ├── postprocess.frag  # 后处理合成
+│       ├── brightpass.frag   # 泛光：亮部提取
+│       └── blur.frag         # 泛光：高斯模糊
 ├── include/
 │   ├── config/               # 配置类（Bootstrap / Runtime / Preferences）
 │   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、text_strings）
@@ -198,8 +309,18 @@ TEXT-GAME/
 │   │   ├── parallax.h        # 视差背景
 │   │   ├── level_intro.h     # 关卡开场文字
 │   │   └── game_world.h      # 游戏世界
-│   ├── scene/                # 6 个场景
-│   └── ui/                   # UI 组件（Button / Slider / Console / SoundManager / Gamepad / KeyBindings / Lang / ...）
+│   ├── scene/                # 7 个场景
+│   └── ui/                   # UI 组件
+│       ├── button.h
+│       ├── slider.h          # 滑条（带数字输入 + 重置按钮）
+│       ├── text_input.h
+│       ├── window.h          # 窗口 + 渲染缩放管线
+│       ├── upscaler.h        # 超分控制器
+│       ├── postprocess.h     # 后处理控制器
+│       ├── console.h
+│       ├── sound_manager.h
+│       ├── gamepad.h         # 手柄（振动接口保留）
+│       └── ...
 ├── packaging/
 │   ├── icons/                # 图标生成脚本 + 生成结果
 │   │   └── generate_icons.py
@@ -236,21 +357,34 @@ TEXT-GAME/
 | 模块 | 职责 |
 | :--- | :--- |
 | **DI 容器** | 统一注册/解析所有依赖，自动缓存单例 |
-| **事件总线** | GameWorld 发出游戏事件（跳跃/落地/金币/踩敌/受伤/...），GameScene 订阅处理音效/粒子。解耦 `game` 层与 `ui` 层 |
+| **事件总线** | GameWorld 发出游戏事件（跳跃/落地/金币/踩敌/受伤/...），GameScene 订阅处理音效/粒子/振动。解耦 `game` 层与 `ui` 层 |
 | **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
 | **配置分层** | Bootstrap / Runtime / Preferences，延迟落盘 |
 | **日志** | 彩色终端 + 文件 + 多级别 + 轮转 + 保留份数 |
 | **多语言** | 用中文原文作 key，运行时查表；支持中/繁中/英/日/韩 |
 | **虚拟终端** | 用 `streambuf` 重定向 `cin`/`cout`，支持命令系统 |
 | **UI 组件** | Button / Slider / TextInput / ConfirmDialog / PauseMenu |
+| **Slider 增强** | 内置数字输入框（回车确认）+ 单滑块重置按钮 |
 | **主题** | 深色 / 蓝色 / 浅色，所有组件自动跟随 |
 | **动画** | 颜色平滑过渡，指数逼近，支持开关和速度 |
 | **通知** | 屏幕角落消息，4 类型 × 4 位置 |
 | **音效** | 程序化生成（正弦扫频 + 琶音 + 敲击），零外部依赖 |
-| **手柄** | 焦点导航（方向键切按钮，A 键触发） |
+| **手柄** | 焦点导航（方向键切按钮，A 键触发）；振动接口保留 |
 | **键位** | 运行时重映射（设置 → 按键） |
 | **粒子** | 跳跃 / 落地 / 金币 / 踩敌人 / 受伤 |
 | **打包** | CPack / AppImage / NSIS 一键生成 |
+
+### 渲染管线
+
+| 模块 | 职责 |
+| :--- | :--- |
+| **Window** | 窗口管理 + 渲染目标切换（window / RenderTexture） |
+| **渲染缩放** | 10% ~ 200%，自动选择直通 / 中间 RT |
+| **Upscaler** | 双三次 / FSR1 EASU，只在上采样时启用 |
+| **PostProcessor** | 色彩分级 + 暗角 + 泛光 + 色差 + 颗粒 + 扫描线 + 抖动 |
+| **Bloom** | 1/4 分辨率三 pass：brightpass → blurH → blurV |
+| **软阴影** | 径向渐变纹理 + 二次衰减 |
+| **性能计时** | endFrame 内部打点，暴露给调试面板 |
 
 ### 游戏层
 
@@ -259,19 +393,23 @@ TEXT-GAME/
 | **物理** | 自写 AABB 瓦片扫描，先水平后垂直 |
 | **关卡** | ASCII 加载 + 视锥裁剪 + 顶点批处理 |
 | **关卡验证** | BFS 从出生点出发，报告孤立平台 / 不可达元素 |
+| **可达性可视化** | 编辑器按 T 显示每格可达状态 |
 | **关卡分享码** | RLE + Base64，把 ASCII 关卡压缩成可分享字符串 |
-| **伪 3D** | 瓦片顶面高光 + 侧面阴影 + 对象投影 |
+| **伪 3D** | 瓦片顶面高光 + 侧面阴影 + 对象投影 + 软阴影 |
 | **玩家** | 苦力怕精灵动画 + 弹性变形 + 无敌闪烁 + 受击闪白 |
 | **摄像机** | 前瞻 + 死区 + 屏幕震动 + 受击停顿 |
 | **存档点** | 单一激活，新激活自动取消旧激活 |
+| **调试工具** | F1~F10 快捷键 + 性能面板 + 截图 + 慢动作 + 碰撞盒 |
 
 ## 🛠 技术栈
 
 - **语言**：C++20
 - **构建**：CMake ≥ 3.23 + Ninja + CMake Presets
 - **图形/音频**：SFML 3
+- **OpenGL**：用于截图（`glReadPixels`）
 - **依赖注入**：自研简易 `Container`
 - **物理**：自写 AABB（不依赖 Box2D）
+- **着色器**：GLSL 330 core（超分 + 后处理）
 - **测试**：doctest（单头文件，62 个用例）
 - **静态分析**：clang-tidy
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
@@ -286,12 +424,12 @@ TEXT-GAME/
 
 **Arch Linux**：
 ```bash
-sudo pacman -S base-devel cmake ninja sfml python-fonttools python-pillow lcov clang
+sudo pacman -S base-devel cmake ninja sfml python-fonttools python-pillow lcov clang mesa
 ```
 
 **Ubuntu / Debian**：
 ```bash
-sudo apt install build-essential cmake ninja-build libsfml-dev lcov clang-tidy
+sudo apt install build-essential cmake ninja-build libsfml-dev lcov clang-tidy libgl1-mesa-dev
 ```
 > ⚠️ Ubuntu 24.04 的 `libsfml-dev` 可能是 SFML 2.6。需要从源码编译 SFML 3，见 CI 配置。
 
@@ -310,7 +448,6 @@ vcpkg install sfml:x64-windows
 项目需要中文字体文件 `assets/font.otf`：
 
 ```bash
-# 从 Noto CJK 提取简体中文字体
 python3 -c "
 from fontTools.ttLib import TTCollection
 ttc = TTCollection('/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc')
@@ -326,7 +463,6 @@ ttc.fonts[2].save('assets/font.otf')
 git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
 
-# 查看所有可用预设
 cmake --list-presets
 
 # Debug 构建
@@ -334,7 +470,7 @@ cmake --preset debug
 cmake --build --preset debug
 ./build/debug/text_game
 
-# Release 构建
+# Release 构建（**推荐跑游戏用这个**）
 cmake --preset release
 cmake --build --preset release
 ./build/release/text_game
@@ -352,22 +488,17 @@ cmake --build --preset release
 | `clang-tidy` | Debug + 静态分析 |
 | `release-package` | 用于 cpack 的发布构建 |
 
+> ⚠️ Debug 构建下 SFML 的 `sf::Text` 和 `sf::Shape` 构造极慢，编辑器帧率可能只有 20~30fps。**跑游戏和编辑器请用 Release**。
+
 ### 打包发布
 
 **Linux AppImage**：
 
 ```bash
-# 1. 生成图标（只需一次）
 python3 packaging/icons/generate_icons.py
-
-# 2. Release 构建
 cmake --preset release-package
 cmake --build --preset release-package -j
-
-# 3. 打包成 AppImage
 ./packaging/build_appimage.sh
-
-# 4. 运行
 ./build/TEXT-GAME-0.1.0-x86_64.AppImage
 ```
 
@@ -378,7 +509,6 @@ cmake --preset release
 cmake --build --preset release -j
 cd build/release
 cpack -G NSIS
-# 生成 TEXT-GAME-0.1.0-Windows.exe
 ```
 
 **通用 CPack**：
@@ -388,7 +518,6 @@ cmake --preset release-package
 cmake --build --preset release-package
 cd build/release-package
 cpack
-# 生成 .tar.gz / .zip / .AppImage / .exe（取决于平台）
 ```
 
 ### 单元测试
@@ -407,8 +536,6 @@ cmake --build --preset asan
 ./build/asan/tests/unit_tests
 ./build/asan/text_game
 ```
-
-ASan 会在内存越界、悬垂指针、UB 时立即报错，精确到文件和行号。
 
 ### 代码覆盖率
 
@@ -432,15 +559,11 @@ cmake --build --preset clang-tidy -j
 ./build/debug/validate_levels assets/levels
 ```
 
-检查每关的出生点、终点可达性、金币/敌人是否在可达平台上。
-
 ### 检查硬编码中文
 
 ```bash
 python3 scripts/check_hardcoded.py
 ```
-
-扫描所有 C++ 源文件，报告未经过 `Str::T()` 的中文字符串字面量。
 
 ## 🎛 功能一览
 
@@ -450,27 +573,32 @@ python3 scripts/check_hardcoded.py
 - **选关**：直接跳到已解锁的关卡，显示星级和 PB
 - **关卡编辑器**：可视化编辑 ASCII 关卡
 - **控制台**：内嵌虚拟终端，支持命令和计算器
-- **设置**：6 个 Tab，50+ 项
+- **设置**：6 个 Tab，70+ 项
 - **退出游戏**
 
 ### 设置
 
 **显示**：分辨率 / 全屏 / 垂直同步 / 抗锯齿 / 日志级别 / 帧率上限
 
-**界面**：FPS 显示 / 界面缩放 / 主题 / 语言 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
+**界面**：FPS 显示 / 界面缩放 / 字体缩放 / 渲染缩放 / **超分辨率** / 主题 / 语言 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
 
-**画面**：初始生命 / 动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒
+**画面**：初始生命 / 动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒 / **画面预设** / **11 项后处理**
 
-**音频**：总音量 / 音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持
+**音频**：总音量 / 音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持 / **手柄振动** / **振动强度**
 
 **按键**：左移 / 右移 / 跳跃 / 暂停 / 重开（可重映射）
 
 **其他**：记住窗口大小 / 失焦自动暂停 / 日志轮转 / 保留份数 / 玩家名 / 关于 / 恢复默认
 
+> **所有可拖动的滑块**都带数字输入框（回车确认）+ 单滑块重置按钮（↺）。画面 Tab 底部还有一个"重置画面"按钮，一键归零所有后处理。
+
 ### 关卡编辑器
 
 - 底部笔刷面板（13 种元素，图标预览）
-- 左键画 / 右键擦
+- **左键画 / 拖动连画**（斜线也支持）
+- **Shift + 拖动 = 矩形填充**（带黄色预览）
+- **右键擦 / 拖动连擦**
+- **T 键**：可达性可视化开关
 - `Ctrl+Z` 撤销（100 步栈）
 - `Ctrl+S` 保存
 - `Ctrl+N` 切换文件
@@ -481,8 +609,9 @@ python3 scripts/check_hardcoded.py
 - `WASD` / 方向键移动摄像机
 - `[` `]` `-` `=` 调整关卡尺寸
 - `G` 开关网格
-- 顶部 HUD：文件名 / 笔刷 / 尺寸 / 缩放 / 网格状态 / 撤销栈深度
+- 顶部 HUD：文件名 / 笔刷 / 尺寸 / 缩放 / 网格 / 撤销栈深度 / 可达性状态
 - 第二行：元素统计（玩家 / 敌人 / 金币 / ...）
+- **性能优化**：笔刷条和关卡图标预渲染到 `RenderTexture`，静止时每帧仅 3 个 draw call
 
 **分享码**：把当前关卡编码成 `TG1:<base64>` 字符串，导出到 `saves/share_code.txt`。别人粘贴到你自己的 `share_code.txt`，`Ctrl+I` 即可导入。
 
@@ -534,7 +663,8 @@ exit              关闭控制台
 10. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
 11. **新场景加 `FocusGroup::instance().setItems({...})`** 以支持手柄。
 12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/core/text_strings.h`。
-13. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem。
+13. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
+14. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
 
 ### 代码格式化
 

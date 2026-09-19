@@ -75,6 +75,7 @@ private:
     void applySound();
     void applyBGM();
     void applyGamepad();
+    void applyGamepadVibration();
     void applyAutoPause();
     void applyConsolePrompt();
     void applyShowColliders();
@@ -152,6 +153,7 @@ private:
     std::unique_ptr<Slider> masterVolumeSlider_;
     std::unique_ptr<Slider> soundVolumeSlider_;
     std::unique_ptr<Slider> bgmVolumeSlider_;
+    std::unique_ptr<Slider> gamepadVibrationSlider_;
 
     // ================= Keys =================
     std::vector<std::unique_ptr<Button>> keyBindingButtons_;
@@ -178,6 +180,7 @@ private:
     sf::Text labelWallpaper_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     sf::Text labelMasterVolume_, labelSoundVolume_, labelBGMVolume_;
+    sf::Text labelVibrationIntensity_;
     sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
     // ⭐ 后处理
@@ -241,6 +244,8 @@ private:
     bool    bgmEnabled_         = true;
     float   bgmVolume_          = 0.4f;
     bool    gamepadEnabled_     = true;
+    bool    gamepadVibrationEnabled_   = true;
+    float   gamepadVibrationIntensity_ = 1.0f;
 
     int     windowMode_         = 0;   // 0=窗口 1=最大化 2=全屏
     bool    rememberSize_       = true;

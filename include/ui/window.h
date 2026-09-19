@@ -60,6 +60,9 @@ public:
     void setUpscaleMode(int mode);
     int  getUpscaleMode() const;
 
+    // ⭐ 性能：上一帧 endFrame 中 upscaler + postprocess 绘制耗时（毫秒）
+    float upscalePostMs() const { return upscalePostMs_; }
+
     // ⭐ 后处理
     PostProcessor& postProcess() { return postProcessor_; }
 
@@ -85,4 +88,7 @@ private:
     // ⭐ 后处理
     PostProcessor postProcessor_;
     sf::RenderTexture ppInputRT_;
+
+    // ⭐ 性能计时
+    float upscalePostMs_ = 0.f;
 };

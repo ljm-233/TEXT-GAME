@@ -167,6 +167,8 @@ constexpr const char* LockedHint = "未解锁";
 // ===== 手柄 =====
 constexpr const char* LabelGamepad        = "手柄支持";
 constexpr const char* LabelGamepadDeadzone = "摇杆死区";
+constexpr const char* LabelGamepadVibration = "手柄振动";
+constexpr const char* LabelVibrationIntensity = "振动强度";
 
 // ===== 生命值 =====
 constexpr const char* LabelInitialLives = "初始生命";

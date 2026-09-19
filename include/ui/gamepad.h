@@ -1,13 +1,15 @@
 #pragma once
 #include <SFML/Window/Joystick.hpp>
+#include <SFML/System/Clock.hpp>
+#include <SFML/System/Time.hpp>
 #include "gamepad_config.h"
 
-// 手柄封装：自动检测、死区、按钮查询
+// 手柄封装：自动检测、死区、按钮查询、振动
 class Gamepad {
 public:
     static Gamepad& instance();
 
-    // 每帧调用，更新连接状态
+    // 每帧调用，更新连接状态 + 振动超时
     void update();
 
     bool isConnected() const { return connected_; }
@@ -20,16 +22,12 @@ public:
     float rightY() const;
 
     // ===== 按钮 =====
-    // 通用映射（Xbox 布局为准）：
-    //   0 = A（下）  1 = B（右）  2 = X（左）  3 = Y（上）
-    //   4 = LB       5 = RB
-    //   6 = Back     7 = Start
     bool isButtonPressed(unsigned button) const;
 
     // 便捷方法
-    bool jumpPressed() const;   // A 或 十字键上
-    bool confirmPressed() const;// A 或 Start
-    bool backPressed() const;   // B 或 Back
+    bool jumpPressed() const;
+    bool confirmPressed() const;
+    bool backPressed() const;
 
     // 方向键（D-Pad）
     bool dpadUp() const;
@@ -40,6 +38,19 @@ public:
     void setDeadzone(float dz) { deadzone_ = dz; }
     float deadzone() const { return deadzone_; }
 
+    // ⭐ 振动
+    //   low  : 低频马达（左侧大马达），0~1
+    //   high : 高频马达（右侧小马达），0~1
+    //   duration: 秒
+    void vibrate(float low, float high, float duration);
+    void stopVibration();
+
+    void setVibrationEnabled(bool e) { vibrationEnabled_ = e; if (!e) stopVibration(); }
+    bool isVibrationEnabled() const { return vibrationEnabled_; }
+
+    void setVibrationIntensity(float i);
+    float vibrationIntensity() const { return vibrationIntensity_; }
+
 private:
     Gamepad() = default;
 
@@ -49,4 +60,11 @@ private:
 
     // 死区处理
     float applyDeadzone(float value) const;
+
+    // ⭐ 振动状态
+    bool  vibrationEnabled_   = true;
+    float vibrationIntensity_ = 1.0f;
+    bool  vibrationActive_    = false;
+    float vibrationDuration_  = 0.f;
+    sf::Clock vibrationClock_;
 };

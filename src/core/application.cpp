@@ -13,6 +13,7 @@
 #include "preferences.h"
 #include "resolution.h"
 #include "runtime_config.h"
+#include "gamepad.h"
 #include "save_manager.h"
 #include "sound_manager.h"
 #include "theme.h"
@@ -113,6 +114,12 @@ void Application::registerDependencies() {
             static_cast<float>(prefs->getDouble("sound_volume", 0.6)));
         SoundManager::instance().setMusicVolume(
             static_cast<float>(prefs->getDouble("bgm_volume", 0.4)));
+
+        // ⭐ 手柄振动
+        Gamepad::instance().setVibrationEnabled(
+            prefs->getBool("gamepad_vibration_enabled", true));
+        Gamepad::instance().setVibrationIntensity(
+            static_cast<float>(prefs->getDouble("gamepad_vibration_intensity", 1.0)));
     }
 
     // ===== Logger =====

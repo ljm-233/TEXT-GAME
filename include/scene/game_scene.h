@@ -37,6 +37,8 @@ private:
     void subscribeWorldEvents();
     bool handleDebugKey(sf::Keyboard::Key k);
     void renderDebugHud(sf::RenderTarget& rt, Window& window);
+    void renderPerfHud(sf::RenderTarget& rt, Window& window,
+                       float winW, float winH);
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
     void rebuildOverlayButtons();
@@ -107,6 +109,14 @@ private:
     float    debugTimeScale_     = 1.f;
     sf::Text debugText_;
     sf::View lastWorldView_;
+
+    // ⭐ 性能面板
+    bool      perfHud_        = false;
+    float     perfFrameMs_    = 0.f;
+    float     perfUpdateMs_   = 0.f;
+    float     perfRenderMs_   = 0.f;
+    sf::Clock perfFrameClock_;
+    sf::Text  perfText_;
 
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;

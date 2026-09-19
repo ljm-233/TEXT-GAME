@@ -1,4 +1,5 @@
 #include "window.h"
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -217,15 +218,20 @@ void Window::beginFrame() {
 
 void Window::endFrame() {
     if (!needsRT(renderScale_, postProcessor_.isActive())) {
+        upscalePostMs_ = 0.f;
         window_.display();
         return;
     }
+
+    auto t0 = std::chrono::high_resolution_clock::now();
 
     rt_.display();
 
     auto winSize = window_.getSize();
     auto rtSize  = rt_.getSize();
     if (rtSize.x == 0 || rtSize.y == 0 || winSize.x == 0 || winSize.y == 0) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        upscalePostMs_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
         window_.display();
         return;
     }
@@ -264,6 +270,9 @@ void Window::endFrame() {
         });
         window_.draw(s);
     }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    upscalePostMs_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
     window_.display();
 }

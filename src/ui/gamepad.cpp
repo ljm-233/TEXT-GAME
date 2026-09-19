@@ -1,4 +1,5 @@
 #include "gamepad.h"
+#include <algorithm>
 #include <cmath>
 
 Gamepad& Gamepad::instance() {
@@ -13,14 +14,20 @@ void Gamepad::update() {
         if (sf::Joystick::isConnected(i)) {
             connected_ = true;
             joystickId_ = i;
-            return;
+            break;
+        }
+    }
+
+    // ⭐ 振动超时归零
+    if (vibrationActive_) {
+        if (vibrationClock_.getElapsedTime().asSeconds() >= vibrationDuration_) {
+            stopVibration();
         }
     }
 }
 
 float Gamepad::applyDeadzone(float value) const {
     if (std::abs(value) < deadzone_) return 0.f;
-    // 死区之外重新映射到 0~1
     float sign = value > 0.f ? 1.f : -1.f;
     return sign * (std::abs(value) - deadzone_) / (1.f - deadzone_);
 }
@@ -59,11 +66,11 @@ bool Gamepad::jumpPressed() const {
 }
 
 bool Gamepad::confirmPressed() const {
-    return isButtonPressed(0) || isButtonPressed(7);   // A 或 Start
+    return isButtonPressed(0) || isButtonPressed(7);
 }
 
 bool Gamepad::backPressed() const {
-    return isButtonPressed(1) || isButtonPressed(6);   // B 或 Back
+    return isButtonPressed(1) || isButtonPressed(6);
 }
 
 bool Gamepad::dpadUp() const {
@@ -88,4 +95,32 @@ bool Gamepad::dpadRight() const {
     if (!connected_) return false;
     float x = sf::Joystick::getAxisPosition(joystickId_, sf::Joystick::Axis::PovX);
     return x > 50.f;
+}
+
+// ===== 振动 =====
+
+void Gamepad::setVibrationIntensity(float i) {
+    vibrationIntensity_ = std::clamp(i, 0.f, 1.f);
+}
+
+void Gamepad::vibrate(float low, float high, float duration) {
+    if (!vibrationEnabled_ || !connected_) return;
+    if (duration <= 0.f) return;
+
+    float l = std::clamp(low  * vibrationIntensity_, 0.f, 1.f);
+    float h = std::clamp(high * vibrationIntensity_, 0.f, 1.f);
+
+    vibrationDuration_ = duration;
+    vibrationClock_.restart();
+    vibrationActive_ = true;
+
+    // ⚠️ SFML 3 移除了振动 API，此处为空实现。
+    //    接口保留，设置项保留，等以后接入平台原生 API 或换库再填。
+    (void)l;
+    (void)h;
+}
+
+void Gamepad::stopVibration() {
+    vibrationActive_ = false;
+    // ⚠️ SFML 3 无振动 API，空实现
 }
