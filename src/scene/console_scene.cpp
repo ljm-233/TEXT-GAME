@@ -1,6 +1,7 @@
 #include "console_scene.h"
 #include "calculator.h"
 #include "sound_manager.h"
+#include "achievement.h"
 #include "text_strings.h"
 #include "theme.h"
 #include "utf8.h"
@@ -72,6 +73,9 @@ void ConsoleScene::onEnter() {
     }
 
     printWelcome();
+
+    // ⭐ 进入控制台即算使用
+    AchievementManager::instance().unlock("console_used");
 }
 
 void ConsoleScene::onExit() {

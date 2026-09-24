@@ -47,6 +47,7 @@ private:
     int  calcStars() const;
     int  targetTime() const;
     void applyStars();
+    void checkAchievements();
 
     std::shared_ptr<Background>  background_;
     std::shared_ptr<Logger>      logger_;
@@ -110,6 +111,9 @@ private:
     float    debugTimeScale_     = 1.f;
     sf::Text debugText_;
     sf::View lastWorldView_;
+
+    // ⭐ 成就：本关是否受伤
+    bool      tookDamageThisLevel_ = false;
 
     // ⭐ 性能面板
     bool      perfHud_        = false;

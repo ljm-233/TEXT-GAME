@@ -13,6 +13,7 @@
 #include "preferences.h"
 #include "resolution.h"
 #include "runtime_config.h"
+#include "achievement.h"
 #include "gamepad.h"
 #include "save_manager.h"
 #include "sound_manager.h"
@@ -246,6 +247,10 @@ void Application::run() {
 
     // ⭐ 初始化手柄振动（evdev / XInput）
     GamepadVibration::instance().init();
+
+    // ⭐ 初始化成就系统
+    AchievementManager::instance().init(
+        (paths->configDir() / "achievements.conf").string());
 
     logger->info("程序启动");
     logger->info("平台: " + std::string(Platform::name));

@@ -5,11 +5,11 @@
 #include <memory>
 #include <vector>
 
-class MainMenuScene : public Scene {
+class AchievementScene : public Scene {
 public:
-    MainMenuScene(std::shared_ptr<Background> background,
-                  const sf::Font& font,
-                  std::shared_ptr<Logger> logger);
+    AchievementScene(std::shared_ptr<Background> background,
+                     const sf::Font& font,
+                     std::shared_ptr<Logger> logger);
 
     void onEnter() override;
     void onResume() override;
@@ -22,21 +22,20 @@ public:
 
 private:
     void refreshLabels();
+    void syncFocus();
 
     std::shared_ptr<Background> background_;
     std::shared_ptr<Logger> logger_;
-    Button startButton_;
-    Button levelSelectButton_;
-    Button editorButton_;
-    Button calculatorButton_;
-    Button achievementsButton_;
-    Button settingsButton_;
-    Button exitButton_;
+    const sf::Font& font_;
 
-    float elapsed_ = 0.f;
-    float lastCx_  = -1.f;
-    static constexpr float kButtonDelay = 0.10f;
-    static constexpr float kButtonRise  = 0.4f;
+    std::unique_ptr<Button> backButton_;
+    sf::Text titleText_;
+    sf::Text progressText_;
+
+    std::vector<std::unique_ptr<sf::Text>> nameTexts_;
+    std::vector<std::unique_ptr<sf::Text>> descTexts_;
 
     SceneId nextScene_ = SceneId::None;
+    int     lastLangVersion_ = -1;
+    int     lastUnlockedCount_ = -1;
 };

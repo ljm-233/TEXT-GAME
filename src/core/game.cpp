@@ -6,6 +6,7 @@
 #include "settings_scene.h"
 #include "console_scene.h"
 #include "editor_scene.h"
+#include "achievement_scene.h"
 #include "notification.h"
 #include "sound_manager.h"
 #include "gamepad.h"
@@ -68,6 +69,9 @@ std::unique_ptr<Scene> Game::createScene(SceneId id) {
         case SceneId::Editor:
             return std::make_unique<EditorScene>(
                 background_, preferences_, font, logger_);
+        case SceneId::Achievements:
+            return std::make_unique<AchievementScene>(
+                background_, font, logger_);
         default:
             return nullptr;
     }
@@ -116,6 +120,7 @@ void Game::updateWindowTitle(const Scene& scene) {
             case SceneId::Settings:    hint = Str::T(Str::WinTitleSettings);    break;
             case SceneId::Console:     hint = Str::T(Str::WinTitleConsole);     break;
             case SceneId::Editor:      hint = Str::T(Str::WinTitleEditor);      break;
+            case SceneId::Achievements: hint = Str::T(Str::WinTitleAchievements); break;
             default: break;
         }
     }

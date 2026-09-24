@@ -12,6 +12,7 @@ MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
       levelSelectButton_ (Str::T(Str::LevelSelect), font, {0.f, 0.f}, {280.f, 52.f}, 24),
       editorButton_      (Str::T(Str::LevelEditor), font, {0.f, 0.f}, {280.f, 52.f}, 24),
       calculatorButton_  (Str::T(Str::Calculator), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+      achievementsButton_(Str::T(Str::Achievements), font, {0.f, 0.f}, {280.f, 52.f}, 24),
       settingsButton_    (Str::T(Str::Settings),   font, {0.f, 0.f}, {280.f, 52.f}, 24),
       exitButton_        (Str::T(Str::ExitGame),   font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
 
@@ -20,6 +21,7 @@ void MainMenuScene::refreshLabels() {
     levelSelectButton_.setText(Str::T(Str::LevelSelect));
     editorButton_.setText(Str::T(Str::LevelEditor));
     calculatorButton_.setText(Str::T(Str::Calculator));
+    achievementsButton_.setText(Str::T(Str::Achievements));
     settingsButton_.setText(Str::T(Str::Settings));
     exitButton_.setText(Str::T(Str::ExitGame));
 }
@@ -31,7 +33,8 @@ void MainMenuScene::onEnter() {
     refreshLabels();
     FocusGroup::instance().setItems({
         &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &settingsButton_, &exitButton_
+        &calculatorButton_, &achievementsButton_,
+        &settingsButton_, &exitButton_
     });
 }
 
@@ -41,7 +44,8 @@ void MainMenuScene::onResume() {
     refreshLabels();
     FocusGroup::instance().setItems({
         &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &settingsButton_, &exitButton_
+        &calculatorButton_, &achievementsButton_,
+        &settingsButton_, &exitButton_
     });
 }
 
@@ -50,6 +54,7 @@ void MainMenuScene::handleEvent(const sf::Event& event) {
     levelSelectButton_.handleEvent(event);
     editorButton_.handleEvent(event);
     calculatorButton_.handleEvent(event);
+    achievementsButton_.handleEvent(event);
     settingsButton_.handleEvent(event);
     exitButton_.handleEvent(event);
 }
@@ -73,6 +78,10 @@ void MainMenuScene::update(float dt) {
         logger_->info("点击: 控制台");
         nextScene_ = SceneId::Console;
     }
+    if (achievementsButton_.consumeClick()) {
+        logger_->info("点击: 成就");
+        nextScene_ = SceneId::Achievements;
+    }
     if (settingsButton_.consumeClick()) {
         logger_->info("点击: 设置");
         nextScene_ = SceneId::Settings;
@@ -92,13 +101,14 @@ void MainMenuScene::render(Window& window) {
     float cy = static_cast<float>(size.y) / 2.f;
 
     const float btnW = 280.f, btnH = 52.f, gap = 12.f;
-    constexpr int kCount = 6;
+    constexpr int kCount = 7;
     float totalH = btnH * kCount + gap * (kCount - 1);
     float startY = cy - totalH / 2.f;
 
     Button* btns[kCount] = {
         &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &settingsButton_, &exitButton_
+        &calculatorButton_, &achievementsButton_,
+        &settingsButton_, &exitButton_
     };
 
     // ⭐ 动画结束时刻 + 窗口尺寸变化判断

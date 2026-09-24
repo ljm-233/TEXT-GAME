@@ -10,5 +10,6 @@ enum class SceneId {
     Settings,
     Console,
     LevelSelect,
-    Editor
+    Editor,
+    Achievements
 };

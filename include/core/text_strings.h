@@ -17,6 +17,7 @@ constexpr const char* Off = "关";
 constexpr const char* StartGame = "启动游戏";
 constexpr const char* Calculator = "控制台";
 constexpr const char* LevelEditor = "关卡编辑器";
+constexpr const char* Achievements = "成就";
 constexpr const char* Settings = "设置";
 constexpr const char* ExitGame = "退出游戏";
 
@@ -169,6 +170,37 @@ constexpr const char* LabelGamepad        = "手柄支持";
 constexpr const char* LabelGamepadDeadzone = "摇杆死区";
 constexpr const char* LabelGamepadVibration = "手柄振动";
 constexpr const char* LabelVibrationIntensity = "振动强度";
+
+// ===== 成就系统 =====
+constexpr const char* AchvUnlockedPrefix = "★ 成就解锁：";
+constexpr const char* AchvTitle = "成就";
+constexpr const char* AchvProgressPrefix = "已解锁 ";
+constexpr const char* AchvProgressSeparator = " / ";
+
+constexpr const char* AchvFirstCoin     = "初次收获";
+constexpr const char* AchvFirstCoinDesc = "收集第一个金币";
+constexpr const char* AchvFirstLevel     = "初出茅庐";
+constexpr const char* AchvFirstLevelDesc = "通关第一个关卡";
+constexpr const char* AchvAllLevels     = "通关大师";
+constexpr const char* AchvAllLevelsDesc = "通关全部关卡";
+constexpr const char* AchvPerfectLevel     = "完美主义";
+constexpr const char* AchvPerfectLevelDesc = "单关收集全部金币并通关";
+constexpr const char* AchvNoDamage     = "毫发无伤";
+constexpr const char* AchvNoDamageDesc = "无伤通关一个关卡";
+constexpr const char* AchvSpeedrun     = "疾风步";
+constexpr const char* AchvSpeedrunDesc = "30 秒内通关一个关卡";
+constexpr const char* AchvThreeStars     = "三星大师";
+constexpr const char* AchvThreeStarsDesc = "在一个关卡拿到 3 星";
+constexpr const char* AchvAllStars     = "全星达成";
+constexpr const char* AchvAllStarsDesc = "全部关卡都拿到 3 星";
+constexpr const char* AchvEditorUsed     = "关卡设计师";
+constexpr const char* AchvEditorUsedDesc = "在编辑器里保存一次关卡";
+constexpr const char* AchvEditorExport     = "分享达人";
+constexpr const char* AchvEditorExportDesc = "导出一次关卡分享码";
+constexpr const char* AchvConsoleUsed     = "命令行勇士";
+constexpr const char* AchvConsoleUsedDesc = "进入控制台场景";
+constexpr const char* AchvDebugMode     = "内部人士";
+constexpr const char* AchvDebugModeDesc = "使用任意调试快捷键";
 
 // ===== 生命值 =====
 constexpr const char* LabelInitialLives = "初始生命";
@@ -333,6 +365,7 @@ constexpr const char* WinTitleLevelSelect = "选关";
 constexpr const char* WinTitleSettings    = "设置";
 constexpr const char* WinTitleConsole     = "控制台";
 constexpr const char* WinTitleEditor      = "关卡编辑器";
+constexpr const char* WinTitleAchievements = "成就";
 constexpr const char* WinTitleLevelPrefix = "第 ";
 constexpr const char* WinTitleLevelSuffix = " 关";
 constexpr const char* WinTitlePausedSuffix = " 关 (已暂停)";

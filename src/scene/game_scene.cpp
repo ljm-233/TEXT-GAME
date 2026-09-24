@@ -7,6 +7,7 @@
 #include "game_constants.h"
 #include "focus_group.h"
 #include "gamepad.h"
+#include "achievement.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -151,6 +152,7 @@ void GameScene::subscribeWorldEvents() {
                 SoundManager::instance().playCoin();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
                 gp.vibrate(0.f, 0.15f, 0.03f);
+                AchievementManager::instance().unlock("first_coin");
             } else if constexpr (std::is_same_v<T, EvStomped>) {
                 SoundManager::instance().playStomp();
                 if (particlesOn) world_->particles().emitStomp(ev.pos);
@@ -161,6 +163,7 @@ void GameScene::subscribeWorldEvents() {
                 if (particlesOn) world_->particles().emitHurt(ev.pos);
                 hitstopTimer_ = 0.04f;
                 gp.vibrate(0.40f, 0.60f, 0.15f);
+                tookDamageThisLevel_ = true;
             } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
                 SoundManager::instance().playCheckpoint();
                 if (particlesOn) world_->particles().emitCoin(ev.pos);
@@ -192,6 +195,9 @@ void GameScene::subscribeWorldEvents() {
 
                 // ⭐ 庆祝振动
                 gp.vibrate(0.70f, 0.80f, 0.40f);
+
+                // ⭐ 检查成就
+                checkAchievements();
 
                 screenFlashTimer_    = 0.35f;
                 screenFlashDuration_ = 0.35f;
@@ -253,6 +259,7 @@ bool GameScene::loadLevel(int index) {
     finalCoins_ = 0;
     finalTotalCoins_ = 0;
     newRecord_ = false;
+    tookDamageThisLevel_ = false;
 
     // ⭐ 读取新关的 PB
     if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
@@ -290,6 +297,11 @@ bool GameScene::loadLevel(int index) {
 }
 
 bool GameScene::handleDebugKey(sf::Keyboard::Key k) {
+    // ⭐ 任意调试键都算
+    if (k >= sf::Keyboard::Key::F1 && k <= sf::Keyboard::Key::F10) {
+        AchievementManager::instance().unlock("debug_mode");
+    }
+
     switch (k) {
         case sf::Keyboard::Key::F1:
             debugHud_ = !debugHud_;
@@ -574,6 +586,46 @@ int GameScene::calcStars() const {
 void GameScene::applyStars() {
     if (finalStars_ <= 0) return;
     saveManager_->setLevelStar(save_.filename, levelIndex_, finalStars_);
+}
+
+void GameScene::checkAchievements() {
+    auto& am = AchievementManager::instance();
+
+    // 第一次通关
+    am.unlock("first_level");
+
+    // 单关 3 星
+    if (finalStars_ >= 3) am.unlock("three_stars");
+
+    // 单关全金币
+    if (finalTotalCoins_ > 0 && finalCoins_ == finalTotalCoins_) {
+        am.unlock("perfect_level");
+    }
+
+    // 速通
+    if (levelTime_ > 0.f && levelTime_ < 30.f) {
+        am.unlock("speedrun");
+    }
+
+    // 无伤
+    if (!tookDamageThisLevel_) {
+        am.unlock("no_damage");
+    }
+
+    // 读最新存档，检查全关 / 全星
+    SaveInfo updated;
+    if (saveManager_->loadSave(save_.filename, updated)) {
+        const auto& stars = updated.levelStars;
+        if (!stars.empty()) {
+            bool allCleared = std::all_of(stars.begin(), stars.end(),
+                                          [](int s) { return s > 0; });
+            if (allCleared) am.unlock("all_levels");
+
+            bool allThree = std::all_of(stars.begin(), stars.end(),
+                                        [](int s) { return s >= 3; });
+            if (allThree) am.unlock("all_stars");
+        }
+    }
 }
 
 void GameScene::rebuildOverlayButtons() {

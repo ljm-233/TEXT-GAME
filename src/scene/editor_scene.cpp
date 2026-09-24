@@ -3,6 +3,7 @@
 #include "level_codec.h"
 #include "level.h"
 #include "level_validator.h"
+#include "achievement.h"
 #include "utf8.h"
 #include <algorithm>
 #include <cmath>
@@ -489,6 +490,7 @@ void EditorScene::saveFile() {
 
     logger_->info("编辑器：已保存到 " + savePath_);
     showFlash(Str::T(Str::EditorSaved), 1.2f);
+    AchievementManager::instance().unlock("editor_used");
 }
 
 void EditorScene::showFlash(const std::string& text, float duration) {
@@ -516,6 +518,7 @@ void EditorScene::exportShareCode() {
     showFlash("已导出 (" + std::to_string(code.size()) + " 字符)", 2.0f);
     logger_->info("分享码已导出到 " + path.string() +
                   " (" + std::to_string(code.size()) + " 字符)");
+    AchievementManager::instance().unlock("editor_export");
 }
 
 void EditorScene::importShareCode() {
