@@ -10,6 +10,8 @@
 #include "focus_group.h"
 #include "keybindings.h"
 #include "gamepad.h"
+#include "tabs/audio_tab.h"
+#include "tabs/graphics_tab.h"
 #include <algorithm>
 #include <cmath>
 #include "lang.h"
@@ -30,10 +32,6 @@ const char* kLogLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
 const int kfpsLimits[]  = {0, 30, 60, 120, 144};
 constexpr int kfpsLimitCount = 5;
 const char* kFpsLimitLabels[] = {"无", "30", "60", "120", "144"};
-
-const float kanimSpeeds[] = {0.5f, 1.0f, 2.0f};
-constexpr int kanimSpeedCount = 3;
-const char* kAnimSpeedLabels[] = {"慢", "正常", "快"};
 
 const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
 constexpr int kPosCount  = 4;
@@ -143,30 +141,13 @@ int indexOfFpsLimit(int l) {
         if (kfpsLimits[i] == l) return i;
     return 2;
 }
-int indexOfButtonCorner(float c) {
-    for (int i = 0; i < kButtonCornerCount; ++i)
-        if (std::abs(kButtonCorners[i] - c) < 0.5f) return i;
-    return 0;
-}
-int indexOfButtonOutline(float o) {
-    for (int i = 0; i < kButtonOutlineCount; ++i)
-        if (std::abs(kButtonOutlines[i] - o) < 0.5f) return i;
-    return 1;
-}
 int indexOfLogRotate(int idx) { if (idx < 0 || idx >= kLogRotateCount) return 0; return idx; }
 int indexOfLogKeep(int idx)   { if (idx < 0 || idx >= kLogKeepCount)   return 1; return idx; }
-int indexOfAnimSpeed(int idx) { if (idx < 0 || idx >= kanimSpeedCount) return 1; return idx; }
 int indexOfPos(int idx)       { if (idx < 0 || idx >= kPosCount)       return 1; return idx; }
 int indexOfFpsFormat(int idx) { if (idx < 0 || idx >= kFpsFormatCount) return 1; return idx; }
 int indexOfConsolePrompt(int idx) { if (idx < 0 || idx >= kConsolePromptCount) return 0; return idx; }
 
-// ⭐ 初始生命值（1/3/5/10/99）↔ 索引
-int indexOfLives(int lives) {
-    const int kLives[] = {1, 3, 5, 10, 99};
-    for (int i = 0; i < 5; ++i)
-        if (kLives[i] == lives) return i;
-    return 0;
-}
+// ⭐ 初始生命值（1/3/5/10/100）↔ 索引
 } // namespace
 
 // ============================================================
@@ -195,23 +176,8 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
       labelWallpaper_      (font, toSf(Str::LabelWallpaper),      fontSizeInView(20)),
       labelConsoleMask_    (font, toSf(Str::LabelConsoleMask),    fontSizeInView(20)),
       labelConsolePanelAlpha_(font, toSf(Str::LabelConsolePanelAlpha), fontSizeInView(20)),
-      labelMasterVolume_   (font, toSf(Str::LabelMasterVolume),   fontSizeInView(20)),
-      labelSoundVolume_    (font, toSf(Str::LabelSoundVolume),    fontSizeInView(20)),
-      labelBGMVolume_      (font, toSf(Str::LabelBGMVolume),      fontSizeInView(20)),
-      labelVibrationIntensity_(font, toSf(Str::LabelVibrationIntensity), fontSizeInView(20)),
       labelPlayerName_     (font, toSf(Str::LabelPlayerName),     fontSizeInView(20)),
-      hintUiScale_         (font, toSf(Str::HintUiScale),         fontSizeInView(14)),
-      labelPostSaturation_ (font, toSf(Str::LabelPostSaturation), fontSizeInView(20)),
-      labelPostContrast_   (font, toSf(Str::LabelPostContrast),   fontSizeInView(20)),
-      labelPostBrightness_ (font, toSf(Str::LabelPostBrightness), fontSizeInView(20)),
-      labelPostGamma_      (font, toSf(Str::LabelPostGamma),      fontSizeInView(20)),
-      labelPostVignette_   (font, toSf(Str::LabelPostVignette),   fontSizeInView(20)),
-      labelPostBloomStrength_ (font, toSf(Str::LabelPostBloomStrength), fontSizeInView(20)),
-      labelPostBloomThreshold_(font, toSf(Str::LabelPostBloomThreshold),fontSizeInView(20)),
-      labelPostChromatic_      (font, toSf(Str::LabelPostChromatic),     fontSizeInView(20)),
-      labelPostGrain_          (font, toSf(Str::LabelPostGrain),         fontSizeInView(20)),
-      labelPostScanline_       (font, toSf(Str::LabelPostScanline),      fontSizeInView(20)),
-      labelPostDither_         (font, toSf(Str::LabelPostDither),        fontSizeInView(20)) {
+      hintUiScale_         (font, toSf(Str::HintUiScale),         fontSizeInView(14)) {
 
     selectedResolution_ = clampResolutionIndex(preferences_->getInt("resolution_index", 0));
     fullscreen_          = preferences_->getBool("fullscreen", false);
@@ -247,34 +213,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     consoleAutoScroll_   = preferences_->getBool("console_auto_scroll", true);
     consoleBlinkCursor_  = preferences_->getBool("console_blink_cursor", true);
     consolePrompt_       = indexOfConsolePrompt(preferences_->getInt("console_prompt", 0));
-
-    animationEnabled_    = preferences_->getBool("animation_enabled", true);
-    animationSpeedIndex_ = indexOfAnimSpeed(preferences_->getInt("animation_speed_index", 1));
-    notificationEnabled_ = preferences_->getBool("notification_enabled", true);
-    notificationPosition_= indexOfPos(preferences_->getInt("notification_position", 1));
-    initialLives_        = preferences_->getInt("initial_lives", 1);
-    if (initialLives_ != 1 && initialLives_ != 3 && initialLives_ != 5
-        && initialLives_ != 10 && initialLives_ != 99) {
-        initialLives_ = 1;
-        preferences_->setInt("initial_lives", 1);
-    }
-    pseudo3D_            = preferences_->getBool("pseudo_3d", true);
-    parallaxEnabled_     = preferences_->getBool("parallax", true);
-    playerAnimEnabled_   = preferences_->getBool("player_animation", true);
-    levelIntroEnabled_   = preferences_->getBool("level_intro", true);
-    particlesEnabled_    = preferences_->getBool("particles", true);
-    screenShake_         = preferences_->getBool("screen_shake", true);
-    showColliders_       = preferences_->getBool("show_colliders", false);
-    buttonCorner_        = static_cast<float>(preferences_->getDouble("button_corner", 6.0));
-    buttonOutline_       = static_cast<float>(preferences_->getDouble("button_outline", 2.0));
-
-    masterVolume_        = static_cast<float>(preferences_->getDouble("master_volume", 1.0));
-    soundEnabled_        = preferences_->getBool("sound_enabled", true);
-    soundVolume_         = static_cast<float>(preferences_->getDouble("sound_volume", 0.6));
-    bgmEnabled_          = preferences_->getBool("bgm_enabled", true);
-    bgmVolume_           = static_cast<float>(preferences_->getDouble("bgm_volume", 0.4));
-    gamepadEnabled_      = preferences_->getBool("gamepad_enabled", true);
-
     rememberSize_        = preferences_->getBool("remember_window_size", true);
     autoPauseOnBlur_     = preferences_->getBool("auto_pause_on_blue", true);
     autoPauseOnBlur_     = preferences_->getBool("auto_pause_on_blur", true);
@@ -301,15 +239,7 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     auto labelColor = sf::Color(230, 230, 230);
     for (auto* t : {&labelWallpaper_,
                     &labelConsoleMask_, &labelConsolePanelAlpha_,
-                    &labelMasterVolume_, &labelSoundVolume_, &labelBGMVolume_,
-                    &labelVibrationIntensity_,
-                    &labelPlayerName_,
-                    &labelPostSaturation_, &labelPostContrast_,
-                    &labelPostBrightness_, &labelPostGamma_,
-                    &labelPostVignette_,
-                    &labelPostBloomStrength_, &labelPostBloomThreshold_,
-                    &labelPostChromatic_, &labelPostGrain_,
-                    &labelPostScanline_, &labelPostDither_}) {
+                    &labelPlayerName_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
@@ -668,211 +598,11 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     }
 
     // ───────────── Graphics ─────────────
-    // InitialLives
-    {
-        const char* kLivesLabels[] = {"1", "3", "5", "10", "99"};
-        auto row = makeMultiRow(Str::LabelInitialLives, [this](int i) {
-            const int kLives[] = {1, 3, 5, 10, 99};
-            initialLives_ = kLives[i];
-            refreshSelection();
-            preferences_->setInt("initial_lives", initialLives_);
-        });
-        for (int i = 0; i < 5; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kLivesLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
-        }
-        graphicsMultiRows_.push_back(std::move(row));
-    }
-
-    // 9 个 Toggle
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelAnimation, [this](bool v) {
-        animationEnabled_ = v; refreshSelection(); applyAnimation();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelPseudo3D, [this](bool v) {
-        pseudo3D_ = v; refreshSelection(); applyPseudo3D();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelParallax, [this](bool v) {
-        parallaxEnabled_ = v; refreshSelection(); applyParallax();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelPlayerAnimation, [this](bool v) {
-        playerAnimEnabled_ = v; refreshSelection(); applyPlayerAnimation();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelLevelIntro, [this](bool v) {
-        levelIntroEnabled_ = v; refreshSelection(); applyLevelIntro();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelParticles, [this](bool v) {
-        particlesEnabled_ = v; refreshSelection(); applyParticles();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelScreenShake, [this](bool v) {
-        screenShake_ = v; refreshSelection(); applyScreenShake();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelNotification, [this](bool v) {
-        notificationEnabled_ = v; refreshSelection(); applyNotification();
-    }));
-    graphicsToggles_.push_back(makeToggleRow(Str::LabelShowColliders, [this](bool v) {
-        showColliders_ = v; refreshSelection(); applyShowColliders();
-    }));
-    // AnimationSpeed
-    {
-        auto row = makeMultiRow(Str::LabelAnimationSpeed, [this](int i) {
-            animationSpeedIndex_ = i;
-            refreshSelection(); applyAnimation();
-        });
-        for (int i = 0; i < kanimSpeedCount; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{86.f, 40.f}, 18));
-        }
-        graphicsMultiRows_.push_back(std::move(row));
-    }
-
-    // ⭐ 画面预设
-    {
-        presetRow_ = std::make_unique<MultiRow>(
-            font_, Str::LabelPreset, [this](int i) { applyPreset(i); });
-        presetRow_->stepX = 112.f;
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetDefault),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetCRT),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetCinematic),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetPixel8),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetNight),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-    }
-
-    // ⭐ 后处理滑块
-    {
-        auto& pp = window_->postProcess();
-        saturationSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 200.f, pp.saturation() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        saturationSlider_->setDefaultValue(100.f);
-
-        contrastSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 200.f, pp.contrast() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        contrastSlider_->setDefaultValue(100.f);
-
-        brightnessSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 200.f, pp.brightness() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        brightnessSlider_->setDefaultValue(100.f);
-
-        gammaSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 250.f, pp.gamma() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        gammaSlider_->setDefaultValue(100.f);
-
-        vignetteSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.vignette() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        vignetteSlider_->setDefaultValue(0.f);
-
-        bloomStrengthSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 200.f, pp.bloomStrength() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        bloomStrengthSlider_->setDefaultValue(0.f);
-
-        bloomThresholdSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.bloomThreshold() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        bloomThresholdSlider_->setDefaultValue(70.f);
-
-        chromaticSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.chromatic() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        chromaticSlider_->setDefaultValue(0.f);
-
-        grainSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.grain() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        grainSlider_->setDefaultValue(0.f);
-
-        scanlineSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.scanline() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        scanlineSlider_->setDefaultValue(0.f);
-
-        ditherSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.dither() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-        ditherSlider_->setDefaultValue(0.f);
-    }
-    // NotificationPos
-    {
-        auto row = makeMultiRow(Str::LabelNotificationPos, [this](int i) {
-            notificationPosition_ = i;
-            refreshSelection(); applyNotification();
-        });
-        row->stepX = 86.f;
-        for (int i = 0; i < kPosCount; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{76.f, 40.f}, 16));
-        }
-        graphicsMultiRows_.push_back(std::move(row));
-    }
-    // ButtonCorner
-    {
-        auto row = makeMultiRow(Str::LabelButtonCorner, [this](int i) {
-            buttonCorner_ = kButtonCorners[i];
-            refreshSelection(); applyButtonStyle();
-        });
-        for (int i = 0; i < kButtonCornerCount; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kButtonCornerLabels[i], font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{86.f, 40.f}, 18));
-        }
-        graphicsMultiRows_.push_back(std::move(row));
-    }
-    // ButtonOutline
-    {
-        auto row = makeMultiRow(Str::LabelButtonOutline, [this](int i) {
-            buttonOutline_ = kButtonOutlines[i];
-            refreshSelection(); applyButtonStyle();
-        });
-        for (int i = 0; i < kButtonOutlineCount; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kButtonOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{86.f, 40.f}, 18));
-        }
-        graphicsMultiRows_.push_back(std::move(row));
-    }
-
+    // ⭐ 独立 Tab
+    graphicsTab_ = std::make_unique<GraphicsTab>(font_, preferences_, window_);
     // ───────────── Audio ─────────────
-    masterVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, masterVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    masterVolumeSlider_->setDefaultValue(100.f);
-    audioToggles_.push_back(makeToggleRow(Str::LabelSound, [this](bool v) {
-        soundEnabled_ = v; refreshSelection(); applySound();
-    }));
-    soundVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, soundVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    soundVolumeSlider_->setDefaultValue(60.f);
-    audioToggles_.push_back(makeToggleRow(Str::LabelBGM, [this](bool v) {
-        bgmEnabled_ = v; refreshSelection(); applyBGM();
-    }));
-    bgmVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, bgmVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    bgmVolumeSlider_->setDefaultValue(40.f);
-    audioToggles_.push_back(makeToggleRow(Str::LabelGamepad, [this](bool v) {
-        gamepadEnabled_ = v; refreshSelection(); applyGamepad();
-    }));
-    audioToggles_.push_back(makeToggleRow(Str::LabelGamepadVibration, [this](bool v) {
-        gamepadVibrationEnabled_ = v; refreshSelection(); applyGamepadVibration();
-    }));
-
-    gamepadVibrationSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, gamepadVibrationIntensity_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    gamepadVibrationSlider_->setDefaultValue(100.f);
+    // ⭐ 独立 Tab
+    audioTab_ = std::make_unique<AudioTab>(font_, preferences_, window_);
 
     // ───────────── Other ─────────────
     otherToggles_.push_back(makeToggleRow(Str::LabelRememberSize, [this](bool v) {
@@ -925,13 +655,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     resetGraphicsButton_ = std::make_unique<Button>(Str::ResetGraphics, font_,
                         sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22);
 
-    {
-        ButtonStyle bs;
-        bs.cornerRadius = buttonCorner_;
-        bs.outlineThickness = buttonOutline_;
-        setButtonStyle(bs);
-    }
-
     refreshSelection();
     updateDesignView();
 }
@@ -962,23 +685,8 @@ void SettingsScene::refreshLabels() {
     setLabel(labelWallpaper_,        Str::LabelWallpaper);
     setLabel(labelConsoleMask_,      Str::LabelConsoleMask);
     setLabel(labelConsolePanelAlpha_, Str::LabelConsolePanelAlpha);
-    setLabel(labelMasterVolume_,     Str::LabelMasterVolume);
-    setLabel(labelSoundVolume_,      Str::LabelSoundVolume);
-    setLabel(labelBGMVolume_,        Str::LabelBGMVolume);
-    setLabel(labelVibrationIntensity_, Str::LabelVibrationIntensity);
     setLabel(labelPlayerName_,       Str::LabelPlayerName);
     setLabel(hintUiScale_,           Str::HintUiScale);
-    setLabel(labelPostSaturation_,   Str::LabelPostSaturation);
-    setLabel(labelPostContrast_,     Str::LabelPostContrast);
-    setLabel(labelPostBrightness_,   Str::LabelPostBrightness);
-    setLabel(labelPostGamma_,        Str::LabelPostGamma);
-    setLabel(labelPostVignette_,     Str::LabelPostVignette);
-    setLabel(labelPostBloomStrength_,  Str::LabelPostBloomStrength);
-    setLabel(labelPostBloomThreshold_, Str::LabelPostBloomThreshold);
-    setLabel(labelPostChromatic_,      Str::LabelPostChromatic);
-    setLabel(labelPostGrain_,          Str::LabelPostGrain);
-    setLabel(labelPostScanline_,       Str::LabelPostScanline);
-    setLabel(labelPostDither_,         Str::LabelPostDither);
 
     // ===== Tab 按钮 =====
     if (tabButtons_.size() >= 6) {
@@ -1001,16 +709,8 @@ void SettingsScene::refreshLabels() {
         row->onButton->setText(Str::T(Str::On));
         row->offButton->setText(Str::T(Str::Off));
     }
-    for (auto& row : graphicsToggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
-    for (auto& row : audioToggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
+    if (graphicsTab_) graphicsTab_->refreshLabels();
+    if (audioTab_) audioTab_->refreshLabels();
     for (auto& row : otherToggles_) {
         row->label.setString(toSf(Str::T(row->labelKey.c_str())));
         row->onButton->setText(Str::T(Str::On));
@@ -1018,7 +718,6 @@ void SettingsScene::refreshLabels() {
     }
     for (auto& row : displayMultiRows_)  row->refreshLabel();
     for (auto& row : interfaceMultiRows_) row->refreshLabel();
-    for (auto& row : graphicsMultiRows_) row->refreshLabel();
     if (presetRow_) {
         presetRow_->label.setString(toSf(Str::T(Str::LabelPreset)));
         if (presetRow_->buttons.size() >= 5) {
@@ -1103,32 +802,10 @@ void SettingsScene::refreshSelection() {
     }
 
     // Graphics
-    if (graphicsToggles_.size() == 9) {
-        setToggleRow(*graphicsToggles_[0], animationEnabled_);
-        setToggleRow(*graphicsToggles_[1], pseudo3D_);
-        setToggleRow(*graphicsToggles_[2], parallaxEnabled_);
-        setToggleRow(*graphicsToggles_[3], playerAnimEnabled_);
-        setToggleRow(*graphicsToggles_[4], levelIntroEnabled_);
-        setToggleRow(*graphicsToggles_[5], particlesEnabled_);
-        setToggleRow(*graphicsToggles_[6], screenShake_);
-        setToggleRow(*graphicsToggles_[7], notificationEnabled_);
-        setToggleRow(*graphicsToggles_[8], showColliders_);
-    }
-    if (graphicsMultiRows_.size() == 5) {
-        graphicsMultiRows_[0]->setSelected(indexOfLives(initialLives_));
-        graphicsMultiRows_[1]->setSelected(animationSpeedIndex_);
-        graphicsMultiRows_[2]->setSelected(notificationPosition_);
-        graphicsMultiRows_[3]->setSelected(indexOfButtonCorner(buttonCorner_));
-        graphicsMultiRows_[4]->setSelected(indexOfButtonOutline(buttonOutline_));
-    }
+    if (graphicsTab_) graphicsTab_->refreshSelection();
 
     // Audio
-    if (audioToggles_.size() == 4) {
-        setToggleRow(*audioToggles_[0], soundEnabled_);
-        setToggleRow(*audioToggles_[1], bgmEnabled_);
-        setToggleRow(*audioToggles_[2], gamepadEnabled_);
-        setToggleRow(*audioToggles_[3], gamepadVibrationEnabled_);
-    }
+    if (audioTab_) audioTab_->refreshSelection();
 
     // Other
     if (otherToggles_.size() == 2) {
@@ -1169,18 +846,10 @@ void SettingsScene::syncFocus() {
             items.push_back(wallpaperButton_.get());
             break;
         case Tab::Graphics:
-            for (auto& row : graphicsMultiRows_)
-                for (auto& btn : row->buttons) items.push_back(btn.get());
-            for (auto& row : graphicsToggles_) {
-                items.push_back(row->onButton.get());
-                items.push_back(row->offButton.get());
-            }
+            if (graphicsTab_) graphicsTab_->registerFocus(items);
             break;
         case Tab::Audio:
-            for (auto& row : audioToggles_) {
-                items.push_back(row->onButton.get());
-                items.push_back(row->offButton.get());
-            }
+            audioTab_->registerFocus(items);
             break;
         case Tab::Keys:
             for (auto& b : keyBindingButtons_) items.push_back(b.get());
@@ -1265,144 +934,15 @@ void SettingsScene::applyFpsLimit() {
     window_->setFramerateLimit(static_cast<unsigned>(fpsLimit_));
     preferences_->setInt("fps_limit", fpsLimit_);
 }
-void SettingsScene::applyButtonStyle() {
-    ButtonStyle bs;
-    bs.cornerRadius     = buttonCorner_;
-    bs.outlineThickness = buttonOutline_;
-    setButtonStyle(bs);
-    preferences_->setDouble("button_corner",  buttonCorner_);
-    preferences_->setDouble("button_outline", buttonOutline_);
-}
 void SettingsScene::applyLogRotation() {
     logger_->setRotation(kLogRotateSizes[logRotateIndex_], kLogKeeps[logKeepIndex_]);
     preferences_->setInt("log_rotate", logRotateIndex_);
     preferences_->setInt("log_keep",   logKeepIndex_);
 }
-void SettingsScene::applyAnimation() {
-    Anim::setEnabled(animationEnabled_);
-    Anim::setSpeed(kanimSpeeds[animationSpeedIndex_]);
-    preferences_->setBool("animation_enabled", animationEnabled_);
-    preferences_->setInt("animation_speed_index", animationSpeedIndex_);
-}
-void SettingsScene::applyNotification() {
-    NotificationSystem::instance().setEnabled(notificationEnabled_);
-    NotificationSystem::instance().setPosition(
-        static_cast<NotificationPos>(notificationPosition_));
-    preferences_->setBool("notification_enabled", notificationEnabled_);
-    preferences_->setInt("notification_position", notificationPosition_);
-}
-void SettingsScene::applySound() {
-    SoundManager::instance().setEnabled(soundEnabled_);
-    SoundManager::instance().setSFXVolume(soundVolume_);
-    preferences_->setBool("sound_enabled", soundEnabled_);
-    preferences_->setDouble("sound_volume", soundVolume_);
-    if (soundEnabled_) SoundManager::instance().playCoin();
-}
-void SettingsScene::applyBGM() {
-    SoundManager::instance().setBGMEnabled(bgmEnabled_);
-    SoundManager::instance().setMusicVolume(bgmVolume_);
-    preferences_->setBool("bgm_enabled", bgmEnabled_);
-    preferences_->setDouble("bgm_volume", bgmVolume_);
-}
-void SettingsScene::applyGamepad() {
-    preferences_->setBool("gamepad_enabled", gamepadEnabled_);
-    FocusGroup::instance().setEnabled(gamepadEnabled_);
-}
-void SettingsScene::applyGamepadVibration() {
-    preferences_->setBool("gamepad_vibration_enabled", gamepadVibrationEnabled_);
-    Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
-}
 void SettingsScene::applyAutoPause()      { preferences_->setBool("auto_pause_on_blur", autoPauseOnBlur_); }
 void SettingsScene::applyConsolePrompt()  { preferences_->setInt("console_prompt", consolePrompt_); }
-void SettingsScene::applyShowColliders()  { preferences_->setBool("show_colliders", showColliders_); }
-void SettingsScene::applyScreenShake()    { preferences_->setBool("screen_shake", screenShake_); }
-void SettingsScene::applyParticles()      { preferences_->setBool("particles", particlesEnabled_); }
-void SettingsScene::applyPseudo3D()       { preferences_->setBool("pseudo_3d", pseudo3D_); }
-void SettingsScene::applyParallax()       { preferences_->setBool("parallax", parallaxEnabled_); }
-void SettingsScene::applyPlayerAnimation(){ preferences_->setBool("player_animation", playerAnimEnabled_); }
-void SettingsScene::applyLevelIntro()     { preferences_->setBool("level_intro", levelIntroEnabled_); }
 void SettingsScene::resetAllPreferences() { preferences_->resetAll(); }
 
-void SettingsScene::applyPreset(int idx) {
-    if (idx < 0 || idx >= kPresetCount) return;
-    const auto& p = kPresets[idx];
-
-    auto& pp = window_->postProcess();
-    pp.setSaturation    (p.saturation      / 100.f);
-    pp.setContrast      (p.contrast        / 100.f);
-    pp.setBrightness    (p.brightness      / 100.f);
-    pp.setGamma         (p.gamma           / 100.f);
-    pp.setVignette      (p.vignette        / 100.f);
-    pp.setBloomStrength (p.bloomStrength   / 100.f);
-    pp.setBloomThreshold(p.bloomThreshold  / 100.f);
-    pp.setChromatic     (p.chromatic       / 100.f);
-    pp.setGrain         (p.grain           / 100.f);
-    pp.setScanline      (p.scanline        / 100.f);
-    pp.setDither        (p.dither          / 100.f);
-
-    saturationSlider_    ->setValue(p.saturation);
-    contrastSlider_      ->setValue(p.contrast);
-    brightnessSlider_    ->setValue(p.brightness);
-    gammaSlider_         ->setValue(p.gamma);
-    vignetteSlider_      ->setValue(p.vignette);
-    bloomStrengthSlider_ ->setValue(p.bloomStrength);
-    bloomThresholdSlider_->setValue(p.bloomThreshold);
-    chromaticSlider_     ->setValue(p.chromatic);
-    grainSlider_         ->setValue(p.grain);
-    scanlineSlider_      ->setValue(p.scanline);
-    ditherSlider_        ->setValue(p.dither);
-
-    preferences_->setDouble("post_saturation",      p.saturation      / 100.f);
-    preferences_->setDouble("post_contrast",        p.contrast        / 100.f);
-    preferences_->setDouble("post_brightness",      p.brightness      / 100.f);
-    preferences_->setDouble("post_gamma",           p.gamma           / 100.f);
-    preferences_->setDouble("post_vignette",        p.vignette        / 100.f);
-    preferences_->setDouble("post_bloom_strength",  p.bloomStrength   / 100.f);
-    preferences_->setDouble("post_bloom_threshold", p.bloomThreshold  / 100.f);
-    preferences_->setDouble("post_chromatic",       p.chromatic       / 100.f);
-    preferences_->setDouble("post_grain",           p.grain           / 100.f);
-    preferences_->setDouble("post_scanline",        p.scanline        / 100.f);
-    preferences_->setDouble("post_dither",          p.dither          / 100.f);
-}
-
-void SettingsScene::resetGraphicsPost() {
-    auto& pp = window_->postProcess();
-    pp.setSaturation(1.f);
-    pp.setContrast(1.f);
-    pp.setBrightness(1.f);
-    pp.setGamma(1.f);
-    pp.setVignette(0.f);
-    pp.setBloomStrength(0.f);
-    pp.setBloomThreshold(0.7f);
-    pp.setChromatic(0.f);
-    pp.setGrain(0.f);
-    pp.setScanline(0.f);
-    pp.setDither(0.f);
-
-    saturationSlider_->setValue(100.f);
-    contrastSlider_->setValue(100.f);
-    brightnessSlider_->setValue(100.f);
-    gammaSlider_->setValue(100.f);
-    vignetteSlider_->setValue(0.f);
-    bloomStrengthSlider_->setValue(0.f);
-    bloomThresholdSlider_->setValue(70.f);
-    chromaticSlider_->setValue(0.f);
-    grainSlider_->setValue(0.f);
-    scanlineSlider_->setValue(0.f);
-    ditherSlider_->setValue(0.f);
-
-    preferences_->setDouble("post_saturation", 1.0);
-    preferences_->setDouble("post_contrast", 1.0);
-    preferences_->setDouble("post_brightness", 1.0);
-    preferences_->setDouble("post_gamma", 1.0);
-    preferences_->setDouble("post_vignette", 0.0);
-    preferences_->setDouble("post_bloom_strength", 0.0);
-    preferences_->setDouble("post_bloom_threshold", 0.7);
-    preferences_->setDouble("post_chromatic", 0.0);
-    preferences_->setDouble("post_grain", 0.0);
-    preferences_->setDouble("post_scanline", 0.0);
-    preferences_->setDouble("post_dither", 0.0);
-}
 
 // ============================================================
 // 事件
@@ -1498,34 +1038,10 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             consolePanelAlphaSlider_->handleEvent(ev);
             break;
         case Tab::Graphics:
-            for (auto& row : graphicsMultiRows_)
-                for (auto& btn : row->buttons) btn->handleEvent(ev);
-            for (auto& row : graphicsToggles_) {
-                row->onButton->handleEvent(ev);
-                row->offButton->handleEvent(ev);
-            }
-            for (auto& btn : presetRow_->buttons) btn->handleEvent(ev);
-            saturationSlider_->handleEvent(ev);
-            contrastSlider_->handleEvent(ev);
-            brightnessSlider_->handleEvent(ev);
-            gammaSlider_->handleEvent(ev);
-            vignetteSlider_->handleEvent(ev);
-            bloomStrengthSlider_->handleEvent(ev);
-            bloomThresholdSlider_->handleEvent(ev);
-            chromaticSlider_->handleEvent(ev);
-            grainSlider_->handleEvent(ev);
-            scanlineSlider_->handleEvent(ev);
-            ditherSlider_->handleEvent(ev);
+            if (graphicsTab_) graphicsTab_->handleEvent(ev);
             break;
         case Tab::Audio:
-            masterVolumeSlider_->handleEvent(ev);
-            for (auto& row : audioToggles_) {
-                row->onButton->handleEvent(ev);
-                row->offButton->handleEvent(ev);
-            }
-            soundVolumeSlider_->handleEvent(ev);
-            bgmVolumeSlider_->handleEvent(ev);
-            gamepadVibrationSlider_->handleEvent(ev);
+            if (audioTab_) audioTab_->handleEvent(ev);
             break;
         case Tab::Keys: {
             if (listeningAction_ >= 0) {
@@ -1578,7 +1094,7 @@ void SettingsScene::update(float /*dt*/) {
     // ⭐ 画面 Tab 重置按钮
     if (currentTab_ == Tab::Graphics
         && resetGraphicsButton_->consumeClick()) {
-        resetGraphicsPost();
+        if (graphicsTab_) graphicsTab_->resetPost();
         return;
     }
 
@@ -1672,119 +1188,12 @@ void SettingsScene::update(float /*dt*/) {
             }
             break;
         }
-        case Tab::Graphics: {
-            for (auto& row : graphicsMultiRows_) {
-                for (size_t i = 0; i < row->buttons.size(); ++i) {
-                    if (row->buttons[i]->consumeClick()) {
-                        if (row->currentIndex != static_cast<int>(i)
-                            && row->onSelected) {
-                            row->onSelected(static_cast<int>(i));
-                        }
-                        return;
-                    }
-                }
-            }
-            // ⭐ 预设按钮
-            for (size_t i = 0; i < presetRow_->buttons.size(); ++i) {
-                if (presetRow_->buttons[i]->consumeClick()) {
-                    applyPreset(static_cast<int>(i));
-                    return;
-                }
-            }
-            for (auto& row : graphicsToggles_) {
-                if (row->onButton->consumeClick() && !row->currentValue) {
-                    if (row->onChanged) row->onChanged(true);
-                    return;
-                }
-                if (row->offButton->consumeClick() && row->currentValue) {
-                    if (row->onChanged) row->onChanged(false);
-                    return;
-                }
-            }
-            // ⭐ 后处理滑块
-            {
-                auto& pp = window_->postProcess();
-                if (saturationSlider_->consumeChanged()) {
-                    pp.setSaturation(saturationSlider_->value() / 100.f);
-                    preferences_->setDouble("post_saturation", pp.saturation());
-                }
-                if (contrastSlider_->consumeChanged()) {
-                    pp.setContrast(contrastSlider_->value() / 100.f);
-                    preferences_->setDouble("post_contrast", pp.contrast());
-                }
-                if (brightnessSlider_->consumeChanged()) {
-                    pp.setBrightness(brightnessSlider_->value() / 100.f);
-                    preferences_->setDouble("post_brightness", pp.brightness());
-                }
-                if (gammaSlider_->consumeChanged()) {
-                    pp.setGamma(gammaSlider_->value() / 100.f);
-                    preferences_->setDouble("post_gamma", pp.gamma());
-                }
-                if (vignetteSlider_->consumeChanged()) {
-                    pp.setVignette(vignetteSlider_->value() / 100.f);
-                    preferences_->setDouble("post_vignette", pp.vignette());
-                }
-                if (bloomStrengthSlider_->consumeChanged()) {
-                    pp.setBloomStrength(bloomStrengthSlider_->value() / 100.f);
-                    preferences_->setDouble("post_bloom_strength", pp.bloomStrength());
-                }
-                if (bloomThresholdSlider_->consumeChanged()) {
-                    pp.setBloomThreshold(bloomThresholdSlider_->value() / 100.f);
-                    preferences_->setDouble("post_bloom_threshold", pp.bloomThreshold());
-                }
-                if (chromaticSlider_->consumeChanged()) {
-                    pp.setChromatic(chromaticSlider_->value() / 100.f);
-                    preferences_->setDouble("post_chromatic", pp.chromatic());
-                }
-                if (grainSlider_->consumeChanged()) {
-                    pp.setGrain(grainSlider_->value() / 100.f);
-                    preferences_->setDouble("post_grain", pp.grain());
-                }
-                if (scanlineSlider_->consumeChanged()) {
-                    pp.setScanline(scanlineSlider_->value() / 100.f);
-                    preferences_->setDouble("post_scanline", pp.scanline());
-                }
-                if (ditherSlider_->consumeChanged()) {
-                    pp.setDither(ditherSlider_->value() / 100.f);
-                    preferences_->setDouble("post_dither", pp.dither());
-                }
-            }
+        case Tab::Graphics:
+            if (graphicsTab_) graphicsTab_->update();
             break;
-        }
-        case Tab::Audio: {
-            if (masterVolumeSlider_->consumeChanged()) {
-                masterVolume_ = masterVolumeSlider_->value() / 100.f;
-                SoundManager::instance().setMasterVolume(masterVolume_);
-                preferences_->setDouble("master_volume", masterVolume_);
-            }
-            for (auto& row : audioToggles_) {
-                if (row->onButton->consumeClick() && !row->currentValue) {
-                    if (row->onChanged) row->onChanged(true);
-                    return;
-                }
-                if (row->offButton->consumeClick() && row->currentValue) {
-                    if (row->onChanged) row->onChanged(false);
-                    return;
-                }
-            }
-            if (soundVolumeSlider_->consumeChanged()) {
-                soundVolume_ = soundVolumeSlider_->value() / 100.f;
-                SoundManager::instance().setSFXVolume(soundVolume_);
-                preferences_->setDouble("sound_volume", soundVolume_);
-            }
-            if (bgmVolumeSlider_->consumeChanged()) {
-                bgmVolume_ = bgmVolumeSlider_->value() / 100.f;
-                SoundManager::instance().setMusicVolume(bgmVolume_);
-                preferences_->setDouble("bgm_volume", bgmVolume_);
-            }
-            if (gamepadVibrationSlider_->consumeChanged()) {
-                gamepadVibrationIntensity_ = gamepadVibrationSlider_->value() / 100.f;
-                Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
-                preferences_->setDouble("gamepad_vibration_intensity",
-                                        gamepadVibrationIntensity_);
-            }
+        case Tab::Audio:
+            if (audioTab_) audioTab_->update();
             break;
-        }
         case Tab::Keys: {
             if (listeningAction_ >= 0) break;
             for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
@@ -2035,41 +1444,10 @@ float SettingsScene::renderGraphicsTab(Window& window, float contentX,
     window.target().draw(headingGraphics_);
     y += 36.f;
 
-    RowDrawer r{window.target(), contentX, ctrlX, y};
-    r.availableWidth = kDesignW - ctrlX - 40.f;
-
-    r.multi (*graphicsMultiRows_[0]);   // InitialLives
-    r.toggle(*graphicsToggles_[0]);     // Animation
-    r.multi (*graphicsMultiRows_[1]);   // AnimationSpeed
-    r.toggle(*graphicsToggles_[1]);     // Pseudo3D
-    r.toggle(*graphicsToggles_[2]);     // Parallax
-    r.toggle(*graphicsToggles_[3]);     // PlayerAnim
-    r.toggle(*graphicsToggles_[4]);     // LevelIntro
-    r.toggle(*graphicsToggles_[5]);     // Particles
-    r.toggle(*graphicsToggles_[6]);     // ScreenShake
-    r.toggle(*graphicsToggles_[7]);     // Notification
-    r.multi (*graphicsMultiRows_[2]);   // NotificationPos
-    r.multi (*graphicsMultiRows_[3]);   // ButtonCorner
-    r.multi (*graphicsMultiRows_[4]);   // ButtonOutline
-    r.toggle(*graphicsToggles_[8]);     // ShowColliders
-
-    // ⭐ 预设
-    r.multi(*presetRow_);
-
-    // ⭐ 后处理
-    r.slider(labelPostSaturation_, saturationSlider_.get());
-    r.slider(labelPostContrast_,   contrastSlider_.get());
-    r.slider(labelPostBrightness_, brightnessSlider_.get());
-    r.slider(labelPostGamma_,      gammaSlider_.get());
-    r.slider(labelPostVignette_,   vignetteSlider_.get());
-    r.slider(labelPostBloomStrength_,  bloomStrengthSlider_.get());
-    r.slider(labelPostBloomThreshold_, bloomThresholdSlider_.get());
-    r.slider(labelPostChromatic_,      chromaticSlider_.get());
-    r.slider(labelPostGrain_,          grainSlider_.get());
-    r.slider(labelPostScanline_,       scanlineSlider_.get());
-    r.slider(labelPostDither_,         ditherSlider_.get());
-
-    return r.y;
+    if (graphicsTab_) {
+        return graphicsTab_->render(window.target(), contentX, ctrlX, y);
+    }
+    return y;
 }
 
 float SettingsScene::renderAudioTab(Window& window, float contentX,
@@ -2078,18 +1456,10 @@ float SettingsScene::renderAudioTab(Window& window, float contentX,
     window.target().draw(headingAudio_);
     y += 36.f;
 
-    RowDrawer r{window.target(), contentX, ctrlX, y};
-    r.availableWidth = kDesignW - ctrlX - 40.f;
-
-    r.slider(labelMasterVolume_, masterVolumeSlider_.get());
-    r.toggle(*audioToggles_[0]);   // Sound
-    r.slider(labelSoundVolume_,  soundVolumeSlider_.get());
-    r.toggle(*audioToggles_[1]);   // BGM
-    r.slider(labelBGMVolume_,    bgmVolumeSlider_.get());
-    r.toggle(*audioToggles_[2]);   // Gamepad
-    r.toggle(*audioToggles_[3]);   // GamepadVibration
-    r.slider(labelVibrationIntensity_, gamepadVibrationSlider_.get());
-    return r.y;
+    if (audioTab_) {
+        return audioTab_->render(window.target(), contentX, ctrlX, y);
+    }
+    return y;
 }
 
 float SettingsScene::renderKeysTab(Window& window, float contentX,

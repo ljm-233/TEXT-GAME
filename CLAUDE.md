@@ -68,9 +68,9 @@ GameWorld 通过 EventBus 发事件，GameScene 订阅处理音效/粒子。
 玩家手感（速度/重力/跳跃）	include/game/game_constants.h
 添加新游戏对象	include/game/ + src/game/，然后在 GameWorld::spawnLevelObjects 和 checkCollisionsSafe 里注册
 添加新场景	include/scene/ + src/scene/，然后在 Game::createScene 里加 case
-添加新设置项	SettingsScene（5 个 Tab 里选一个），涉及 .h 声明 + .cpp 构造/事件/更新/渲染/焦点注册
+添加新设置项（新方式） | 参照 `include/scene/tabs/audio_tab.h`：新建 `xxx_tab.h/cpp`，SettingsScene 只转发
+添加新设置项（旧方式） | SettingsScene 里改 6 处，参照 displayToggles_ / interfaceMultiRows_ 等
 添加新事件	include/game/event_bus.h 加 struct + 加入 variant，然后 GameWorld emit + GameScene 订阅
-添加关卡	assets/levels/levelN.txt，参考 assets/levels/level2.txt
 添加主题	include/ui/theme.h 加枚举 + src/ui/theme.cpp 加颜色组
 已知陷阱
 Game::createScene 里不要有副作用。GameScene 的 takePendingSave() 已挪到 onEnter()。
@@ -83,7 +83,9 @@ EventBus::subscribe 的回调是同步的，emit 时会立刻执行。
 
 save_manager::updateProgress 的 progress 参数实际存的是金币数（命名误导）。
 
-SettingsScene 有 60+ 个 unique_ptr<Button> 成员，加设置项要改 6 处，考虑重构。
+- SettingsScene 有 60+ 个 unique_ptr<Button> 成员，正在逐步重构。
+- ⭐ **新架构**：Tab 自包含（见 `tabs/audio_tab.h`），SettingsScene 只转发。
+- ⭐ 迁移中的 Tab：AudioTab 已完成，其他 Tab（Display/Interface/Graphics/Keys/Other）待迁移。
 
 PauseMenu::render 会重设 FocusGroup::setItems，与 Scene 的焦点注册冲突。
 

@@ -12,6 +12,8 @@
 #include "theme.h"
 #include "toggle_row.h"
 #include "multi_row.h"
+#include "tabs/audio_tab.h"
+#include "tabs/graphics_tab.h"
 #include <memory>
 #include <vector>
 
@@ -44,16 +46,12 @@ private:
     void applyPreset(int idx);
 
     bool anySliderEditing() const {
-        for (auto* s : {saturationSlider_.get(), contrastSlider_.get(),
-                        brightnessSlider_.get(), gammaSlider_.get(),
-                        vignetteSlider_.get(), bloomStrengthSlider_.get(),
-                        bloomThresholdSlider_.get(), chromaticSlider_.get(),
-                        grainSlider_.get(), scanlineSlider_.get(),
-                        ditherSlider_.get(), consoleMaskSlider_.get(),
-                        consolePanelAlphaSlider_.get(), masterVolumeSlider_.get(),
-                        soundVolumeSlider_.get(), bgmVolumeSlider_.get()}) {
+        for (auto* s : {consoleMaskSlider_.get(),
+                        consolePanelAlphaSlider_.get()}) {
             if (s && s->isEditing()) return true;
         }
+        if (audioTab_ && audioTab_->anyEditing()) return true;
+        if (graphicsTab_ && graphicsTab_->anyEditing()) return true;
         return false;
     }
     void applyResolution();
@@ -72,10 +70,7 @@ private:
     void applyLogRotation();
     void applyAnimation();
     void applyNotification();
-    void applySound();
-    void applyBGM();
-    void applyGamepad();
-    void applyGamepadVibration();
+    // ⭐ applyGamepadVibration 已移入 AudioTab
     void applyAutoPause();
     void applyConsolePrompt();
     void applyShowColliders();
@@ -126,34 +121,15 @@ private:
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
 
     // ================= Graphics =================
-    std::vector<std::unique_ptr<ToggleRow>> graphicsToggles_;
-    std::vector<std::unique_ptr<MultiRow>>  graphicsMultiRows_;
-    // [0] InitialLives  [1] AnimationSpeed  [2] NotificationPos
-    // [3] ButtonCorner  [4] ButtonOutline
+    // ⭐ 独立 Tab
+    std::unique_ptr<GraphicsTab> graphicsTab_;
 
     // ================= Graphics 预设 =================
     std::unique_ptr<MultiRow> presetRow_;
 
-    // ================= Graphics 后处理 Slider =================
-    std::unique_ptr<Slider> saturationSlider_;
-    std::unique_ptr<Slider> contrastSlider_;
-    std::unique_ptr<Slider> brightnessSlider_;
-    std::unique_ptr<Slider> gammaSlider_;
-    std::unique_ptr<Slider> vignetteSlider_;
-    std::unique_ptr<Slider> bloomStrengthSlider_;
-    std::unique_ptr<Slider> bloomThresholdSlider_;
-    std::unique_ptr<Slider> chromaticSlider_;
-    std::unique_ptr<Slider> grainSlider_;
-    std::unique_ptr<Slider> scanlineSlider_;
-    std::unique_ptr<Slider> ditherSlider_;
-
     // ================= Audio =================
-    std::vector<std::unique_ptr<ToggleRow>> audioToggles_;
-    // [0] Sound  [1] BGM  [2] Gamepad
-    std::unique_ptr<Slider> masterVolumeSlider_;
-    std::unique_ptr<Slider> soundVolumeSlider_;
-    std::unique_ptr<Slider> bgmVolumeSlider_;
-    std::unique_ptr<Slider> gamepadVibrationSlider_;
+    // ⭐ 独立 Tab，自包含
+    std::unique_ptr<AudioTab> audioTab_;
 
     // ================= Keys =================
     std::vector<std::unique_ptr<Button>> keyBindingButtons_;
@@ -179,22 +155,9 @@ private:
 
     sf::Text labelWallpaper_;
     sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
-    sf::Text labelMasterVolume_, labelSoundVolume_, labelBGMVolume_;
-    sf::Text labelVibrationIntensity_;
+    // ⭐ 已移入 AudioTab
     sf::Text labelPlayerName_;
     sf::Text hintUiScale_;
-    // ⭐ 后处理
-    sf::Text labelPostSaturation_;
-    sf::Text labelPostContrast_;
-    sf::Text labelPostBrightness_;
-    sf::Text labelPostGamma_;
-    sf::Text labelPostVignette_;
-    sf::Text labelPostBloomStrength_;
-    sf::Text labelPostBloomThreshold_;
-    sf::Text labelPostChromatic_;
-    sf::Text labelPostGrain_;
-    sf::Text labelPostScanline_;
-    sf::Text labelPostDither_;
 
     // ================= 状态 =================
     int     selectedResolution_ = 0;
@@ -223,29 +186,7 @@ private:
     bool    consoleBlinkCursor_ = true;
     int     consolePrompt_      = 0;
 
-    bool    animationEnabled_   = true;
-    int     animationSpeedIndex_= 1;
-    bool    notificationEnabled_= true;
-    int     notificationPosition_= 1;
-    bool    pseudo3D_           = true;
-    bool    parallaxEnabled_    = true;
-    bool    playerAnimEnabled_  = true;
-    bool    levelIntroEnabled_  = true;
-    bool    particlesEnabled_   = true;
-    bool    screenShake_        = true;
-    bool    showColliders_      = false;
-    float   buttonCorner_       = 6.f;
-    float   buttonOutline_      = 2.f;
-    int     initialLives_       = 1;
-
-    float   masterVolume_       = 1.0f;
-    bool    soundEnabled_       = true;
-    float   soundVolume_        = 0.6f;
-    bool    bgmEnabled_         = true;
-    float   bgmVolume_          = 0.4f;
-    bool    gamepadEnabled_     = true;
-    bool    gamepadVibrationEnabled_   = true;
-    float   gamepadVibrationIntensity_ = 1.0f;
+    // ⭐ Audio 状态已移入 AudioTab
 
     int     windowMode_         = 0;   // 0=窗口 1=最大化 2=全屏
     bool    rememberSize_       = true;
