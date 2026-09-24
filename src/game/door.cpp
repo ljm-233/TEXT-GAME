@@ -8,9 +8,9 @@ Door::Door(Vec2 pos, int tileSize)
     float ts = static_cast<float>(tileSize_);
 
     frame_.setSize({ts, ts});
-    frame_.setFillColor(sf::Color(90, 60, 30));
-    frame_.setOutlineThickness(2.f);
-    frame_.setOutlineColor(sf::Color(50, 30, 15));
+    frame_.setFillColor(sf::Color::Transparent);
+    frame_.setOutlineThickness(4.f);
+    frame_.setOutlineColor(sf::Color(90, 60, 30));
 
     panel_.setSize({ts * 0.8f, ts * 0.85f});
     panel_.setFillColor(sf::Color(140, 90, 50));
@@ -46,11 +46,9 @@ AABB Door::bounds() const {
 }
 
 void Door::render(sf::RenderTarget& target) const {
-    if (isGone()) return;   // 已经消失
-
     float ts = static_cast<float>(tileSize_);
 
-    // ⭐ 淡出 + 缩放（0.4 秒）
+    // 门板 / 把手的淡出参数（门框不参与）
     float alpha = 1.f;
     float scale = 1.f;
     if (unlocked_) {
@@ -65,22 +63,16 @@ void Door::render(sf::RenderTarget& target) const {
     float cx = pos_.x + ts * 0.5f;
     float cy = pos_.y + ts * 0.5f;
 
-    // ===== 外框 =====
+    // ===== 门框：永远不淡出，全尺寸 =====
     {
-        sf::Color c = frame_.getFillColor();
-        frame_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
-        c = frame_.getOutlineColor();
-        frame_.setOutlineColor(sf::Color(c.r, c.g, c.b, a8));
-
-        float w = ts * scale;
-        float h = ts * scale;
-        frame_.setSize({w, h});
-        frame_.setPosition({cx - w * 0.5f, cy - h * 0.5f});
+        // ⭐ 保留构造时的 alpha，不做覆写
+        frame_.setSize({ts, ts});
+        frame_.setPosition({pos_.x, pos_.y});
         target.draw(frame_);
     }
 
-    // ===== 门板 =====
-    {
+    // ===== 门板：解锁后淡出 =====
+    if (alpha > 0.01f) {
         sf::Color c = panel_.getFillColor();
         panel_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
         c = panel_.getOutlineColor();
@@ -93,8 +85,8 @@ void Door::render(sf::RenderTarget& target) const {
         target.draw(panel_);
     }
 
-    // ===== 门把手 =====
-    {
+    // ===== 门把手：解锁后淡出 =====
+    if (alpha > 0.01f) {
         sf::Color c = knob_.getFillColor();
         knob_.setFillColor(sf::Color(c.r, c.g, c.b, a8));
         c = knob_.getOutlineColor();

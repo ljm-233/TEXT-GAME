@@ -18,10 +18,17 @@ void Gamepad::update() {
         }
     }
 
-    // ⭐ 振动超时归零
+    // ⭐ 振动包络：正弦曲线，0 → 1 → 0
     if (vibrationActive_) {
-        if (vibrationClock_.getElapsedTime().asSeconds() >= vibrationDuration_) {
+        float elapsed = vibrationClock_.getElapsedTime().asSeconds();
+        if (elapsed >= vibrationDuration_) {
             stopVibration();
+        } else {
+            float t = elapsed / vibrationDuration_;
+            float envelope = std::sin(t * 3.14159265f);
+            float l = vibrationLow_  * envelope * vibrationIntensity_;
+            float h = vibrationHigh_ * envelope * vibrationIntensity_;
+            GamepadVibration::instance().setVibration(l, h);
         }
     }
 }
@@ -99,28 +106,32 @@ bool Gamepad::dpadRight() const {
 
 // ===== 振动 =====
 
+void Gamepad::setVibrationEnabled(bool e) {
+    vibrationEnabled_ = e;
+    if (!e) stopVibration();
+}
+
 void Gamepad::setVibrationIntensity(float i) {
     vibrationIntensity_ = std::clamp(i, 0.f, 1.f);
 }
 
 void Gamepad::vibrate(float low, float high, float duration) {
-    if (!vibrationEnabled_ || !connected_) return;
+    if (!vibrationEnabled_) return;
     if (duration <= 0.f) return;
 
-    float l = std::clamp(low  * vibrationIntensity_, 0.f, 1.f);
-    float h = std::clamp(high * vibrationIntensity_, 0.f, 1.f);
-
+    vibrationLow_  = std::clamp(low,  0.f, 1.f);
+    vibrationHigh_ = std::clamp(high, 0.f, 1.f);
     vibrationDuration_ = duration;
-    vibrationClock_.restart();
     vibrationActive_ = true;
+    vibrationClock_.restart();
 
-    // ⚠️ SFML 3 移除了振动 API，此处为空实现。
-    //    接口保留，设置项保留，等以后接入平台原生 API 或换库再填。
-    (void)l;
-    (void)h;
+    // 首帧立即给一个起振
+    float l = vibrationLow_  * vibrationIntensity_;
+    float h = vibrationHigh_ * vibrationIntensity_;
+    GamepadVibration::instance().setVibration(l, h);
 }
 
 void Gamepad::stopVibration() {
+    GamepadVibration::instance().stop();
     vibrationActive_ = false;
-    // ⚠️ SFML 3 无振动 API，空实现
 }

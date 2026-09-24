@@ -125,6 +125,10 @@ if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/windows/text-game.rc")
     target_sources(text_game PRIVATE packaging/windows/text-game.rc)
 endif()
 
+if(WIN32)
+    target_link_libraries(text_game PRIVATE xinput)
+endif()
+
 target_include_directories(text_game PRIVATE
     include
     include/core

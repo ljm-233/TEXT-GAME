@@ -244,6 +244,9 @@ void Application::run() {
     auto logger = container_.resolve<Logger>();
     auto paths = container_.resolve<Paths>();
 
+    // ⭐ 初始化手柄振动（evdev / XInput）
+    GamepadVibration::instance().init();
+
     logger->info("程序启动");
     logger->info("平台: " + std::string(Platform::name));
     logger->info("配置目录: " + paths->configDir().string());
@@ -254,6 +257,9 @@ void Application::run() {
 
     auto game = container_.resolve<Game>();
     game->run();
+
+    // ⭐ 停止振动并释放设备
+    GamepadVibration::instance().shutdown();
 
     logger->info("程序结束");
 }

@@ -3,6 +3,7 @@
 #include <SFML/System/Clock.hpp>
 #include <SFML/System/Time.hpp>
 #include "gamepad_config.h"
+#include "gamepad_vibration.h"
 
 // 手柄封装：自动检测、死区、按钮查询、振动
 class Gamepad {
@@ -45,7 +46,7 @@ public:
     void vibrate(float low, float high, float duration);
     void stopVibration();
 
-    void setVibrationEnabled(bool e) { vibrationEnabled_ = e; if (!e) stopVibration(); }
+    void setVibrationEnabled(bool e);
     bool isVibrationEnabled() const { return vibrationEnabled_; }
 
     void setVibrationIntensity(float i);
@@ -65,6 +66,8 @@ private:
     bool  vibrationEnabled_   = true;
     float vibrationIntensity_ = 1.0f;
     bool  vibrationActive_    = false;
+    float vibrationLow_       = 0.f;
+    float vibrationHigh_      = 0.f;
     float vibrationDuration_  = 0.f;
     sf::Clock vibrationClock_;
 };

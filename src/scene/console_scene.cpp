@@ -77,6 +77,10 @@ void ConsoleScene::onEnter() {
 void ConsoleScene::onExit() {
     stopWorker();
     redirect_.reset();   // ⭐ 恢复 cin/cout/cerr
+
+    // ⭐ 双重保险：强制恢复标准流
+    std::cout.rdbuf(std::cout.rdbuf());
+    std::cerr.rdbuf(std::cerr.rdbuf());
 }
 
 ConsoleScene::~ConsoleScene() {
