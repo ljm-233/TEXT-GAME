@@ -271,6 +271,9 @@ void Game::run() {
 
         scene.update(dt);
 
+        // ⭐ 通知系统 update
+        NotificationSystem::instance().update(dt);
+
         // 每帧检测标题变化
         updateWindowTitle(scene);
 

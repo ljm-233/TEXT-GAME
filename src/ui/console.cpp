@@ -239,6 +239,13 @@ void Console::shutdown() {
     cv_.notify_all();
 }
 
+void Console::resetShutdown() {
+    std::lock_guard<std::mutex> lock(mtx_);
+    shutdown_ = false;
+    lineReady_ = false;
+    pendingLine_.clear();
+}
+
 void Console::clear() {
     std::lock_guard<std::mutex> lock(mtx_);
     lines_.clear();

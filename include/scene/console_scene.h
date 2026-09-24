@@ -38,6 +38,9 @@ public:
 
     ~ConsoleScene() override;
 
+    void onEnter() override;
+    void onExit() override;
+
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;
     void render(Window& window) override;

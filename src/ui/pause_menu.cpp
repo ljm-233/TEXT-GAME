@@ -83,6 +83,16 @@ PauseMenu::PauseMenu(const sf::Font& font,
     syncFocus();
 }
 
+void PauseMenu::reset() {
+    view_ = View::Main;
+    pendingAction_ = Action::None;
+    refreshLabels();
+    relayout(windowSize_);
+    refreshSelection();
+    syncFocus();
+}
+
+
 void PauseMenu::syncFocus() {
     if (view_ == View::Main) {
         std::vector<Button*> items;

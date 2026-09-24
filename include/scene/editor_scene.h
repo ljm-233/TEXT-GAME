@@ -119,6 +119,7 @@ private:
     sf::Text hudText_;
     sf::Text hintText_;
     sf::Text flashDraw_;
+    sf::Text brushNameText_;   // ⭐ 复用，不每帧构造/析构
 
     std::string savePath_;
 

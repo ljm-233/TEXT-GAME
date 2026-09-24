@@ -55,12 +55,28 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
         promptIdx = 0;
     console_->setPrompt(prompts[promptIdx]);
 
-    // RAII 重定向——构造失败也不会污染全局 iostream
-    redirect_ = std::make_unique<ConsoleStreamRedirect>(console_.get());
+    logger_->info("控制台场景已创建（等待 onEnter）");
+}
+
+void ConsoleScene::onEnter() {
+    pendingScene_ = static_cast<int>(SceneId::None);
+
+    // ⭐ 每次进入才重定向 iostream + 启动 worker
+    if (!redirect_) {
+        redirect_ = std::make_unique<ConsoleStreamRedirect>(console_.get());
+    }
+    if (!worker_.joinable()) {
+        console_->resetShutdown();
+        workerDone_ = false;
+        startCommandLoop();
+    }
 
     printWelcome();
-    startCommandLoop();
-    logger_->info("进入控制台场景");
+}
+
+void ConsoleScene::onExit() {
+    stopWorker();
+    redirect_.reset();   // ⭐ 恢复 cin/cout/cerr
 }
 
 ConsoleScene::~ConsoleScene() {

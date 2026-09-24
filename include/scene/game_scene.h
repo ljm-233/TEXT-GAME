@@ -75,7 +75,8 @@ private:
     sf::Color screenFlashColor_ = sf::Color::White;
 
     std::unique_ptr<ParallaxBackground> parallax_;
-    std::unique_ptr<LevelIntro>         intro_;
+    std::unique_ptr<LevelIntro>         intro_;   // ⭐ 常驻，不 reset
+    bool                                introActive_ = false;
 
     sf::View worldView_;
     float    lastViewWinW_ = 0.f;

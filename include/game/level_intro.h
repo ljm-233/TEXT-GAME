@@ -5,8 +5,12 @@
 // 关卡开场文字：淡入 → 停留 → 淡出
 class LevelIntro {
 public:
-    LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
-               const std::string& levelName = "");
+    // ⭐ 只构造一次，之后复用 restart()
+    explicit LevelIntro(const sf::Font& font);
+
+    // ⭐ 重新设置文字并重置计时
+    void restart(int levelIndex, float totalCoins,
+                 const std::string& levelName = "");
 
     void update(float dt);
     void render(sf::RenderTarget& target, float winW, float winH);

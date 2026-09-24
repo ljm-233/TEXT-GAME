@@ -19,6 +19,7 @@ public:
     std::string waitForLine();
 
     void shutdown();
+    void resetShutdown();   // ⭐ 重新允许 waitForLine
     bool isShutdown() const;
 
     void render(sf::RenderTarget& target);

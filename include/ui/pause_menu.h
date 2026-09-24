@@ -18,7 +18,8 @@ public:
     void update(float dt);
     void render(sf::RenderTarget& target);
     void relayout(sf::Vector2f windowSize);
-    void syncFocus();              // ⭐ 新增
+    void syncFocus();
+    void reset();              // ⭐ 新增
 
     Action consumeAction();
 

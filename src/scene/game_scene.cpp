@@ -66,6 +66,10 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
     perfText_.setOutlineThickness(2.f);
     perfText_.setOutlineColor(sf::Color(0, 0, 0, 200));
 
+    // ⭐ PauseMenu 常驻，避免频繁析构 sf::Text
+    pauseMenu_ = std::make_unique<PauseMenu>(
+        font, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
+
     hudText_.setFillColor(sf::Color::White);
     overlayTitle_.setFillColor(sf::Color(255, 255, 255));
     overlayHint_.setFillColor(sf::Color(200, 200, 220));
@@ -77,7 +81,12 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
 void GameScene::onEnter() {
     nextScene_ = SceneId::None;
     // （原有的 save_ / parallax_ / loadLevel 逻辑保持不变）
-
+    // ⭐ 场景常驻后，onEnter 可能被多次调用。
+    //    pending save 为空时沿用上次的 save_
+    SaveInfo pending = saveManager_->takePendingSave();
+    if (!pending.filename.empty()) {
+        save_ = pending;
+    }
     syncFocus();
 
     save_ = saveManager_->takePendingSave();
@@ -253,11 +262,14 @@ bool GameScene::loadLevel(int index) {
     }
 
     if (preferences_->getBool("level_intro", true)) {
-        intro_ = std::make_unique<LevelIntro>(
-            *font_, index, static_cast<float>(world_->totalCoins()),
-            world_->level().name());
+        if (!intro_) {
+            intro_ = std::make_unique<LevelIntro>(*font_);
+        }
+        intro_->restart(index, static_cast<float>(world_->totalCoins()),
+                        world_->level().name());
+        introActive_ = true;
     } else {
-        intro_.reset();
+        introActive_ = false;
     }
 
     lastHudLives_ = -1;
@@ -265,7 +277,6 @@ bool GameScene::loadLevel(int index) {
 
     // ⭐ 调试：切关 / 重载时清除暂停
     paused_ = false;
-    if (pauseMenu_) pauseMenu_.reset();
 
     // ⭐ 调试：保持无敌状态
     if (debugInvincible_) {
@@ -473,7 +484,7 @@ void GameScene::syncFocus() {
     if (paused_ && pauseMenu_) return;
 
     // 开场动画显示中，不设焦点
-    if (intro_) {
+    if (introActive_) {
         FocusGroup::instance().clear();
         return;
     }
@@ -700,11 +711,11 @@ void GameScene::handleEvent(const sf::Event& event) {
         return;
     }
 
-    if (intro_) {
+    if (introActive_) {
         if (event.getIf<sf::Event::KeyPressed>() ||
             event.getIf<sf::Event::MouseButtonPressed>()) {
             intro_->skip();
-            intro_.reset();
+            introActive_ = false;
         }
         return;
     }
@@ -748,9 +759,7 @@ void GameScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
         if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
             paused_ = true;
-            // PauseMenu 构造末尾会调 syncFocus()，自动接管焦点
-            pauseMenu_ = std::make_unique<PauseMenu>(
-                *font_, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
+            pauseMenu_->reset();
             return;
         }
         if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
@@ -779,7 +788,6 @@ void GameScene::update(float dt) {
         auto action = pauseMenu_->consumeAction();
         if (action == PauseMenu::Action::Resume) {
             paused_ = false;
-            pauseMenu_.reset();
             syncFocus();                              // ⭐ 恢复 GameScene 焦点
         } else if (action == PauseMenu::Action::SaveAndQuit) {
             saveManager_->updateProgress(save_.filename, world_->coins(),
@@ -801,10 +809,10 @@ void GameScene::update(float dt) {
         }
     }
 
-    if (intro_) {
+    if (introActive_) {
         intro_->update(dt);
         if (parallax_) parallax_->update(dt);
-        if (intro_->isFinished()) intro_.reset();
+        if (intro_->isFinished()) introActive_ = false;
         return;
     }
 
@@ -930,7 +938,7 @@ void GameScene::render(Window& window) {
         renderPerfHud(rt, window, winW, winH);
     }
 
-    if (intro_) intro_->render(rt, winW, winH);
+    if (introActive_) intro_->render(rt, winW, winH);
 
     renderStateOverlay(rt, winW, winH);
 

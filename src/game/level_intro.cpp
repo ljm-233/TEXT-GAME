@@ -4,12 +4,15 @@
 #include <algorithm>
 #include <cstdint>
 
-LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
-                       const std::string& levelName)
+LevelIntro::LevelIntro(const sf::Font& font)
       : title_(font, sf::String(), 72),
         subtitle_(font, sf::String(), 24) {
+    title_.setFillColor(sf::Color(255, 255, 255));
+    subtitle_.setFillColor(sf::Color(200, 220, 255));
+}
 
-    // 标题：有自定义关卡名就用它，否则用 "关卡 N"
+void LevelIntro::restart(int levelIndex, float totalCoins,
+                         const std::string& levelName) {
     std::string titleText;
     if (!levelName.empty()) {
         titleText = levelName;
@@ -17,13 +20,13 @@ LevelIntro::LevelIntro(const sf::Font& font, int levelIndex, float totalCoins,
         titleText = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex);
     }
     title_.setString(toSf(titleText));
-    title_.setFillColor(sf::Color(255, 255, 255));
 
     std::string sub =
         Str::T(Str::IntroCollect) + std::to_string(static_cast<int>(totalCoins))
         + Str::T(Str::IntroCollectTail);
     subtitle_.setString(toSf(sub));
-    subtitle_.setFillColor(sf::Color(200, 220, 255));
+
+    elapsed_ = 0.f;
 }
 
 void LevelIntro::update(float dt) {

@@ -287,11 +287,18 @@ EditorScene::EditorScene(std::shared_ptr<Background>  background,
       font_(&font),
       hudText_(font, sf::String(), 18),
       hintText_(font, sf::String(), 15),
-      flashDraw_(font, sf::String(), 24) {
+      flashDraw_(font, sf::String(), 24),
+      brushNameText_(font, sf::String(), 14) {
 
     hudText_.setFillColor(sf::Color(240, 240, 250));
     hudText_.setOutlineThickness(2.f);
     hudText_.setOutlineColor(sf::Color(0, 0, 0, 180));
+
+    // ⭐ 笔刷名字文字：只创建一次
+    brushNameText_.setCharacterSize(14);
+    brushNameText_.setFillColor(sf::Color(255, 255, 255));
+    brushNameText_.setOutlineThickness(2.f);
+    brushNameText_.setOutlineColor(sf::Color(0, 0, 0, 220));
 
     hintText_.setFillColor(sf::Color(200, 200, 220));
     hintText_.setOutlineThickness(2.f);
@@ -1297,16 +1304,13 @@ void EditorScene::render(Window& window) {
                     drawTileIcon(brushBarRT_, b.ch, iconX, iconY, iconSize);
                 }
 
-                sf::Text nameText(*font_, toSf(Str::T(b.name)), 14);
-                nameText.setFillColor(sf::Color(255, 255, 255));
-                nameText.setOutlineThickness(2.f);
-                nameText.setOutlineColor(sf::Color(0, 0, 0, 220));
-                auto nb = nameText.getLocalBounds();
-                nameText.setOrigin({nb.position.x + nb.size.x / 2.f,
-                                    nb.position.y + nb.size.y / 2.f});
-                nameText.setPosition({localR.position.x + localR.size.x / 2.f,
-                                      localR.position.y + localR.size.y - 12.f});
-                brushBarRT_.draw(nameText);
+                brushNameText_.setString(toSf(Str::T(b.name)));
+                auto nb = brushNameText_.getLocalBounds();
+                brushNameText_.setOrigin({nb.position.x + nb.size.x / 2.f,
+                                          nb.position.y + nb.size.y / 2.f});
+                brushNameText_.setPosition({localR.position.x + localR.size.x / 2.f,
+                                            localR.position.y + localR.size.y - 12.f});
+                brushBarRT_.draw(brushNameText_);
             }
             brushBarRT_.display();
             lastBrushBarHover_    = hoverIdx;

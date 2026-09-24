@@ -4,78 +4,73 @@ SceneManager::SceneManager(SceneFactory factory)
       : factory_(std::move(factory)) {}
 
 SceneManager::~SceneManager() {
-    if (current_)
-        current_->onExit();
-    for (auto& entry : history_) {
-        if (entry.scene)
-            entry.scene->onExit();
+    // ⭐ 程序退出时统一 onExit
+    for (auto& [id, scene] : cache_) {
+        if (scene) scene->onExit();
     }
 }
 
-bool SceneManager::start(SceneId id) {
-    // 清理现有场景
-    if (current_)
-        current_->onExit();
-    for (auto& entry : history_) {
-        if (entry.scene)
-            entry.scene->onExit();
-    }
-    history_.clear();
-    current_.reset();
+Scene* SceneManager::getOrCreate(SceneId id) {
+    auto it = cache_.find(id);
+    if (it != cache_.end()) return it->second.get();
 
     auto scene = factory_(id);
-    if (!scene)
-        return false;
+    if (!scene) return nullptr;
 
-    current_ = std::move(scene);
+    Scene* ptr = scene.get();
+    cache_[id] = std::move(scene);
+    return ptr;
+}
+
+bool SceneManager::start(SceneId id) {
+    if (current_) current_->onPause();
+    history_.clear();
+
+    Scene* scene = getOrCreate(id);
+    if (!scene) return false;
+
+    current_ = scene;
     currentId_ = id;
     current_->onEnter();
     return true;
 }
 
 bool SceneManager::push(SceneId id) {
-    if (!current_)
-        return start(id);
+    if (!current_) return start(id);
 
-    auto scene = factory_(id);
-    if (!scene)
-        return false;
+    Scene* scene = getOrCreate(id);
+    if (!scene) return false;
 
-    // 暂停当前场景，保留在历史栈
     current_->onPause();
-    history_.push_back({currentId_, std::move(current_)});
+    history_.push_back({currentId_, current_});
 
-    current_ = std::move(scene);
+    current_ = scene;
     currentId_ = id;
     current_->onEnter();
     return true;
 }
 
 bool SceneManager::pop() {
-    if (history_.empty())
-        return false;
+    if (history_.empty()) return false;
 
-    // 销毁当前场景
-    current_->onExit();
+    if (current_) current_->onPause();
 
-    auto entry = std::move(history_.back());
+    auto entry = history_.back();
     history_.pop_back();
 
-    current_ = std::move(entry.scene);
+    current_ = entry.scene;
     currentId_ = entry.id;
     current_->onResume();
     return true;
 }
 
 bool SceneManager::replace(SceneId id) {
-    auto scene = factory_(id);
-    if (!scene)
-        return false;
+    Scene* scene = getOrCreate(id);
+    if (!scene) return false;
 
-    if (current_)
-        current_->onExit();
+    if (current_) current_->onPause();
 
-    current_ = std::move(scene);
+    current_ = scene;
     currentId_ = id;
     current_->onEnter();
     return true;

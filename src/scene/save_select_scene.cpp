@@ -60,6 +60,7 @@ void SaveSelectScene::syncFocus() {
 
 void SaveSelectScene::onEnter() {
     nextScene_ = SceneId::None;
+    rebuildButtons();   // ⭐ 场景常驻后，每次进入都要刷新
     syncFocus();
 }
 
