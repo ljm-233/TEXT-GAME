@@ -1,4 +1,4 @@
-# TEXT-GAME
+# TEXT-GAME 该文本为AI生成 目前进入维护阶段
 
 [![Build & Test](https://github.com/ljm-233/TEXT-GAME/actions/workflows/build.yml/badge.svg)](https://github.com/ljm-233/TEXT-GAME/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
