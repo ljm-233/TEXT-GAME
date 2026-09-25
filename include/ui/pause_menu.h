@@ -4,11 +4,10 @@
 #include <vector>
 #include "button.h"
 #include "preferences.h"
-#include "toggle_row.h"
 
 class PauseMenu {
 public:
-    enum class Action { None, Resume, SaveAndQuit };
+    enum class Action { None, Resume, SaveAndQuit, OpenSettings };
 
     PauseMenu(const sf::Font& font,
               std::shared_ptr<Preferences> prefs,
@@ -19,25 +18,13 @@ public:
     void render(sf::RenderTarget& target);
     void relayout(sf::Vector2f windowSize);
     void syncFocus();
-    void reset();              // ⭐ 新增
+    void reset();
 
     Action consumeAction();
 
 private:
-    enum class View { Main, Settings };
-
-    void refreshLabels();
-    void switchToSettings();
-    void switchToMain();
-    void applyTheme(int idx);
-    void applyAnimation(bool enabled);
-    void applyNotification(bool enabled);
-    void applyGamepad(bool enabled);
-    void refreshSelection();
-
     const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-    View view_ = View::Main;
+    std::shared_ptr<Preferences> prefs_;  // 保留（当前未使用，供将来扩展）
     Action pendingAction_ = Action::None;
     sf::Vector2f windowSize_;
 
@@ -47,13 +34,5 @@ private:
 
     std::vector<std::unique_ptr<Button>> mainButtons_;
 
-    sf::Text  settingsTitle_;
-    sf::Text  labelTheme_;
-    sf::Text  labelAnim_;
-    sf::Text  labelNotif_;
-    sf::Text  labelGamepad_;
-    sf::Text  hintText_;
-    std::vector<std::unique_ptr<Button>> themeButtons_;
-    std::vector<std::unique_ptr<ToggleRow>> settingsToggles_;   // ⭐ 3 个
-    std::unique_ptr<Button> backButton_;
+    void refreshLabels();
 };

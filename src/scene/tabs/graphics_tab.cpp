@@ -39,7 +39,7 @@ const PostPreset kPresets[] = {
 constexpr int kPresetCount = 5;
 
 int indexOfLives(int lives) {
-    const int kLives[] = {1, 3, 5, 10, 99};
+    const int kLives[] = {1, 3, 5, 10, 100};
     for (int i = 0; i < 5; ++i) if (kLives[i] == lives) return i;
     return 0;
 }
@@ -113,9 +113,9 @@ GraphicsTab::GraphicsTab(const sf::Font& font,
 
     // ===== InitialLives =====
     {
-        const char* kLivesLabels[] = {"1", "3", "5", "10", "99"};
+        const char* kLivesLabels[] = {"1", "3", "5", "10", "100"};
         auto* row = addMultiRow(Str::LabelInitialLives, [this](int i) {
-            const int kLives[] = {1, 3, 5, 10, 99};
+            const int kLives[] = {1, 3, 5, 10, 100};
             initialLives_ = kLives[i];
             refreshSelection();
             prefs_->setInt("initial_lives", initialLives_);

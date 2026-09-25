@@ -135,7 +135,7 @@ void Game::updateWindowTitle(const Scene& scene) {
     }
 }
 
-void Game::renderOverlays() {
+void Game::renderOverlays(float dt) {
     auto& rt = window_->target();
     auto winSize = window_->native().getSize();   // ⭐ 逻辑尺寸
     float winW = static_cast<float>(winSize.x);
@@ -202,7 +202,7 @@ void Game::renderOverlays() {
         rt.draw(clockText_);
     }
 
-    NotificationSystem::instance().render(rt);
+    NotificationSystem::instance().render(rt, dt);
 }
 
 void Game::flushConfigs() {
@@ -245,9 +245,10 @@ void Game::run() {
             }
             if (autoPaused_) {
                 window_->pollEvents();
+                window_->beginFrame();
                 sceneManager_->current().render(*window_);
-                renderOverlays();
-                window_->display();
+                renderOverlays(dt);
+                window_->endFrame();
                 continue;
             }
         }
@@ -276,9 +277,6 @@ void Game::run() {
 
         scene.update(dt);
 
-        // ⭐ 通知系统 update
-        NotificationSystem::instance().update(dt);
-
         // 每帧检测标题变化
         updateWindowTitle(scene);
 
@@ -287,7 +285,7 @@ void Game::run() {
 
         scene.render(*window_);
 
-        renderOverlays();
+        renderOverlays(dt);
 
         window_->endFrame();
 

@@ -34,8 +34,9 @@ public:
     void setPosition(NotificationPos p) { pos_ = p; }
     NotificationPos getPosition() const { return pos_; }
 
-    void update(float dt);
-    void render(sf::RenderTarget& target);
+    // ⭐ update + render 合并：渲染时自动推进时间
+    //    避免 update 被漏调（曾经导致通知永不消失）
+    void render(sf::RenderTarget& target, float dt);
 
 private:
     NotificationSystem() = default;

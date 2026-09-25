@@ -2,8 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include <functional>
 #include <string>
-#include "upscaler.h"
-#include "postprocess.h"
+#include "render_pipeline.h"
 
 class Window {
 public:
@@ -40,31 +39,26 @@ public:
     sf::RenderWindow& native();
     void requestMaximize();
 
-    // ⭐ 渲染缩放
-    //   < 1.0：低分辨率渲染 + upscaler 上采样
-    //   = 1.0：直接渲染到窗口
-    //   > 1.0：超采样渲染 + 降采样（抗锯齿）
-    void setRenderScale(float s);
-    float getRenderScale() const { return renderScale_; }
+    // ⭐ 渲染管线（转发到 RenderPipeline）
+    void setRenderScale(float s) { pipeline_.setRenderScale(s); }
+    float getRenderScale() const { return pipeline_.getRenderScale(); }
 
-    // ⭐ 绘制目标
-    sf::RenderTarget& target();
+    void setUpscaleMode(int mode) { pipeline_.setUpscaleMode(mode); }
+    int  getUpscaleMode() const   { return pipeline_.getUpscaleMode(); }
 
-    // ⭐ 每帧：beginFrame() → Scene 用 target() 画 → endFrame()
-    void beginFrame();
-    void endFrame();
+    void loadUpscaler(const std::string& shaderDir) {
+        pipeline_.init(shaderDir);
+    }
 
-    // ⭐ 加载超分 shader（shaderDir 是 shader 所在目录）
-    void loadUpscaler(const std::string& shaderDir);
+    PostProcessor& postProcess() { return pipeline_.postProcess(); }
+    const PostProcessor& postProcess() const { return pipeline_.postProcess(); }
 
-    void setUpscaleMode(int mode);
-    int  getUpscaleMode() const;
+    float upscalePostMs() const { return pipeline_.upscalePostMs(); }
 
-    // ⭐ 性能：上一帧 endFrame 中 upscaler + postprocess 绘制耗时（毫秒）
-    float upscalePostMs() const { return upscalePostMs_; }
-
-    // ⭐ 后处理
-    PostProcessor& postProcess() { return postProcessor_; }
+    // ⭐ 绘制目标 + 每帧生命周期
+    sf::RenderTarget& target() { return pipeline_.target(window_); }
+    void beginFrame()          { pipeline_.beginFrame(window_); }
+    void endFrame()            { pipeline_.endFrame(window_); }
 
 private:
     void applyView();
@@ -76,19 +70,5 @@ private:
     unsigned antiAliasing_ = 8;
     unsigned framerateLimit_ = 0;
 
-    // ⭐ 渲染缩放
-    sf::RenderTexture rt_;
-    float renderScale_ = 1.0f;
-
-    // ⭐ 超分辨率
-    Upscaler upscaler_;
-    bool     upscaleLoaded_ = false;
-    bool  rtNeedsResize_ = true;
-
-    // ⭐ 后处理
-    PostProcessor postProcessor_;
-    sf::RenderTexture ppInputRT_;
-
-    // ⭐ 性能计时
-    float upscalePostMs_ = 0.f;
+    RenderPipeline pipeline_;
 };

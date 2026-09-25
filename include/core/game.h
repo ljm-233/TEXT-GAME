@@ -29,7 +29,7 @@ private:
     std::unique_ptr<Scene> createScene(SceneId id);
     void switchScene(SceneId next);
     void saveWindowState();
-    void renderOverlays();
+    void renderOverlays(float dt);
     void flushConfigs();
     void updateWindowTitle(const Scene& scene);
 

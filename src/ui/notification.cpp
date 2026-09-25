@@ -26,15 +26,14 @@ void NotificationSystem::clear() {
     queue_.clear();
 }
 
-void NotificationSystem::update(float dt) {
+void NotificationSystem::render(sf::RenderTarget& target, float dt) {
+    // ⭐ 先推进时间
     for (auto& e : queue_)
         e.elapsed += dt;
     while (!queue_.empty() && queue_.front().elapsed >= queue_.front().duration) {
         queue_.pop_front();
     }
-}
 
-void NotificationSystem::render(sf::RenderTarget& target) {
     if (!enabled_ || !font_ || queue_.empty())
         return;
 

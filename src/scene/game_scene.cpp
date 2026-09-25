@@ -114,7 +114,14 @@ void GameScene::onEnter() {
 
 void GameScene::onResume() {
     nextScene_ = SceneId::None;
-    syncFocus();
+
+    // ⭐ 从 SettingsScene 返回：保持 paused_ 不变（仍显示 PauseMenu）
+    //    但焦点被 SettingsScene 抢走了，要让 PauseMenu 重新接管
+    if (paused_ && pauseMenu_) {
+        pauseMenu_->syncFocus();
+    } else {
+        syncFocus();
+    }
 }
 
 std::string GameScene::windowTitleHint() const {
@@ -840,11 +847,15 @@ void GameScene::update(float dt) {
         auto action = pauseMenu_->consumeAction();
         if (action == PauseMenu::Action::Resume) {
             paused_ = false;
-            syncFocus();                              // ⭐ 恢复 GameScene 焦点
+            syncFocus();
         } else if (action == PauseMenu::Action::SaveAndQuit) {
             saveManager_->updateProgress(save_.filename, world_->coins(),
                                          levelIndex_);
             nextScene_ = SceneId::Back;
+        } else if (action == PauseMenu::Action::OpenSettings) {
+            // ⭐ push SettingsScene。paused_ 保持 true，
+            //    返回时 onResume 会 unpause
+            nextScene_ = SceneId::Settings;
         }
         return;
     }

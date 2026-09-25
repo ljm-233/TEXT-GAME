@@ -1,9 +1,8 @@
 #include "window.h"
-#include <chrono>
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
-#include <algorithm>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -60,16 +59,10 @@ sf::Image makeWindowIcon() {
     return img;
 }
 
-// ⭐ 是否需要经过中间 RenderTexture
-bool needsRT(float scale, bool postActive) {
-    if (scale < 0.99f || scale > 1.01f) return true;
-    return postActive;
-}
-
 } // namespace
 
-Window::Window(unsigned width, unsigned height, const std::string& title, bool fullscreen,
-               unsigned antiAliasing)
+Window::Window(unsigned width, unsigned height, const std::string& title,
+               bool fullscreen, unsigned antiAliasing)
       : title_(title),
         antiAliasing_(antiAliasing) {
     sf::ContextSettings settings;
@@ -94,15 +87,13 @@ void Window::applyIcon() {
     window_.setIcon(icon);
 }
 
-bool Window::isOpen() const {
-    return window_.isOpen();
-}
-void Window::close() {
-    window_.close();
-}
+bool Window::isOpen() const { return window_.isOpen(); }
+void Window::close() { window_.close(); }
+
 void Window::clear() {
     target().clear(sf::Color::Black);
 }
+
 void Window::display() {
     window_.display();
 }
@@ -136,7 +127,9 @@ void Window::recreate(unsigned width, unsigned height, bool fullscreen) {
     window_.setFramerateLimit(framerateLimit_);
     applyView();
     applyIcon();
-    rtNeedsResize_ = true;
+
+    // ⭐ 通知渲染管线重新分配 RT
+    pipeline_.invalidate();
 }
 
 void Window::setTitle(const std::string& title) {
@@ -170,117 +163,4 @@ void Window::requestMaximize() {
     auto mode = sf::VideoMode::getDesktopMode();
     window_.setSize({mode.size.x, mode.size.y});
 #endif
-}
-
-// ============================================================
-// 渲染缩放
-// ============================================================
-
-void Window::setRenderScale(float s) {
-    s = std::clamp(s, 0.10f, 2.0f);
-    if (std::abs(s - renderScale_) < 0.01f) return;
-    renderScale_ = s;
-    rtNeedsResize_ = true;
-}
-
-void Window::loadUpscaler(const std::string& shaderDir) {
-    upscaler_.load(shaderDir);
-    upscaleLoaded_ = true;
-    postProcessor_.load(shaderDir);
-}
-
-sf::RenderTarget& Window::target() {
-    if (!needsRT(renderScale_, postProcessor_.isActive())) return window_;
-    return rt_;
-}
-
-void Window::beginFrame() {
-    if (!needsRT(renderScale_, postProcessor_.isActive())) return;
-
-    auto winSize = window_.getSize();
-    if (winSize.x == 0 || winSize.y == 0) return;
-
-    unsigned rw = std::max(1u, static_cast<unsigned>(winSize.x * renderScale_));
-    unsigned rh = std::max(1u, static_cast<unsigned>(winSize.y * renderScale_));
-
-    if (rtNeedsResize_ || rt_.getSize() != sf::Vector2u{rw, rh}) {
-        if (!rt_.resize({rw, rh})) {
-            renderScale_ = 1.0f;
-            return;
-        }
-        rt_.setSmooth(true);
-        rtNeedsResize_ = false;
-    }
-
-    rt_.setView(sf::View(sf::FloatRect(
-        {0.f, 0.f}, {static_cast<float>(winSize.x), static_cast<float>(winSize.y)})));
-}
-
-void Window::endFrame() {
-    if (!needsRT(renderScale_, postProcessor_.isActive())) {
-        upscalePostMs_ = 0.f;
-        window_.display();
-        return;
-    }
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    rt_.display();
-
-    auto winSize = window_.getSize();
-    auto rtSize  = rt_.getSize();
-    if (rtSize.x == 0 || rtSize.y == 0 || winSize.x == 0 || winSize.y == 0) {
-        auto t1 = std::chrono::high_resolution_clock::now();
-        upscalePostMs_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
-        window_.display();
-        return;
-    }
-
-    window_.setView(window_.getDefaultView());
-
-    const bool isSupersample = renderScale_ > 1.01f;
-    const bool useUpscaler   = !isSupersample
-                             && renderScale_ < 0.99f
-                             && upscaleLoaded_ && upscaler_.isLoaded();
-    const bool usePost       = postProcessor_.isActive();
-
-    if (usePost && useUpscaler) {
-        if (ppInputRT_.getSize() != winSize) {
-            if (!ppInputRT_.resize(winSize)) {
-                upscaler_.draw(window_, rt_.getTexture(), rtSize, winSize);
-                window_.display();
-                return;
-            }
-            ppInputRT_.setSmooth(true);
-        }
-        ppInputRT_.clear();
-        ppInputRT_.setView(ppInputRT_.getDefaultView());
-        upscaler_.draw(ppInputRT_, rt_.getTexture(), rtSize, winSize);
-        ppInputRT_.display();
-        postProcessor_.draw(window_, ppInputRT_.getTexture(), winSize, winSize);
-    } else if (usePost) {
-        postProcessor_.draw(window_, rt_.getTexture(), rtSize, winSize);
-    } else if (useUpscaler) {
-        upscaler_.draw(window_, rt_.getTexture(), rtSize, winSize);
-    } else {
-        sf::Sprite s(rt_.getTexture());
-        s.setScale({
-            static_cast<float>(winSize.x) / static_cast<float>(rtSize.x),
-            static_cast<float>(winSize.y) / static_cast<float>(rtSize.y)
-        });
-        window_.draw(s);
-    }
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    upscalePostMs_ = std::chrono::duration<float, std::milli>(t1 - t0).count();
-
-    window_.display();
-}
-
-void Window::setUpscaleMode(int mode) {
-    upscaler_.setMode(mode);
-}
-
-int Window::getUpscaleMode() const {
-    return upscaler_.getMode();
 }

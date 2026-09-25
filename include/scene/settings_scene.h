@@ -14,6 +14,10 @@
 #include "multi_row.h"
 #include "tabs/audio_tab.h"
 #include "tabs/graphics_tab.h"
+#include "tabs/interface_tab.h"
+#include "tabs/display_tab.h"
+#include "tabs/other_tab.h"
+#include "tabs/keys_tab.h"
 #include <memory>
 #include <vector>
 
@@ -46,33 +50,17 @@ private:
     void applyPreset(int idx);
 
     bool anySliderEditing() const {
-        for (auto* s : {consoleMaskSlider_.get(),
-                        consolePanelAlphaSlider_.get()}) {
-            if (s && s->isEditing()) return true;
-        }
         if (audioTab_ && audioTab_->anyEditing()) return true;
         if (graphicsTab_ && graphicsTab_->anyEditing()) return true;
+        if (interfaceTab_ && interfaceTab_->anyEditing()) return true;
+        if (otherTab_ && otherTab_->anyEditing()) return true;
+        if (keysTab_ && keysTab_->anyEditing()) return true;
         return false;
     }
-    void applyResolution();
-    void applyFullscreen();
-    void applyWindowMode();
-    void applyVsync();
-    void applyAntiAliasing();
-    void applyLogLevel();
-    void applyTheme();
-    void applyLanguage();
-    void applyWallpaper();
-    void applyFpsPosition();
-    void applyFpsFormat();
-    void applyFpsLimit();
     void applyButtonStyle();
-    void applyLogRotation();
     void applyAnimation();
     void applyNotification();
     // ⭐ applyGamepadVibration 已移入 AudioTab
-    void applyAutoPause();
-    void applyConsolePrompt();
     void applyShowColliders();
     void applyScreenShake();
     void applyParticles();
@@ -106,19 +94,12 @@ private:
     std::vector<std::unique_ptr<Button>> tabButtons_;
 
     // ================= Display =================
-    std::vector<std::unique_ptr<ToggleRow>> displayToggles_;
-    std::vector<std::unique_ptr<MultiRow>>  displayMultiRows_;
-    // [0] Resolution  [1] AntiAliasing  [2] LogLevel  [3] FpsLimit
+    // ⭐ 独立 Tab
+    std::unique_ptr<DisplayTab> displayTab_;
 
     // ================= Interface =================
-    std::vector<std::unique_ptr<ToggleRow>> interfaceToggles_;
-    std::vector<std::unique_ptr<MultiRow>>  interfaceMultiRows_;
-    // [0] FpsPos  [1] FpsFormat  [2] UiScale  [3] Theme  [4] Language
-    // [5] ClockPos  [6] ConsoleFont  [7] ConsoleHistory
-    // [8] ConsoleLineHeight  [9] ConsolePrompt
-    std::unique_ptr<Button> wallpaperButton_;
-    std::unique_ptr<Slider> consoleMaskSlider_;
-    std::unique_ptr<Slider> consolePanelAlphaSlider_;
+    // ⭐ 独立 Tab
+    std::unique_ptr<InterfaceTab> interfaceTab_;
 
     // ================= Graphics =================
     // ⭐ 独立 Tab
@@ -132,15 +113,14 @@ private:
     std::unique_ptr<AudioTab> audioTab_;
 
     // ================= Keys =================
-    std::vector<std::unique_ptr<Button>> keyBindingButtons_;
-    int listeningAction_ = -1;
+    // ⭐ 独立 Tab
+    std::unique_ptr<KeysTab> keysTab_;
 
     // ================= Other =================
-    std::vector<std::unique_ptr<ToggleRow>> otherToggles_;
-    // [0] RememberSize  [1] AutoPause
-    std::vector<std::unique_ptr<MultiRow>>  otherMultiRows_;
-    // [0] LogRotate  [1] LogKeep
-    std::unique_ptr<TextInput> playerNameInput_;
+    // ⭐ 独立 Tab
+    std::unique_ptr<OtherTab> otherTab_;
+
+    // 关于 / 重置按钮仍由 SettingsScene 管（底部窗口坐标系）
     std::unique_ptr<Button> aboutButton_;
     std::unique_ptr<Button> resetButton_;
     std::unique_ptr<Button> resetGraphicsButton_;
@@ -153,46 +133,10 @@ private:
     sf::Text headingDisplay_, headingInterface_, headingGraphics_;
     sf::Text headingAudio_, headingKeys_, headingOther_;
 
-    sf::Text labelWallpaper_;
-    sf::Text labelConsoleMask_, labelConsolePanelAlpha_;
     // ⭐ 已移入 AudioTab
-    sf::Text labelPlayerName_;
-    sf::Text hintUiScale_;
-
-    // ================= 状态 =================
-    int     selectedResolution_ = 0;
-    bool    fullscreen_         = false;
-    bool    vsync_              = true;
-    int     antiAliasingLevel_  = 8;
-    int     logLevel_           = 2;
-    int     fpsLimit_           = 60;
-
-    bool    showFps_            = false;
-    int     fpsPosition_        = 1;
-    int     fpsFormat_          = 1;
-    float   uiScale_            = 1.0f;
-    float   fontScale_          = 1.0f;
-    float   renderScale_        = 1.0f;
-    ThemeId themeId_            = ThemeId::Dark;
-    int     languageIdx_        = 0;
-    bool    showClock_          = false;
-    int     clockPosition_      = 0;
-    int     consoleMask_        = 160;
-    int     consolePanelAlpha_  = 220;
-    int     consoleFontSize_    = 18;
-    int     consoleHistoryLines_= 200;
-    int     consoleLineHeight_  = 26;
-    bool    consoleAutoScroll_  = true;
-    bool    consoleBlinkCursor_ = true;
-    int     consolePrompt_      = 0;
 
     // ⭐ Audio 状态已移入 AudioTab
-
-    int     windowMode_         = 0;   // 0=窗口 1=最大化 2=全屏
-    bool    rememberSize_       = true;
-    bool    autoPauseOnBlur_    = true;
-    int     logRotateIndex_     = 0;
-    int     logKeepIndex_       = 1;
+    // ⭐ Other 状态已移入 OtherTab
 
     SceneId nextScene_ = SceneId::None;
     int lastLangVersion_ = -1;
@@ -204,5 +148,4 @@ private:
     // ⭐ uiScale > 1.0 时内容溢出，滚轮可上下平移
     float contentScroll_ = 0.f;
     float contentTotalH_ = 0.f;   // 上一帧内容底部 y
-    int upscaleMode_ = 1;   // 0=关 1=双三次
 };
