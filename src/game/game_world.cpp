@@ -8,6 +8,8 @@
 #include "door.h"
 #include "spike.h"
 #include "player_sprite_factory.h"
+#include "coin_sprite_factory.h"
+#include "enemy_sprite_factory.h"
 #include "game_constants.h"
 #include <algorithm>
 #include <cmath>
@@ -36,11 +38,13 @@ void GameWorld::spawnPlayer(Vec2 spawn) {
 
 void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->coinSpawns())
-        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize()));
+        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(),
+                                     CoinSpriteFactory::getSheet()));
     totalCoins_ = static_cast<int>(level_->coinSpawns().size());
 
     for (const auto& pos : level_->enemySpawns())
-        objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize()));
+        objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize(),
+                                      EnemySpriteFactory::getSheet()));
 
     for (const auto& pos : level_->jumpPadSpawns())
         objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));

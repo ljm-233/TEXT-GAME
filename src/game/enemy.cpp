@@ -3,18 +3,21 @@
 #include "enemy_sprite_factory.h"
 #include "game_constants.h"
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace {
 constexpr float kSpeed = GameConst::kEnemySpeed;
 }
 
-Enemy::Enemy(Vec2 pos, int tileSize)
-    : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize) {
+Enemy::Enemy(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
+    : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize), sheet_(std::move(sheet)) {
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
-    sheet_ = EnemySpriteFactory::getSheet();
+    // 同 Coin：sheet 为空就进"无 sprite"模式，逻辑照常跑。
+    if (!sheet_) return;
+
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
 
     // 原点在帧底部中心
@@ -80,7 +83,7 @@ void Enemy::update(float dt, const Level& level) {
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
-    if (killed_) return;
+    if (killed_ || !sprite_) return;
 
     animator_.applyTo(*sprite_);
 

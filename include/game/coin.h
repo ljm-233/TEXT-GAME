@@ -7,7 +7,9 @@
 
 class Coin : public GameObject {
 public:
-    Coin(Vec2 pos, int tileSize);
+    // sheet 为 nullptr 时进入"无 sprite"模式：实体照常参与逻辑与碰撞，
+    // 只是画不出东西。测试用它，生产代码请传 CoinSpriteFactory::getSheet()。
+    Coin(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet = nullptr);
 
     void update(float dt, const Level& level) override;
     void render(sf::RenderTarget& target) const override;

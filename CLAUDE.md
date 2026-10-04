@@ -288,10 +288,21 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | Vec2 / AABB / Config / Level / Camera / Animator / Player / MovingPlatform / JumpPad | ✅ |
 | Container / Application 五阶段 / MainLoop / Logger / SceneRegistry | ✅ |
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
-| Enemy / Coin / Checkpoint / Door / Spike / Key / GameWorld / Scene | ❌ |
+| Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
+| GameWorld / Scene | ❌ |
 | SaveManager / UI 组件 | ❌（依赖运行环境） |
 
-测试写法：`tests/test_*.cpp`，参考 `tests/test_player.cpp` 的"无 sprite 模式"技巧。
+测试写法：`tests/test_*.cpp`。
+
+**无 sprite 模式**：`Player` / `Coin` / `Enemy` 的构造函数把贴图作为参数，
+传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。
+这既方便测试，也让贴图生成失败时自动降级而不是解引用空指针。
+
+⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）：
+sprite factory 用 `RenderTexture` 程序化画贴图，没有 GL 上下文时
+SFML 会直接 SIGABRT。所以测试**不要构造需要贴图的实体，也不要调 `render()`**
+（`RenderTarget` 本身就要求 GL）。当前测试套件在 `env -u DISPLAY` 下是绿的，
+加测试时请保持这个性质。
 
 ## 关卡设计规范
 

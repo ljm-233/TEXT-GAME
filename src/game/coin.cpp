@@ -1,6 +1,7 @@
 #include "coin.h"
 #include "coin_sprite_factory.h"
 #include <cmath>
+#include <utility>
 #include <cstdlib>
 #include <vector>
 
@@ -9,10 +10,14 @@ constexpr float kBobAmplitude = 4.f;
 constexpr float kBobSpeed     = 3.f;
 }
 
-Coin::Coin(Vec2 pos, int tileSize)
-    : pos_(pos), tileSize_(tileSize) {
+Coin::Coin(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
+    : pos_(pos), tileSize_(tileSize), sheet_(std::move(sheet)) {
 
-    sheet_ = CoinSpriteFactory::getSheet();
+    // sheet 为空 = "无 sprite"模式。测试传 nullptr；生产由 GameWorld 传
+    // CoinSpriteFactory::getSheet() —— 那个函数在 RenderTexture 创建失败时
+    // 返回 nullptr，于是这里自动降级，而不是解引用空指针段错误。
+    if (!sheet_) return;
+
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
 
     sprite_->setOrigin({
@@ -58,7 +63,7 @@ AABB Coin::bounds() const {
 }
 
 void Coin::render(sf::RenderTarget& target) const {
-    if (collected_) return;
+    if (collected_ || !sprite_) return;
 
     float ts = static_cast<float>(tileSize_);
     float cx = pos_.x + ts * 0.5f;

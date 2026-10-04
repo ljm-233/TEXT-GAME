@@ -15,6 +15,7 @@ add_executable(unit_tests
     test_application.cpp
     test_scene_registry.cpp
     test_layers.cpp
+    test_entities.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -42,6 +43,16 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/moving_platform.cpp
     ${CMAKE_SOURCE_DIR}/src/game/jump_pad.cpp
     ${CMAKE_SOURCE_DIR}/src/game/player.cpp
+    # 无纹理的四类实体：纯 RectangleShape/VertexArray 绘制，
+    # 不碰 sprite factory，因此可以在无 GL 上下文的测试进程里构造
+    ${CMAKE_SOURCE_DIR}/src/game/checkpoint.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/door.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/key.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/spike.cpp
+    # Coin / Enemy 现在也把贴图作为构造参数，源码里不再调用 sprite factory，
+    # 所以测试目标不需要链上那几个 factory 实现
+    ${CMAKE_SOURCE_DIR}/src/game/coin.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
     # gamepad.cpp 调用了 GamepadVibration，实现必须一起链上，
     # 否则 unit_tests 会在链接期报 undefined reference。
     # 两个平台文件内部各有 #ifdef 守卫，同时列出来是安全的。
