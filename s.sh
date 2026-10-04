@@ -40,8 +40,15 @@ for arg in "$@"; do
 done
 
 # 从脚本自身位置定位仓库根目录，因此在任何目录下都能直接调用。
-# PROJECT_ROOT 是编译期写死的，所以启动时的工作目录不影响资源查找。
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#
+# 必须先解析软链接：~/.local/bin/text-game 是指向本脚本的软链，
+# 不解析的话 dirname 得到的是 ~/.local/bin，于是会去那里找 CMakePresets.json。
+# （readlink -f 是 GNU 扩展，缺失时退回原路径，只是软链调用会失效。）
+SELF="${BASH_SOURCE[0]}"
+if command -v readlink > /dev/null && readlink -f "$SELF" > /dev/null 2>&1; then
+    SELF="$(readlink -f "$SELF")"
+fi
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
 cd "$ROOT"
 
 if ! command -v cmake > /dev/null; then

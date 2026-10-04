@@ -13,7 +13,13 @@
 set -euo pipefail
 
 # 从脚本自身位置定位仓库根目录，因此在任何目录下都能直接调用
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 先解析软链接再取目录：这些脚本可能被 ~/.local/bin 下的软链调用，
+# 不解析的话 dirname 会落到软链所在的目录。
+SELF="${BASH_SOURCE[0]}"
+if command -v readlink > /dev/null && readlink -f "$SELF" > /dev/null 2>&1; then
+    SELF="$(readlink -f "$SELF")"
+fi
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
 cd "$ROOT"
 
 cmake --preset tests > /dev/null

@@ -13,7 +13,13 @@
 #
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+# 先解析软链接再取目录：脚本可能被 ~/.local/bin 下的软链调用，
+# 不解析的话 dirname 会落到软链所在的目录，find 就扫错地方了。
+SELF="${BASH_SOURCE[0]}"
+if command -v readlink > /dev/null && readlink -f "$SELF" > /dev/null 2>&1; then
+    SELF="$(readlink -f "$SELF")"
+fi
+cd "$(dirname "$SELF")"
 
 {
   for f in $(find . -path ./.git -prune -o -type f \( \
