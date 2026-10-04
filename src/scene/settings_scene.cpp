@@ -22,6 +22,19 @@
 
 namespace {
 
+// ===== SFML 版本兼容 =====
+//
+// `Event::getIf` 的非 const 重载是 SFML **3.1** 才加的；3.0.x 只有 const 版本，
+// 返回 `const T*`。而 brew 和 vcpkg 目前都还停在 3.0.2 —— 直接用 3.1 的写法
+// 会让 macOS / Windows 上的构建直接失败（Arch 的 3.1 能过，所以本地发现不了）。
+//
+// 这里抹掉 const 是安全的：下面改的是**我们自己拷贝出来的** ev，对象本身非 const，
+// 也没碰别人的数据。3.1 上走的本来就是非 const 重载，这个转换是空操作。
+template <typename T>
+T* eventIfMutable(sf::Event& e) {
+    return const_cast<T*>(e.getIf<T>());
+}
+
 // ===== 布局（设计坐标系 1280×720）=====
 constexpr float kTabX     = 40.f;
 constexpr float kTabY     = 90.f;
@@ -264,13 +277,13 @@ void SettingsScene::handleEvent(const sf::Event& event) {
         return {static_cast<int>(p.x), static_cast<int>(p.y)};
     };
 
-    if (auto* mm = ev.getIf<sf::Event::MouseMoved>()) {
+    if (auto* mm = eventIfMutable<sf::Event::MouseMoved>(ev)) {
         mm->position = convert(mm->position);
-    } else if (auto* mb = ev.getIf<sf::Event::MouseButtonPressed>()) {
+    } else if (auto* mb = eventIfMutable<sf::Event::MouseButtonPressed>(ev)) {
         mb->position = convert(mb->position);
-    } else if (auto* mr = ev.getIf<sf::Event::MouseButtonReleased>()) {
+    } else if (auto* mr = eventIfMutable<sf::Event::MouseButtonReleased>(ev)) {
         mr->position = convert(mr->position);
-    } else if (auto* ws = ev.getIf<sf::Event::MouseWheelScrolled>()) {
+    } else if (auto* ws = eventIfMutable<sf::Event::MouseWheelScrolled>(ev)) {
         ws->position = convert(ws->position);
 
         // ⭐ 内容高 > View 高时允许滚动

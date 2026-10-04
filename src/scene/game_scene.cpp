@@ -1050,8 +1050,11 @@ void GameScene::render(Window& window) {
                 static_cast<std::size_t>(vw) * vh * 4);
             glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
-            sf::Image img({static_cast<unsigned>(vw),
-                           static_cast<unsigned>(vh)});
+            // 显式写出 Vector2u：直接写 img({vw, vh}) 在 clang 和 MSVC 上会与
+            // sf::Image 的其它重载产生歧义（GCC 接受，所以本地看不出来）。
+            // 带 sf::Color 参数的那几处没这个问题，不用改。
+            sf::Image img(sf::Vector2u{static_cast<unsigned>(vw),
+                                       static_cast<unsigned>(vh)});
             // glReadPixels 原点在左下，sf::Image 原点在左上 → 翻转 Y
             for (int y = 0; y < vh; ++y) {
                 int srcY = vh - 1 - y;
