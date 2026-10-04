@@ -290,7 +290,8 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
 | GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |
-| Scene | ❌ |
+| LevelCodec（分享码往返 / 空白容错 / 非法输入 / RLE 边界） | ✅ |
+| Scene / 各设置 Tab | ❌（场景必须有 `sf::Font`，而它是 `GlResource`，构造即要 GL） |
 | SaveManager / UI 组件 | ❌（依赖运行环境） |
 
 测试写法：`tests/test_*.cpp`。
