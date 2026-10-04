@@ -15,7 +15,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
-VERSION="0.1.0"
+# 版本号从 CMakeLists.txt 读，避免和 project(... VERSION ...) 各写一份、慢慢漂移
+VERSION="$(grep -oP 'project\(text_game VERSION \K[0-9]+\.[0-9]+\.[0-9]+' \
+           "$ROOT/CMakeLists.txt" | head -1)"
+if [ -z "$VERSION" ]; then
+    echo "错误: 无法从 CMakeLists.txt 解析出版本号"
+    exit 1
+fi
 BUILD_DIR="${TEXTGAME_BUILD_DIR:-$ROOT/build/release-package}"
 APP_NAME="TEXT-GAME"
 APP_ID="text-game"

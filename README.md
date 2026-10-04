@@ -529,7 +529,8 @@ python3 packaging/icons/generate_icons.py
 cmake --preset release-package
 cmake --build --preset release-package -j
 ./packaging/build_appimage.sh
-./build/TEXT-GAME-0.1.0-x86_64.AppImage
+# 版本号取自 CMakeLists.txt 的 project(... VERSION ...)
+./build/TEXT-GAME-<版本>-x86_64.AppImage
 ```
 
 **Windows NSIS 安装包**：

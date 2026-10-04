@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(text_game VERSION 0.1.0 LANGUAGES CXX)
+project(text_game VERSION 0.3.0 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
