@@ -85,14 +85,6 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
             sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22));
     }
 
-    auto makeToggle = [&](const std::string& onText, const std::string& offText) {
-        auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        return std::make_pair(std::move(on), std::move(off));
-    };
-
     // ───────────── Display ─────────────
     // ⭐ 独立 Tab
     displayTab_ = std::make_unique<DisplayTab>(
@@ -189,12 +181,6 @@ void SettingsScene::refreshLabels() {
 void SettingsScene::refreshSelection() {
     for (int i = 0; i < kTabCount; ++i)
         tabButtons_[i]->setSelected(i == static_cast<int>(currentTab_));
-
-    auto setToggleRow = [](ToggleRow& row, bool v) {
-        row.currentValue = v;
-        row.onButton->setSelected(v);
-        row.offButton->setSelected(!v);
-    };
 
     // Display
     if (displayTab_) displayTab_->refreshSelection();
@@ -442,113 +428,6 @@ void SettingsScene::renderTabs(Window& window) {
         tabButtons_[i]->render(window.target());
     }
 }
-
-namespace {
-struct RowDrawer {
-    sf::RenderTarget& target;
-    float contentX;
-    float ctrlX;
-    float y;
-    float rowH = 50.f;
-    float availableWidth = 800.f;
-
-    void toggle(ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition ({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
-        y += rowH;
-    }
-
-    void toggle(sf::Text& label,
-                const std::unique_ptr<Button>& on,
-                const std::unique_ptr<Button>& off) {
-        label.setPosition({contentX, y + 8.f});
-        target.draw(label);
-        on->setPosition ({ctrlX, y});
-        off->setPosition({ctrlX + 96.f, y});
-        on->render(target);
-        off->render(target);
-        y += rowH;
-    }
-
-    void multi(sf::Text& label,
-               std::vector<std::unique_ptr<Button>>& btns,
-               float gap = 96.f) {
-        label.setPosition({contentX, y + 8.f});
-        target.draw(label);
-        for (size_t i = 0; i < btns.size(); ++i) {
-            btns[i]->setPosition({ctrlX + static_cast<float>(i) * gap, y});
-            btns[i]->render(target);
-        }
-        y += rowH;
-    }
-
-    // MultiRow 版本（单行 + 自动折行 + 网格）
-    void multi(MultiRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-
-        if (row.buttons.empty()) { y += rowH; return; }
-
-        if (row.columns <= 0) {
-            const float btnW = row.buttons[0]->size().x;
-            const float totalW = row.stepX * (row.buttons.size() - 1) + btnW;
-
-            if (totalW <= availableWidth) {
-                for (size_t i = 0; i < row.buttons.size(); ++i) {
-                    row.buttons[i]->setPosition(
-                        {ctrlX + static_cast<float>(i) * row.stepX, y});
-                    row.buttons[i]->render(target);
-                }
-                y += rowH;
-            } else {
-                float usable = availableWidth - btnW;
-                if (usable < 0.f) usable = 0.f;
-                int perRow = 1 + static_cast<int>(usable / row.stepX);
-                if (perRow < 1) perRow = 1;
-                if (perRow > static_cast<int>(row.buttons.size()))
-                    perRow = static_cast<int>(row.buttons.size());
-
-                for (size_t i = 0; i < row.buttons.size(); ++i) {
-                    int r = static_cast<int>(i) / perRow;
-                    int c = static_cast<int>(i) % perRow;
-                    row.buttons[i]->setPosition(
-                        {ctrlX + static_cast<float>(c) * row.stepX,
-                         y + static_cast<float>(r) * rowH});
-                    row.buttons[i]->render(target);
-                }
-                int rows = (static_cast<int>(row.buttons.size()) + perRow - 1)
-                           / perRow;
-                y += static_cast<float>(rows) * rowH + 6.f;
-            }
-        } else {
-            const int cols = row.columns;
-            float stepY = rowH;
-            for (size_t i = 0; i < row.buttons.size(); ++i) {
-                int r = static_cast<int>(i) / cols;
-                int c = static_cast<int>(i) % cols;
-                row.buttons[i]->setPosition(
-                    {ctrlX + static_cast<float>(c) * row.stepX,
-                     y + static_cast<float>(r) * stepY});
-                row.buttons[i]->render(target);
-            }
-            int rows = (static_cast<int>(row.buttons.size()) + cols - 1) / cols;
-            y += static_cast<float>(rows) * stepY + 6.f;
-        }
-    }
-
-    void slider(sf::Text& label, Slider* s) {
-        label.setPosition({contentX, y + 4.f});
-        target.draw(label);
-        s->setPosition({ctrlX, y + 4.f});
-        s->render(target);
-        y += rowH;
-    }
-};
-} // namespace
 
 float SettingsScene::renderDisplayTab(Window& window, float contentX,
                                      float ctrlX, float y) {
