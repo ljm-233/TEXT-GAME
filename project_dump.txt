@@ -12501,7 +12501,55 @@ void Calculator::run() {
         logger_->normal(std::string(Str::T(Str::CalcResult)) + to_string(result));
         return;
     }
-}===== ./src/scene/settings_scene.cpp =====
+}===== ./src/scene/editor_tools.cpp =====
+#include "scene/editor_tools.h"
+
+#include <algorithm>
+#include <cstdlib>
+
+namespace EditorTools {
+
+std::vector<sf::Vector2i> rectCells(sf::Vector2i a, sf::Vector2i b) {
+    const int x0 = std::min(a.x, b.x);
+    const int x1 = std::max(a.x, b.x);
+    const int y0 = std::min(a.y, b.y);
+    const int y1 = std::max(a.y, b.y);
+
+    std::vector<sf::Vector2i> cells;
+    cells.reserve(static_cast<std::size_t>(x1 - x0 + 1) *
+                  static_cast<std::size_t>(y1 - y0 + 1));
+
+    // 行优先：与原来编辑器里的双重循环顺序一致
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+            cells.push_back({x, y});
+
+    return cells;
+}
+
+std::vector<sf::Vector2i> lineCells(sf::Vector2i from, sf::Vector2i to) {
+    // 这段是原 EditorScene::paintLine 里的 Bresenham，逐字搬过来。
+    // 抽取只是把"画哪几格"与"怎么画"分开，算法本身一个字没改。
+    int x0 = from.x, y0 = from.y;
+    int x1 = to.x,   y1 = to.y;
+    const int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    std::vector<sf::Vector2i> cells;
+    while (true) {
+        cells.push_back({x0, y0});
+        if (x0 == x1 && y0 == y1) break;
+
+        const int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    return cells;
+}
+
+} // namespace EditorTools
+===== ./src/scene/settings_scene.cpp =====
 #include "settings_scene.h"
 #include "utils/text_strings.h"
 #include <string>
@@ -12525,6 +12573,19 @@ void Calculator::run() {
 #include "utils/lang.h"
 
 namespace {
+
+// ===== SFML 版本兼容 =====
+//
+// `Event::getIf` 的非 const 重载是 SFML **3.1** 才加的；3.0.x 只有 const 版本，
+// 返回 `const T*`。而 brew 和 vcpkg 目前都还停在 3.0.2 —— 直接用 3.1 的写法
+// 会让 macOS / Windows 上的构建直接失败（Arch 的 3.1 能过，所以本地发现不了）。
+//
+// 这里抹掉 const 是安全的：下面改的是**我们自己拷贝出来的** ev，对象本身非 const，
+// 也没碰别人的数据。3.1 上走的本来就是非 const 重载，这个转换是空操作。
+template <typename T>
+T* eventIfMutable(sf::Event& e) {
+    return const_cast<T*>(e.getIf<T>());
+}
 
 // ===== 布局（设计坐标系 1280×720）=====
 constexpr float kTabX     = 40.f;
@@ -12768,13 +12829,13 @@ void SettingsScene::handleEvent(const sf::Event& event) {
         return {static_cast<int>(p.x), static_cast<int>(p.y)};
     };
 
-    if (auto* mm = ev.getIf<sf::Event::MouseMoved>()) {
+    if (auto* mm = eventIfMutable<sf::Event::MouseMoved>(ev)) {
         mm->position = convert(mm->position);
-    } else if (auto* mb = ev.getIf<sf::Event::MouseButtonPressed>()) {
+    } else if (auto* mb = eventIfMutable<sf::Event::MouseButtonPressed>(ev)) {
         mb->position = convert(mb->position);
-    } else if (auto* mr = ev.getIf<sf::Event::MouseButtonReleased>()) {
+    } else if (auto* mr = eventIfMutable<sf::Event::MouseButtonReleased>(ev)) {
         mr->position = convert(mr->position);
-    } else if (auto* ws = ev.getIf<sf::Event::MouseWheelScrolled>()) {
+    } else if (auto* ws = eventIfMutable<sf::Event::MouseWheelScrolled>(ev)) {
         ws->position = convert(ws->position);
 
         // ⭐ 内容高 > View 高时允许滚动
@@ -13168,55 +13229,7 @@ void SettingsScene::render(Window& window) {
         backButton_->setPosition({backX, y});
         backButton_->render(native);
     }
-}===== ./src/scene/editor_tools.cpp =====
-#include "scene/editor_tools.h"
-
-#include <algorithm>
-#include <cstdlib>
-
-namespace EditorTools {
-
-std::vector<sf::Vector2i> rectCells(sf::Vector2i a, sf::Vector2i b) {
-    const int x0 = std::min(a.x, b.x);
-    const int x1 = std::max(a.x, b.x);
-    const int y0 = std::min(a.y, b.y);
-    const int y1 = std::max(a.y, b.y);
-
-    std::vector<sf::Vector2i> cells;
-    cells.reserve(static_cast<std::size_t>(x1 - x0 + 1) *
-                  static_cast<std::size_t>(y1 - y0 + 1));
-
-    // 行优先：与原来编辑器里的双重循环顺序一致
-    for (int y = y0; y <= y1; ++y)
-        for (int x = x0; x <= x1; ++x)
-            cells.push_back({x, y});
-
-    return cells;
-}
-
-std::vector<sf::Vector2i> lineCells(sf::Vector2i from, sf::Vector2i to) {
-    // 这段是原 EditorScene::paintLine 里的 Bresenham，逐字搬过来。
-    // 抽取只是把"画哪几格"与"怎么画"分开，算法本身一个字没改。
-    int x0 = from.x, y0 = from.y;
-    int x1 = to.x,   y1 = to.y;
-    const int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    const int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-
-    std::vector<sf::Vector2i> cells;
-    while (true) {
-        cells.push_back({x0, y0});
-        if (x0 == x1 && y0 == y1) break;
-
-        const int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
-    }
-    return cells;
-}
-
-} // namespace EditorTools
-===== ./src/scene/game_scene.cpp =====
+}===== ./src/scene/game_scene.cpp =====
 #include "game_scene.h"
 #include "utils/text_strings.h"
 #include "utils/utf8.h"
@@ -14269,8 +14282,11 @@ void GameScene::render(Window& window) {
                 static_cast<std::size_t>(vw) * vh * 4);
             glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
-            sf::Image img({static_cast<unsigned>(vw),
-                           static_cast<unsigned>(vh)});
+            // 显式写出 Vector2u：直接写 img({vw, vh}) 在 clang 和 MSVC 上会与
+            // sf::Image 的其它重载产生歧义（GCC 接受，所以本地看不出来）。
+            // 带 sf::Color 参数的那几处没这个问题，不用改。
+            sf::Image img(sf::Vector2u{static_cast<unsigned>(vw),
+                                       static_cast<unsigned>(vh)});
             // glReadPixels 原点在左下，sf::Image 原点在左上 → 翻转 Y
             for (int y = 0; y < vh; ++y) {
                 int srcY = vh - 1 - y;
@@ -15090,33 +15106,162 @@ void Gamepad::vibrate(float low, float high, float duration) {
 void Gamepad::stopVibration() {
     GamepadVibration::instance().stop();
     vibrationActive_ = false;
-}===== ./src/infrastructure/gamepad_vibration.cpp =====
-// src/ui/gamepad_vibration.cpp
-#include "infrastructure/gamepad_vibration.h"
-#include <cstdio>
+}===== ./src/infrastructure/keybindings.cpp =====
+#include "infrastructure/keybindings.h"
 
-GamepadVibration& GamepadVibration::instance() {
-    static GamepadVibration inst;
+namespace {
+constexpr sf::Keyboard::Key kDefaults[KeyBindings::Count] = {
+    sf::Keyboard::Key::A,
+    sf::Keyboard::Key::D,
+    sf::Keyboard::Key::Space,
+    sf::Keyboard::Key::Escape,
+    sf::Keyboard::Key::R,
+};
+}
+
+KeyBindings& KeyBindings::instance() {
+    static KeyBindings inst;
     return inst;
 }
 
-GamepadVibration::~GamepadVibration() {
-    shutdown();
+KeyBindings::KeyBindings() {
+    resetToDefaults();
 }
 
-void GamepadVibration::init() {
-    if (available_) return;
-    fprintf(stderr, "[Vibration] init() called\n");
-    initPlatform();
-    available_ = true;
+void KeyBindings::resetToDefaults() {
+    for (int i = 0; i < Count; ++i)
+        keys_[i] = kDefaults[i];
 }
 
-void GamepadVibration::shutdown() {
-    if (!available_) return;
-    shutdownPlatform();
-    available_ = false;
-}===== ./src/infrastructure/gamepad_vibration_linux.cpp =====
-// src/ui/gamepad_vibration_linux.cpp
+sf::Keyboard::Key KeyBindings::get(Action a) const {
+    if (a < 0 || a >= Count) return sf::Keyboard::Key::Unknown;
+    return keys_[a];
+}
+
+void KeyBindings::set(Action a, sf::Keyboard::Key k) {
+    if (a < 0 || a >= Count) return;
+    keys_[a] = k;
+}
+
+const char* KeyBindings::actionName(Action a) {
+    switch (a) {
+        case MoveLeft:  return "左移"; // i18n-skip
+        case MoveRight: return "右移"; // i18n-skip
+        case Jump:      return "跳跃"; // i18n-skip
+        case Pause:     return "暂停"; // i18n-skip
+        case Restart:   return "重开"; // i18n-skip
+        default:        return "?";
+    }
+}
+
+const char* KeyBindings::keyToString(sf::Keyboard::Key k) {
+    switch (k) {
+        case sf::Keyboard::Key::A: return "A";
+        case sf::Keyboard::Key::B: return "B";
+        case sf::Keyboard::Key::C: return "C";
+        case sf::Keyboard::Key::D: return "D";
+        case sf::Keyboard::Key::E: return "E";
+        case sf::Keyboard::Key::F: return "F";
+        case sf::Keyboard::Key::G: return "G";
+        case sf::Keyboard::Key::H: return "H";
+        case sf::Keyboard::Key::I: return "I";
+        case sf::Keyboard::Key::J: return "J";
+        case sf::Keyboard::Key::K: return "K";
+        case sf::Keyboard::Key::L: return "L";
+        case sf::Keyboard::Key::M: return "M";
+        case sf::Keyboard::Key::N: return "N";
+        case sf::Keyboard::Key::O: return "O";
+        case sf::Keyboard::Key::P: return "P";
+        case sf::Keyboard::Key::Q: return "Q";
+        case sf::Keyboard::Key::R: return "R";
+        case sf::Keyboard::Key::S: return "S";
+        case sf::Keyboard::Key::T: return "T";
+        case sf::Keyboard::Key::U: return "U";
+        case sf::Keyboard::Key::V: return "V";
+        case sf::Keyboard::Key::W: return "W";
+        case sf::Keyboard::Key::X: return "X";
+        case sf::Keyboard::Key::Y: return "Y";
+        case sf::Keyboard::Key::Z: return "Z";
+
+        case sf::Keyboard::Key::Num0: return "0";
+        case sf::Keyboard::Key::Num1: return "1";
+        case sf::Keyboard::Key::Num2: return "2";
+        case sf::Keyboard::Key::Num3: return "3";
+        case sf::Keyboard::Key::Num4: return "4";
+        case sf::Keyboard::Key::Num5: return "5";
+        case sf::Keyboard::Key::Num6: return "6";
+        case sf::Keyboard::Key::Num7: return "7";
+        case sf::Keyboard::Key::Num8: return "8";
+        case sf::Keyboard::Key::Num9: return "9";
+
+        case sf::Keyboard::Key::Space:  return "Space";
+        case sf::Keyboard::Key::Enter:  return "Enter";
+        case sf::Keyboard::Key::Escape: return "Esc";
+        case sf::Keyboard::Key::Tab:    return "Tab";
+        case sf::Keyboard::Key::Backspace: return "Backspace";
+
+        case sf::Keyboard::Key::Left:  return "←";
+        case sf::Keyboard::Key::Right: return "→";
+        case sf::Keyboard::Key::Up:    return "↑";
+        case sf::Keyboard::Key::Down:  return "↓";
+
+        case sf::Keyboard::Key::LShift: return "LShift";
+        case sf::Keyboard::Key::RShift: return "RShift";
+        case sf::Keyboard::Key::LControl: return "LCtrl";
+        case sf::Keyboard::Key::RControl: return "RCtrl";
+        case sf::Keyboard::Key::LAlt: return "LAlt";
+        case sf::Keyboard::Key::RAlt: return "RAlt";
+
+        case sf::Keyboard::Key::F1:  return "F1";
+        case sf::Keyboard::Key::F2:  return "F2";
+        case sf::Keyboard::Key::F3:  return "F3";
+        case sf::Keyboard::Key::F4:  return "F4";
+        case sf::Keyboard::Key::F5:  return "F5";
+        case sf::Keyboard::Key::F6:  return "F6";
+        case sf::Keyboard::Key::F7:  return "F7";
+        case sf::Keyboard::Key::F8:  return "F8";
+        case sf::Keyboard::Key::F9:  return "F9";
+        case sf::Keyboard::Key::F10: return "F10";
+        case sf::Keyboard::Key::F11: return "F11";
+        case sf::Keyboard::Key::F12: return "F12";
+
+        case sf::Keyboard::Key::Unknown: return "?";
+        default: return "?";
+    }
+}===== ./src/infrastructure/gamepad_vibration_stub.cpp =====
+// 没有平台实现时的兜底：让项目仍然能编译链接，振动静默失效。
+//
+// 振动只实现了 Linux（evdev + EVIOCSFF）和 Windows（XInput）。
+// macOS 上这两个文件都被各自的 #ifdef 排除掉，编译成空 TU，
+// 于是 initPlatform / shutdownPlatform / setVibration / stop 四个符号
+// 一个都没有定义 —— 表现是**链接错误**（macOS CI 就是这么挂的）。
+//
+// 这里的守卫写成"既不是 Linux 也不是 Windows"而不是 #ifdef __APPLE__，
+// 这样 FreeBSD 之类没实现过的系统也能直接编译，不用再加一个文件。
+#if !defined(__linux__) && !defined(_WIN32)
+
+#include "infrastructure/gamepad_vibration.h"
+
+void GamepadVibration::initPlatform() {
+    // 无平台实现：不做任何事。
+    // 基类 init() 会把 available_ 置为 true（它的语义是"已初始化"而非
+    // "硬件可用"，与 Linux/Windows 两个实现保持一致），
+    // 真正的硬件判断在各平台实现自己的静态标志里。
+}
+
+void GamepadVibration::shutdownPlatform() {
+}
+
+void GamepadVibration::setVibration(float /*low*/, float /*high*/) {
+    // 静默忽略
+}
+
+void GamepadVibration::stop() {
+}
+
+#endif
+===== ./src/infrastructure/gamepad_vibration_linux.cpp =====
+// src/infrastructure/gamepad_vibration_linux.cpp
 #ifdef __linux__
 #include "infrastructure/gamepad_vibration.h"
 
@@ -15261,7 +15406,7 @@ void GamepadVibration::stop() {
 }
 
 #endif // __linux__===== ./src/infrastructure/gamepad_vibration_windows.cpp =====
-// src/ui/gamepad_vibration_windows.cpp
+// src/infrastructure/gamepad_vibration_windows.cpp
 #ifdef _WIN32
 #include "infrastructure/gamepad_vibration.h"
 #include <windows.h>
@@ -15316,128 +15461,31 @@ void GamepadVibration::stop() {
     XInputSetState(static_cast<DWORD>(g_controllerIndex), &vibration);
 }
 
-#endif // _WIN32===== ./src/infrastructure/keybindings.cpp =====
-#include "infrastructure/keybindings.h"
+#endif // _WIN32===== ./src/infrastructure/gamepad_vibration.cpp =====
+// src/infrastructure/gamepad_vibration.cpp
+#include "infrastructure/gamepad_vibration.h"
+#include <cstdio>
 
-namespace {
-constexpr sf::Keyboard::Key kDefaults[KeyBindings::Count] = {
-    sf::Keyboard::Key::A,
-    sf::Keyboard::Key::D,
-    sf::Keyboard::Key::Space,
-    sf::Keyboard::Key::Escape,
-    sf::Keyboard::Key::R,
-};
-}
-
-KeyBindings& KeyBindings::instance() {
-    static KeyBindings inst;
+GamepadVibration& GamepadVibration::instance() {
+    static GamepadVibration inst;
     return inst;
 }
 
-KeyBindings::KeyBindings() {
-    resetToDefaults();
+GamepadVibration::~GamepadVibration() {
+    shutdown();
 }
 
-void KeyBindings::resetToDefaults() {
-    for (int i = 0; i < Count; ++i)
-        keys_[i] = kDefaults[i];
+void GamepadVibration::init() {
+    if (available_) return;
+    fprintf(stderr, "[Vibration] init() called\n");
+    initPlatform();
+    available_ = true;
 }
 
-sf::Keyboard::Key KeyBindings::get(Action a) const {
-    if (a < 0 || a >= Count) return sf::Keyboard::Key::Unknown;
-    return keys_[a];
-}
-
-void KeyBindings::set(Action a, sf::Keyboard::Key k) {
-    if (a < 0 || a >= Count) return;
-    keys_[a] = k;
-}
-
-const char* KeyBindings::actionName(Action a) {
-    switch (a) {
-        case MoveLeft:  return "左移"; // i18n-skip
-        case MoveRight: return "右移"; // i18n-skip
-        case Jump:      return "跳跃"; // i18n-skip
-        case Pause:     return "暂停"; // i18n-skip
-        case Restart:   return "重开"; // i18n-skip
-        default:        return "?";
-    }
-}
-
-const char* KeyBindings::keyToString(sf::Keyboard::Key k) {
-    switch (k) {
-        case sf::Keyboard::Key::A: return "A";
-        case sf::Keyboard::Key::B: return "B";
-        case sf::Keyboard::Key::C: return "C";
-        case sf::Keyboard::Key::D: return "D";
-        case sf::Keyboard::Key::E: return "E";
-        case sf::Keyboard::Key::F: return "F";
-        case sf::Keyboard::Key::G: return "G";
-        case sf::Keyboard::Key::H: return "H";
-        case sf::Keyboard::Key::I: return "I";
-        case sf::Keyboard::Key::J: return "J";
-        case sf::Keyboard::Key::K: return "K";
-        case sf::Keyboard::Key::L: return "L";
-        case sf::Keyboard::Key::M: return "M";
-        case sf::Keyboard::Key::N: return "N";
-        case sf::Keyboard::Key::O: return "O";
-        case sf::Keyboard::Key::P: return "P";
-        case sf::Keyboard::Key::Q: return "Q";
-        case sf::Keyboard::Key::R: return "R";
-        case sf::Keyboard::Key::S: return "S";
-        case sf::Keyboard::Key::T: return "T";
-        case sf::Keyboard::Key::U: return "U";
-        case sf::Keyboard::Key::V: return "V";
-        case sf::Keyboard::Key::W: return "W";
-        case sf::Keyboard::Key::X: return "X";
-        case sf::Keyboard::Key::Y: return "Y";
-        case sf::Keyboard::Key::Z: return "Z";
-
-        case sf::Keyboard::Key::Num0: return "0";
-        case sf::Keyboard::Key::Num1: return "1";
-        case sf::Keyboard::Key::Num2: return "2";
-        case sf::Keyboard::Key::Num3: return "3";
-        case sf::Keyboard::Key::Num4: return "4";
-        case sf::Keyboard::Key::Num5: return "5";
-        case sf::Keyboard::Key::Num6: return "6";
-        case sf::Keyboard::Key::Num7: return "7";
-        case sf::Keyboard::Key::Num8: return "8";
-        case sf::Keyboard::Key::Num9: return "9";
-
-        case sf::Keyboard::Key::Space:  return "Space";
-        case sf::Keyboard::Key::Enter:  return "Enter";
-        case sf::Keyboard::Key::Escape: return "Esc";
-        case sf::Keyboard::Key::Tab:    return "Tab";
-        case sf::Keyboard::Key::Backspace: return "Backspace";
-
-        case sf::Keyboard::Key::Left:  return "←";
-        case sf::Keyboard::Key::Right: return "→";
-        case sf::Keyboard::Key::Up:    return "↑";
-        case sf::Keyboard::Key::Down:  return "↓";
-
-        case sf::Keyboard::Key::LShift: return "LShift";
-        case sf::Keyboard::Key::RShift: return "RShift";
-        case sf::Keyboard::Key::LControl: return "LCtrl";
-        case sf::Keyboard::Key::RControl: return "RCtrl";
-        case sf::Keyboard::Key::LAlt: return "LAlt";
-        case sf::Keyboard::Key::RAlt: return "RAlt";
-
-        case sf::Keyboard::Key::F1:  return "F1";
-        case sf::Keyboard::Key::F2:  return "F2";
-        case sf::Keyboard::Key::F3:  return "F3";
-        case sf::Keyboard::Key::F4:  return "F4";
-        case sf::Keyboard::Key::F5:  return "F5";
-        case sf::Keyboard::Key::F6:  return "F6";
-        case sf::Keyboard::Key::F7:  return "F7";
-        case sf::Keyboard::Key::F8:  return "F8";
-        case sf::Keyboard::Key::F9:  return "F9";
-        case sf::Keyboard::Key::F10: return "F10";
-        case sf::Keyboard::Key::F11: return "F11";
-        case sf::Keyboard::Key::F12: return "F12";
-
-        case sf::Keyboard::Key::Unknown: return "?";
-        default: return "?";
-    }
+void GamepadVibration::shutdown() {
+    if (!available_) return;
+    shutdownPlatform();
+    available_ = false;
 }===== ./include/core/scene.h =====
 #pragma once
 #include "scene_id.h"
@@ -20818,8 +20866,37 @@ constexpr float kNavRepeatEvery = 0.10f;
 // 建议范围：0.25 ~ 0.45
 constexpr float kMoveStickThreshold = 0.30f;
 
-} // namespace GamepadConfig===== ./include/infrastructure/gamepad_vibration.h =====
-// include/ui/gamepad_vibration.h
+} // namespace GamepadConfig===== ./include/infrastructure/keybindings.h =====
+#pragma once
+#include <SFML/Window/Keyboard.hpp>
+
+// 全局键位表（和 getTheme() 一样是全局单例）
+class KeyBindings {
+public:
+    enum Action {
+        MoveLeft = 0,
+        MoveRight,
+        Jump,
+        Pause,
+        Restart,
+        Count
+    };
+
+    static KeyBindings& instance();
+
+    sf::Keyboard::Key get(Action a) const;
+    void set(Action a, sf::Keyboard::Key key);
+
+    static const char* actionName(Action a);
+    static const char* keyToString(sf::Keyboard::Key k);
+
+    void resetToDefaults();
+
+private:
+    KeyBindings();
+    sf::Keyboard::Key keys_[Count];
+};===== ./include/infrastructure/gamepad_vibration.h =====
+// include/infrastructure/gamepad_vibration.h
 #pragma once
 
 class GamepadVibration {
@@ -20849,35 +20926,6 @@ private:
     // 平台相关初始化
     void initPlatform();
     void shutdownPlatform();
-};===== ./include/infrastructure/keybindings.h =====
-#pragma once
-#include <SFML/Window/Keyboard.hpp>
-
-// 全局键位表（和 getTheme() 一样是全局单例）
-class KeyBindings {
-public:
-    enum Action {
-        MoveLeft = 0,
-        MoveRight,
-        Jump,
-        Pause,
-        Restart,
-        Count
-    };
-
-    static KeyBindings& instance();
-
-    sf::Keyboard::Key get(Action a) const;
-    void set(Action a, sf::Keyboard::Key key);
-
-    static const char* actionName(Action a);
-    static const char* keyToString(sf::Keyboard::Key k);
-
-    void resetToDefaults();
-
-private:
-    KeyBindings();
-    sf::Keyboard::Key keys_[Count];
 };===== ./wallpaper/CREDITS.md =====
 # 壁纸来源
 
@@ -31436,191 +31484,7 @@ TEST_CASE("Player - 掉图触发 fellOut 并回到 spawn") {
     CHECK(p.consumeFellOut());
     CHECK(p.position().x == 100.f);
     CHECK(p.position().y == 200.f);
-}===== ./tests/test_container.cpp =====
-#include "doctest.h"
-#include "common/exceptions.h"
-#include "core/container.h"
-
-#include <memory>
-#include <string>
-
-namespace {
-
-struct Service {
-    int value = 0;
-};
-
-struct Other {
-    int value = 0;
-};
-
-/// 构造计数器：用来验证"单例只构造一次 / transient 每次都构造"。
-int g_constructed = 0;
-
-struct Counted {
-    Counted() { ++g_constructed; }
-};
-
-} // namespace
-
-TEST_CASE("Container - 单例只构造一次并复用") {
-    g_constructed = 0;
-    Container container;
-    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
-
-    CHECK(g_constructed == 0);  // 注册不构造
-
-    auto first = container.require<Counted>("counted");
-    auto second = container.get<Counted>("counted");
-
-    CHECK(g_constructed == 1);
-    CHECK(first.get() == second.get());
-}
-
-TEST_CASE("Container - transient 每次解析都新建") {
-    g_constructed = 0;
-    Container container;
-    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); },
-                           /*singleton=*/false);
-
-    auto first = container.get<Counted>("counted");
-    auto second = container.get<Counted>("counted");
-
-    CHECK(g_constructed == 2);
-    CHECK(first.get() != second.get());
-}
-
-TEST_CASE("Container - 重复注册抛 ContainerError") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-
-    CHECK_THROWS_AS(
-        container.reg<Service>("svc", []() { return std::make_shared<Service>(); }),
-        ContainerError);
-}
-
-TEST_CASE("Container - 解析未注册的名字抛 ContainerError") {
-    Container container;
-
-    CHECK_THROWS_AS(container.get<Service>("missing"), ContainerError);
-
-    // 异常里要带上名字，否则报错定位不到问题
-    try {
-        container.get<Service>("missing");
-        FAIL("应当抛异常");
-    } catch (const ContainerError& e) {
-        CHECK(e.name() == "missing");
-    }
-}
-
-TEST_CASE("Container - 类型不符抛 ContainerError") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-
-    // 取错类型必须当场炸，而不是静默返回一个错位的指针
-    CHECK_THROWS_AS(container.get<Other>("svc"), ContainerError);
-}
-
-TEST_CASE("Container - tryGet 永不抛异常") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-
-    CHECK(container.tryGet<Service>("missing") == nullptr);   // 未注册
-    CHECK(container.tryGet<Other>("svc") == nullptr);         // 类型不符
-    CHECK(container.tryGet<Service>("svc") != nullptr);       // 正常路径
-}
-
-TEST_CASE("Container - 工厂内部抛异常时 tryGet 吞掉并返回 nullptr") {
-    Container container;
-    container.reg<Service>("boom", []() -> std::shared_ptr<Service> {
-        throw AppError("工厂炸了");
-    });
-
-    CHECK(container.tryGet<Service>("boom") == nullptr);
-    CHECK_THROWS_AS(container.get<Service>("boom"), AppError);
-}
-
-TEST_CASE("Container - peek 只看已缓存的单例，不触发构造") {
-    g_constructed = 0;
-    Container container;
-    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
-
-    CHECK(container.peek<Counted>("counted") == nullptr);
-    CHECK(g_constructed == 0);  // 关键：peek 不能有副作用
-
-    container.touch("counted");
-
-    CHECK(container.peek<Counted>("counted") != nullptr);
-    CHECK(g_constructed == 1);
-}
-
-TEST_CASE("Container - touch 只构造不返回") {
-    g_constructed = 0;
-    Container container;
-    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
-
-    CHECK(container.contains("counted"));
-    CHECK_FALSE(container.hasInstance("counted"));
-
-    container.touch("counted");
-
-    CHECK(container.hasInstance("counted"));
-    CHECK(g_constructed == 1);
-}
-
-TEST_CASE("Container - touch 未注册的名字同样抛错") {
-    Container container;
-    CHECK_THROWS_AS(container.touch("missing"), ContainerError);
-}
-
-TEST_CASE("Container - contains 不构造，hasInstance 反映构造状态") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-
-    CHECK(container.contains("svc"));
-    CHECK_FALSE(container.hasInstance("svc"));
-    CHECK_FALSE(container.contains("missing"));
-
-    container.get<Service>("svc");
-
-    CHECK(container.hasInstance("svc"));
-}
-
-TEST_CASE("Container - names 按注册顺序返回") {
-    Container container;
-    container.reg<Service>("alpha", []() { return std::make_shared<Service>(); });
-    container.reg<Service>("beta", []() { return std::make_shared<Service>(); });
-    container.reg<Service>("gamma", []() { return std::make_shared<Service>(); });
-
-    const auto names = container.names();
-
-    REQUIRE(names.size() == 3);
-    CHECK(names[0] == "alpha");
-    CHECK(names[1] == "beta");
-    CHECK(names[2] == "gamma");
-}
-
-TEST_CASE("Container - str 是给人看的调试快照") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-
-    const std::string before = container.str();
-    CHECK(before.find("svc") != std::string::npos);
-    CHECK(before.find("singleton") != std::string::npos);
-
-    container.get<Service>("svc");
-    CHECK(container.str().find("已构造") != std::string::npos);
-}
-
-TEST_CASE("Container - 同名不同类型互不干扰") {
-    Container container;
-    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
-    container.reg<Other>("other", []() { return std::make_shared<Other>(); });
-
-    CHECK(container.get<Service>("svc") != nullptr);
-    CHECK(container.get<Other>("other") != nullptr);
-}
-===== ./tests/test_logger.cpp =====
+}===== ./tests/test_logger.cpp =====
 #include "doctest.h"
 #include "common/exceptions.h"
 #include "log/formatters/console_formatter.h"
@@ -32432,105 +32296,7 @@ TEST_CASE("GameConst - 弹跳是轻轻反弹（比跳跃矮）") {
     CHECK(GameConst::kPlayerBounceSpeed > GameConst::kPlayerJumpVelocity);
     // 但仍应该向上（负值）
     CHECK(GameConst::kPlayerBounceSpeed < 0.f);
-}===== ./tests/CMakeLists.txt =====
-add_executable(unit_tests
-    main.cpp
-    test_vec2.cpp
-    test_aabb.cpp
-    test_config.cpp
-    test_level.cpp
-    test_camera.cpp
-    test_animator.cpp
-    test_game_constants.cpp
-    test_moving_platform.cpp
-    test_jump_pad.cpp
-    test_player.cpp
-    test_container.cpp
-    test_logger.cpp
-    test_application.cpp
-    test_scene_registry.cpp
-    test_layers.cpp
-    test_entities.cpp
-    test_game_world.cpp
-    test_level_codec.cpp
-    test_save_manager.cpp
-    test_score_rules.cpp
-    test_editor_tools.cpp
-)
-
-target_include_directories(unit_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/core
-    ${CMAKE_SOURCE_DIR}/include/config
-    ${CMAKE_SOURCE_DIR}/include/ui
-    ${CMAKE_SOURCE_DIR}/include/game
-    ${CMAKE_SOURCE_DIR}/include/scene
-    ${CMAKE_SOURCE_DIR}/tests
-)
-
-target_compile_definitions(unit_tests PRIVATE
-    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-)
-
-# 只链接测试需要的源文件（不包含窗口、渲染等）
-target_sources(unit_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/game/level.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/camera.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/animator.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/animation.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/keybindings.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/moving_platform.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/jump_pad.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/player.cpp
-    # 无纹理的四类实体：纯 RectangleShape/VertexArray 绘制，
-    # 不碰 sprite factory，因此可以在无 GL 上下文的测试进程里构造
-    ${CMAKE_SOURCE_DIR}/src/game/checkpoint.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/door.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/key.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/spike.cpp
-    # Coin / Enemy 现在也把贴图作为构造参数，源码里不再调用 sprite factory，
-    # 所以测试目标不需要链上那几个 factory 实现
-    ${CMAKE_SOURCE_DIR}/src/game/coin.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/level_codec.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
-    ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
-    ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
-    # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
-    # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
-    # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
-    ${CMAKE_SOURCE_DIR}/src/game/player_sprite_factory.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/coin_sprite_factory.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/enemy_sprite_factory.cpp
-    # gamepad.cpp 调用了 GamepadVibration，实现必须一起链上，
-    # 否则 unit_tests 会在链接期报 undefined reference。
-    # 两个平台文件内部各有 #ifdef 守卫，同时列出来是安全的。
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration_linux.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration_windows.cpp
-    # 地基：容器与日志层（不含 bootstrap —— 那层是装配胶水，依赖配置与窗口）
-    ${CMAKE_SOURCE_DIR}/src/core/container.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/main_loop.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/application.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/scene_registry.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/scene_id.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/type.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/logger.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/rotation.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/formatters/text_formatter.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/formatters/console_formatter.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/handlers/console_handler.cpp
-    ${CMAKE_SOURCE_DIR}/src/log/handlers/file_handler.cpp
-)
-
-target_link_libraries(unit_tests PRIVATE
-    SFML::Graphics
-)
-
-add_test(NAME unit_tests COMMAND unit_tests)===== ./tests/test_layers.cpp =====
+}===== ./tests/test_layers.cpp =====
 #include "doctest.h"
 
 #include <algorithm>
@@ -34352,7 +34118,311 @@ TEST_CASE("EditorTools - 连线长度符合切比雪夫距离") {
 
     CHECK(cells.size() == 11);   // max(10, 4) + 1
 }
-===== ./tools/validate_levels.cpp =====
+===== ./tests/test_container.cpp =====
+#include "doctest.h"
+#include "common/exceptions.h"
+#include "core/container.h"
+
+#include <memory>
+#include <string>
+
+// ⚠️ 下面断言里的 `.get()` 不是多余的，去掉会让 Windows 构建直接挂。
+//
+// doctest 会把断言两侧的值打印出来，靠 SFINAE 判断类型能不能流输出。
+// MSVC 的 <memory> 给 `shared_ptr<T>` 定义了 `operator<<`（内部打印 `_P.get()`），
+// 于是检测通过、选中它；而这里的 Service / Other / Counted 不是可流输出类型，
+// 模板一实例化就硬报错（error C2676，指向 MSVC 自己的 memory 头）。
+// libstdc++ 在 C++20 下没有这个重载，所以 GCC 上完全看不出来。
+//
+// 比较裸指针则走 `operator<<(ostream&, const void*)`，两个平台都没问题。
+
+namespace {
+
+struct Service {
+    int value = 0;
+};
+
+struct Other {
+    int value = 0;
+};
+
+/// 构造计数器：用来验证"单例只构造一次 / transient 每次都构造"。
+int g_constructed = 0;
+
+struct Counted {
+    Counted() { ++g_constructed; }
+};
+
+} // namespace
+
+TEST_CASE("Container - 单例只构造一次并复用") {
+    g_constructed = 0;
+    Container container;
+    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
+
+    CHECK(g_constructed == 0);  // 注册不构造
+
+    auto first = container.require<Counted>("counted");
+    auto second = container.get<Counted>("counted");
+
+    CHECK(g_constructed == 1);
+    CHECK(first.get() == second.get());
+}
+
+TEST_CASE("Container - transient 每次解析都新建") {
+    g_constructed = 0;
+    Container container;
+    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); },
+                           /*singleton=*/false);
+
+    auto first = container.get<Counted>("counted");
+    auto second = container.get<Counted>("counted");
+
+    CHECK(g_constructed == 2);
+    CHECK(first.get() != second.get());
+}
+
+TEST_CASE("Container - 重复注册抛 ContainerError") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+
+    CHECK_THROWS_AS(
+        container.reg<Service>("svc", []() { return std::make_shared<Service>(); }),
+        ContainerError);
+}
+
+TEST_CASE("Container - 解析未注册的名字抛 ContainerError") {
+    Container container;
+
+    CHECK_THROWS_AS(container.get<Service>("missing"), ContainerError);
+
+    // 异常里要带上名字，否则报错定位不到问题
+    try {
+        container.get<Service>("missing");
+        FAIL("应当抛异常");
+    } catch (const ContainerError& e) {
+        CHECK(e.name() == "missing");
+    }
+}
+
+TEST_CASE("Container - 类型不符抛 ContainerError") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+
+    // 取错类型必须当场炸，而不是静默返回一个错位的指针
+    CHECK_THROWS_AS(container.get<Other>("svc"), ContainerError);
+}
+
+TEST_CASE("Container - tryGet 永不抛异常") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+
+    CHECK(container.tryGet<Service>("missing").get() == nullptr);   // 未注册
+    CHECK(container.tryGet<Other>("svc").get() == nullptr);         // 类型不符
+    CHECK(container.tryGet<Service>("svc").get() != nullptr);       // 正常路径
+}
+
+TEST_CASE("Container - 工厂内部抛异常时 tryGet 吞掉并返回 nullptr") {
+    Container container;
+    container.reg<Service>("boom", []() -> std::shared_ptr<Service> {
+        throw AppError("工厂炸了");
+    });
+
+    CHECK(container.tryGet<Service>("boom").get() == nullptr);
+    CHECK_THROWS_AS(container.get<Service>("boom"), AppError);
+}
+
+TEST_CASE("Container - peek 只看已缓存的单例，不触发构造") {
+    g_constructed = 0;
+    Container container;
+    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
+
+    CHECK(container.peek<Counted>("counted").get() == nullptr);
+    CHECK(g_constructed == 0);  // 关键：peek 不能有副作用
+
+    container.touch("counted");
+
+    CHECK(container.peek<Counted>("counted").get() != nullptr);
+    CHECK(g_constructed == 1);
+}
+
+TEST_CASE("Container - touch 只构造不返回") {
+    g_constructed = 0;
+    Container container;
+    container.reg<Counted>("counted", []() { return std::make_shared<Counted>(); });
+
+    CHECK(container.contains("counted"));
+    CHECK_FALSE(container.hasInstance("counted"));
+
+    container.touch("counted");
+
+    CHECK(container.hasInstance("counted"));
+    CHECK(g_constructed == 1);
+}
+
+TEST_CASE("Container - touch 未注册的名字同样抛错") {
+    Container container;
+    CHECK_THROWS_AS(container.touch("missing"), ContainerError);
+}
+
+TEST_CASE("Container - contains 不构造，hasInstance 反映构造状态") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+
+    CHECK(container.contains("svc"));
+    CHECK_FALSE(container.hasInstance("svc"));
+    CHECK_FALSE(container.contains("missing"));
+
+    container.get<Service>("svc");
+
+    CHECK(container.hasInstance("svc"));
+}
+
+TEST_CASE("Container - names 按注册顺序返回") {
+    Container container;
+    container.reg<Service>("alpha", []() { return std::make_shared<Service>(); });
+    container.reg<Service>("beta", []() { return std::make_shared<Service>(); });
+    container.reg<Service>("gamma", []() { return std::make_shared<Service>(); });
+
+    const auto names = container.names();
+
+    REQUIRE(names.size() == 3);
+    CHECK(names[0] == "alpha");
+    CHECK(names[1] == "beta");
+    CHECK(names[2] == "gamma");
+}
+
+TEST_CASE("Container - str 是给人看的调试快照") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+
+    const std::string before = container.str();
+    CHECK(before.find("svc") != std::string::npos);
+    CHECK(before.find("singleton") != std::string::npos);
+
+    container.get<Service>("svc");
+    CHECK(container.str().find("已构造") != std::string::npos);
+}
+
+TEST_CASE("Container - 同名不同类型互不干扰") {
+    Container container;
+    container.reg<Service>("svc", []() { return std::make_shared<Service>(); });
+    container.reg<Other>("other", []() { return std::make_shared<Other>(); });
+
+    CHECK(container.get<Service>("svc").get() != nullptr);
+    CHECK(container.get<Other>("other").get() != nullptr);
+}
+===== ./tests/CMakeLists.txt =====
+add_executable(unit_tests
+    main.cpp
+    test_vec2.cpp
+    test_aabb.cpp
+    test_config.cpp
+    test_level.cpp
+    test_camera.cpp
+    test_animator.cpp
+    test_game_constants.cpp
+    test_moving_platform.cpp
+    test_jump_pad.cpp
+    test_player.cpp
+    test_container.cpp
+    test_logger.cpp
+    test_application.cpp
+    test_scene_registry.cpp
+    test_layers.cpp
+    test_entities.cpp
+    test_game_world.cpp
+    test_level_codec.cpp
+    test_save_manager.cpp
+    test_score_rules.cpp
+    test_editor_tools.cpp
+)
+
+target_include_directories(unit_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/core
+    ${CMAKE_SOURCE_DIR}/include/config
+    ${CMAKE_SOURCE_DIR}/include/ui
+    ${CMAKE_SOURCE_DIR}/include/game
+    ${CMAKE_SOURCE_DIR}/include/scene
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_compile_definitions(unit_tests PRIVATE
+    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+# GamepadVibration 的全部平台实现：用 GLOB 自动收集，不逐个列举。
+#
+# gamepad.cpp 调用了它，实现必须一起链上，否则 unit_tests 链接期就报
+# "Undefined symbols ... GamepadVibration::initPlatform()"。
+# 每个平台文件内部都有自己的 #ifdef 守卫（Linux / Windows / 其余平台兜底），
+# 同时链上是安全的；但**漏掉任何一个都会在对应平台上变成链接错误**。
+# macOS 上就是这么挂的：新增 gamepad_vibration_stub.cpp 之后，主目标靠顶层的
+# GLOB 自动带上，测试目标却因为手写列表漏了它。
+# 这里自动收集，从根上避免"加了平台文件忘了加进测试"。
+file(GLOB GAMEPAD_VIBRATION_SOURCES
+     ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration*.cpp)
+
+# 只链接测试需要的源文件（不包含窗口、渲染等）
+target_sources(unit_tests PRIVATE
+    # ⚠️ 这里是**手写列表**，不是 GLOB —— 所以顶层 CMakeLists 里新增源文件时，
+    #    如果测试也需要链它，必须在这里补一行，否则本地可能没事、
+    #    但换了平台就是链接错误（macOS 上漏掉振动兜底实现，就是这么挂的）。
+    #    唯一的例外见下面 GamepadVibration 那段，那里是自动收集的。
+    ${CMAKE_SOURCE_DIR}/src/game/level.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/camera.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/animator.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/animation.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/keybindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/moving_platform.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/jump_pad.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/player.cpp
+    # 无纹理的四类实体：纯 RectangleShape/VertexArray 绘制，
+    # 不碰 sprite factory，因此可以在无 GL 上下文的测试进程里构造
+    ${CMAKE_SOURCE_DIR}/src/game/checkpoint.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/door.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/key.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/spike.cpp
+    # Coin / Enemy 现在也把贴图作为构造参数，源码里不再调用 sprite factory，
+    # 所以测试目标不需要链上那几个 factory 实现
+    ${CMAKE_SOURCE_DIR}/src/game/coin.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/level_codec.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
+    ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
+    # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
+    # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
+    # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
+    ${CMAKE_SOURCE_DIR}/src/game/player_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/coin_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/enemy_sprite_factory.cpp
+    # GamepadVibration 的实现（见文件上方 GLOB 的说明）
+    ${GAMEPAD_VIBRATION_SOURCES}
+    # 地基：容器与日志层（不含 bootstrap —— 那层是装配胶水，依赖配置与窗口）
+    ${CMAKE_SOURCE_DIR}/src/core/container.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/main_loop.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/application.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/scene_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/scene_id.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/type.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/logger.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/rotation.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/formatters/text_formatter.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/formatters/console_formatter.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/handlers/console_handler.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/handlers/file_handler.cpp
+)
+
+target_link_libraries(unit_tests PRIVATE
+    SFML::Graphics
+)
+
+add_test(NAME unit_tests COMMAND unit_tests)===== ./tools/validate_levels.cpp =====
 #include "level.h"
 #include "level_validator.h"
 #include <filesystem>
@@ -61999,6 +62069,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp"
+  "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_windows.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/keybindings.cpp"
   )
@@ -62647,6 +62718,12 @@ endif()
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_linux.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_linux.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/release",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_stub.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_stub.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/release",
@@ -67245,6 +67322,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp"
+  "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_windows.cpp"
   "/home/link/coding/TEXT-GAME/src/infrastructure/keybindings.cpp"
   )
@@ -67637,7 +67715,7 @@ endif()
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
 add_test("unit_tests" "/home/link/coding/TEXT-GAME/build/tests/tests/unit_tests")
-set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;98;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
+set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;110;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
 ===== ./build/tests/cmake_install.cmake =====
 # Install script for directory: /home/link/coding/TEXT-GAME
 
@@ -67966,6 +68044,12 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_linux.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_linux.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_stub.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/infrastructure/gamepad_vibration_stub.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -68578,6 +68662,12 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/infrastructure/gamepad_vibration_linux.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_linux.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/infrastructure/gamepad_vibration_linux.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/infrastructure/gamepad_vibration_stub.cpp.o -c /home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/infrastructure/gamepad_vibration_stub.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/infrastructure/gamepad_vibration_stub.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -69310,6 +69400,33 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
   - **新代码不要每帧构造 `sf::Text`**，一律做成成员变量。
 - ⚠️ **SFML 3 没有振动 API**，自己通过 `GamepadVibration` 调系统。
 - ⚠️ **SFML 3 移除了 `RenderWindow::capture()`**，用 `glReadPixels` 自己实现（需要 `find_package(OpenGL REQUIRED)` + `OpenGL::GL`）。
+
+### 跨平台（CI 会在 4 个平台构建）
+
+CI 矩阵：Arch（系统包 SFML **3.1**）、Ubuntu（源码编译 SFML **3.0**）、
+macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
+
+⚠️ **本地 GCC 绿灯不代表没问题**。下面几条都是本地正常、CI 连续红了几周才发现的：
+
+- **`sf::Event::getIf` 的非 const 重载是 SFML 3.1 才加的**。3.0.x 只有 const 版
+  （返回 `const T*`），写 `ev.getIf<T>()->field = x` 会在 3.0 上编译失败。
+  要改事件副本就用 `settings_scene.cpp` 里的 `eventIfMutable<T>()`。
+  **brew 和 vcpkg 目前都还停在 3.0.2**，不能假设别人有 3.1。
+- **`sf::Image` 别用单参数花括号构造**：`sf::Image img({w, h})` 在 clang/MSVC 上
+  与其它重载歧义（GCC 接受）。写 `sf::Image img(sf::Vector2u{w, h})`。
+  带 `sf::Color` 参数的写法没有这个问题。
+- **doctest 断言里别直接比较智能指针**：MSVC 的 `<memory>` 给 `shared_ptr` 定义了
+  `operator<<`，doctest 的 SFINAE 会选中它；指向的类型不可流输出就硬报错，
+  而且错误指向 MSVC 自己的头文件。比较 `.get()` —— 走
+  `operator<<(ostream&, const void*)`。
+- **每个平台都要有 GamepadVibration 的实现**：Linux(evdev) / Windows(XInput) /
+  其余平台兜底（`gamepad_vibration_stub.cpp`）。缺一个就是链接错误。
+- **`tests/CMakeLists.txt` 是手写源文件列表**（顶层 CMakeLists 是 GLOB）。
+  顶层新增源文件时，测试若也要链它必须手动补一行，否则本地可能没事、
+  换个平台就是链接错误。振动那一组已改成 GLOB 自动收集。
+
+改完这类东西**不要只看本地构建**：`git push` 之后用
+`gh run watch` 看四个平台的结果，这才是唯一能验证的地方。
 
 ### 项目自身
 

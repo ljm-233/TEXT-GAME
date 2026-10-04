@@ -236,6 +236,33 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 - ⚠️ **SFML 3 没有振动 API**，自己通过 `GamepadVibration` 调系统。
 - ⚠️ **SFML 3 移除了 `RenderWindow::capture()`**，用 `glReadPixels` 自己实现（需要 `find_package(OpenGL REQUIRED)` + `OpenGL::GL`）。
 
+### 跨平台（CI 会在 4 个平台构建）
+
+CI 矩阵：Arch（系统包 SFML **3.1**）、Ubuntu（源码编译 SFML **3.0**）、
+macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
+
+⚠️ **本地 GCC 绿灯不代表没问题**。下面几条都是本地正常、CI 连续红了几周才发现的：
+
+- **`sf::Event::getIf` 的非 const 重载是 SFML 3.1 才加的**。3.0.x 只有 const 版
+  （返回 `const T*`），写 `ev.getIf<T>()->field = x` 会在 3.0 上编译失败。
+  要改事件副本就用 `settings_scene.cpp` 里的 `eventIfMutable<T>()`。
+  **brew 和 vcpkg 目前都还停在 3.0.2**，不能假设别人有 3.1。
+- **`sf::Image` 别用单参数花括号构造**：`sf::Image img({w, h})` 在 clang/MSVC 上
+  与其它重载歧义（GCC 接受）。写 `sf::Image img(sf::Vector2u{w, h})`。
+  带 `sf::Color` 参数的写法没有这个问题。
+- **doctest 断言里别直接比较智能指针**：MSVC 的 `<memory>` 给 `shared_ptr` 定义了
+  `operator<<`，doctest 的 SFINAE 会选中它；指向的类型不可流输出就硬报错，
+  而且错误指向 MSVC 自己的头文件。比较 `.get()` —— 走
+  `operator<<(ostream&, const void*)`。
+- **每个平台都要有 GamepadVibration 的实现**：Linux(evdev) / Windows(XInput) /
+  其余平台兜底（`gamepad_vibration_stub.cpp`）。缺一个就是链接错误。
+- **`tests/CMakeLists.txt` 是手写源文件列表**（顶层 CMakeLists 是 GLOB）。
+  顶层新增源文件时，测试若也要链它必须手动补一行，否则本地可能没事、
+  换个平台就是链接错误。振动那一组已改成 GLOB 自动收集。
+
+改完这类东西**不要只看本地构建**：`git push` 之后用
+`gh run watch` 看四个平台的结果，这才是唯一能验证的地方。
+
 ### 项目自身
 
 - **场景工厂里不要有副作用**（现在是 `registerScenes()` 注册的 lambda）。
