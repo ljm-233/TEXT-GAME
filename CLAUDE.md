@@ -10,6 +10,10 @@
 ## 构建 / 运行 / 测试
 
 ```bash
+# 一键启动（增量构建 Release 后直接跑，日常用这个）
+./run.sh
+./run.sh --debug      # 要接调试器时
+
 # Debug 构建
 cmake --preset debug
 cmake --build --preset debug
@@ -20,7 +24,7 @@ cmake --preset release
 cmake --build --preset release
 ./build/release/text_game
 
-# 单元测试
+# 单元测试（scripts/test.sh 等价于下面三条）
 cmake --preset tests
 cmake --build --preset tests
 ctest --preset tests
