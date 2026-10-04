@@ -10,9 +10,12 @@
 ## 构建 / 运行 / 测试
 
 ```bash
-# 一键启动（增量构建 Release 后直接跑，日常用这个）
-./run.sh
-./run.sh --debug      # 要接调试器时
+# 一键启动（增量构建 Release 后直接进游戏，日常就敲这个）
+./s.sh
+./s.sh --debug        # 要接调试器时
+
+# 生成源码快照 project_dump.txt（给 AI 喂上下文用）
+./dump.sh
 
 # Debug 构建
 cmake --preset debug
