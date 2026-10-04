@@ -1,5 +1,5 @@
-#include "calculator.h"
-#include "text_strings.h"
+#include "scene/console/calculator.h"
+#include "utils/text_strings.h"
 #include <cmath>
 #include <iostream>
 #include <limits>

@@ -1,4 +1,4 @@
-#include "animator.h"
+#include "utils/animator.h"
 
 void Animator::addClip(const std::string& name, const Clip& clip) {
     clips_[name] = clip;

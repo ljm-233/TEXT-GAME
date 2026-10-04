@@ -1,30 +1,37 @@
-#include "application.h"
-#include "animation.h"
-#include "background.h"
-#include "bootstrap_config.h"
-#include "button_style.h"
-#include "font_holder.h"
-#include "game.h"
-#include "keybindings.h"
-#include "logging.h"
-#include "notification.h"
-#include "paths.h"
-#include "platform.h"
-#include "preferences.h"
-#include "resolution.h"
-#include "runtime_config.h"
-#include "achievement.h"
-#include "gamepad.h"
-#include "save_manager.h"
-#include "sound_manager.h"
-#include "theme.h"
-#include "ui_scale.h"
-#include "window.h"
-#include "lang.h"
+#include "core/application.h"
 
-#include <algorithm>
+#include <cstdlib>
+#include <iostream>
 
-using namespace std;
+namespace {
+
+/// std::set_terminate 只接受无捕获的函数指针，所以"上一个处理器"
+/// 只能放在文件作用域。语义对应 albuswall 里保存的 _origin_sys_excepthook。
+std::terminate_handler g_previousTerminate = nullptr;
+
+/// 兜底输出：故意不依赖 Application / Logger 的任何状态。
+/// terminate 可能发生在构造失败的过程中，此时碰单例只会二次崩溃。
+/// 这一点与 albuswall 把 bootstrap hook 放在"任何可能失败的 import 之前"同理。
+void reportTerminate() {
+    if (auto current = std::current_exception()) {
+        try {
+            std::rethrow_exception(current);
+        } catch (const std::exception& e) {
+            std::cerr << "[text-game][bootstrap] 未捕获异常: " << e.what() << '\n';
+        } catch (...) {
+            std::cerr << "[text-game][bootstrap] 未捕获异常（非 std::exception）\n";
+        }
+    } else {
+        std::cerr << "[text-game][bootstrap] std::terminate（无活动异常）\n";
+    }
+    std::cerr.flush();
+}
+
+}  // namespace
+
+// ============================================================
+// 单例
+// ============================================================
 
 Application& Application::instance() {
     static Application inst;
@@ -32,239 +39,185 @@ Application& Application::instance() {
 }
 
 Application::Application() {
-    registerDependencies();
+    installTerminateHandler();
 }
 
-void Application::registerDependencies() {
-    container_.registerType<Paths>([]() { return make_shared<Paths>(); });
-
-    container_.registerType<BootstrapConfig>([this]() {
-        auto paths = container_.resolve<Paths>();
-        return make_shared<BootstrapConfig>(*paths);
-    });
-
-    container_.registerType<RuntimeConfig>([this]() {
-        auto paths = container_.resolve<Paths>();
-        return make_shared<RuntimeConfig>(*paths);
-    });
-
-    container_.registerType<Preferences>([this]() {
-        auto paths = container_.resolve<Paths>();
-        return make_shared<Preferences>(*paths);
-    });
-
-    // ===== 应用 UI 缩放 / 主题 / 按钮样式 / 动画 / 通知 / 音效 =====
-    {
-        auto prefs = container_.resolve<Preferences>();
-
-        setUiScale(static_cast<float>(prefs->getDouble("ui_scale", 1.0)));
-        setFontScale(static_cast<float>(prefs->getDouble("font_scale", 1.0)));
-        setTheme(static_cast<ThemeId>(prefs->getInt("theme", 0)));
-
-        ButtonStyle bs;
-        bs.cornerRadius = static_cast<float>(prefs->getDouble("button_corner", 6.0));
-        bs.outlineThickness = static_cast<float>(prefs->getDouble("button_outline", 2.0));
-        setButtonStyle(bs);
-
-        Anim::setEnabled(prefs->getBool("animation_enabled", true));
-        static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
-        int idx = std::clamp(prefs->getInt("animation_speed_index", 1), 0, 2);
-        Anim::setSpeed(kSpeeds[idx]);
-
-        NotificationSystem::instance().setEnabled(
-            prefs->getBool("notification_enabled", true));
-        NotificationSystem::instance().setPosition(static_cast<NotificationPos>(
-            std::clamp(prefs->getInt("notification_position", 1), 0, 3)));
-
-        // 多语言
-        {
-            auto& lang = Lang::instance();
-            lang.setLangDir((container_.resolve<Paths>()->assetsDir() / "lang").string());
-            lang.scanAvailable();
-
-            std::string code = prefs->get("language", "zh");
-            // 校验是否在可用列表里
-            const auto& avail = lang.available();
-            if (std::find(avail.begin(), avail.end(), code) == avail.end()) {
-                code = "zh";
-            }
-            lang.load(code);
+void Application::installTerminateHandler() {
+    g_previousTerminate = std::set_terminate([]() {
+        reportTerminate();
+        // 二次委托：先写出去，再把处置权交回原来的处理器（默认是 abort）
+        if (g_previousTerminate != nullptr) {
+            g_previousTerminate();
+            return;
         }
+        std::abort();
+    });
+}
 
-        // 键位
-        {
-            auto& kb = KeyBindings::instance();
-            auto loadKey = [&](KeyBindings::Action a, const char* prefKey,
-                               sf::Keyboard::Key defVal) {
-                int v = prefs->getInt(prefKey, static_cast<int>(defVal));
-                kb.set(a, static_cast<sf::Keyboard::Key>(v));
-            };
-            loadKey(KeyBindings::MoveLeft,  "key_left",    sf::Keyboard::Key::A);
-            loadKey(KeyBindings::MoveRight, "key_right",   sf::Keyboard::Key::D);
-            loadKey(KeyBindings::Jump,      "key_jump",    sf::Keyboard::Key::Space);
-            loadKey(KeyBindings::Pause,     "key_pause",   sf::Keyboard::Key::Escape);
-            loadKey(KeyBindings::Restart,   "key_restart", sf::Keyboard::Key::R);
+// ============================================================
+// 钩子注册
+// ============================================================
+
+Application& Application::onBoot(LifecycleHook fn) {
+    bootHooks_.push_back(std::move(fn));
+    return *this;
+}
+
+Application& Application::onLoop(LoopHook fn) {
+    loopHooks_.push_back(std::move(fn));
+    return *this;
+}
+
+Application& Application::onQuit(QuitHook fn) {
+    quitHooks_.push_back(std::move(fn));
+    return *this;
+}
+
+Application& Application::onFinal(LifecycleHook fn) {
+    finalHooks_.push_back(std::move(fn));
+    return *this;
+}
+
+// ============================================================
+// 编排
+// ============================================================
+
+void Application::boot(BootFn fn) {
+    bootFn_ = std::move(fn);
+}
+
+int Application::exec() {
+    phaseBoot();
+
+    // teardown 必须跑：哪怕 setup / wire / run 中途抛出来也要收尾。
+    // C++ 里用 RAII 守卫表达 Python 的 try/finally。
+    struct TeardownGuard {
+        Application* self;
+        ~TeardownGuard() { self->phaseTeardown(); }
+    } guard{this};
+
+    phaseSetup();
+    phaseWire();
+    return phaseRun();
+}
+
+MainLoop& Application::mainLoop() {
+    if (!mainLoop_)
+        mainLoop_ = std::make_shared<HeadlessMainLoop>();
+    return *mainLoop_;
+}
+
+void Application::requestQuit(const std::string& reason) {
+    for (const auto& fn : quitHooks_) {
+        try {
+            fn(reason);
+        } catch (const std::exception& e) {
+            handleException(e);
         }
-
-        // 音效
-        SoundManager::instance().init();
-        SoundManager::instance().setEnabled(prefs->getBool("sound_enabled", true));
-        SoundManager::instance().setMasterVolume(
-            static_cast<float>(prefs->getDouble("master_volume", 1.0)));
-        SoundManager::instance().setSFXVolume(
-            static_cast<float>(prefs->getDouble("sound_volume", 0.6)));
-        SoundManager::instance().setMusicVolume(
-            static_cast<float>(prefs->getDouble("bgm_volume", 0.4)));
-
-        // ⭐ 手柄振动
-        Gamepad::instance().setVibrationEnabled(
-            prefs->getBool("gamepad_vibration_enabled", true));
-        Gamepad::instance().setVibrationIntensity(
-            static_cast<float>(prefs->getDouble("gamepad_vibration_intensity", 1.0)));
     }
 
-    // ===== Logger =====
-    container_.registerType<Logger>([this]() {
-        auto cfg = container_.resolve<BootstrapConfig>();
-        auto prefs = container_.resolve<Preferences>();
-        auto logPath = cfg->configFile("app.log");
-        int lvl = prefs->getInt("log_level", static_cast<int>(LogLevel::Info));
-
-        static const size_t sizes[] = {0, 1 * 1024 * 1024, 5 * 1024 * 1024,
-                                       10 * 1024 * 1024};
-        static const int keeps[] = {1, 3, 5, 10};
-        int rotIdx = std::clamp(prefs->getInt("log_rotate", 0), 0, 3);
-        int keepIdx = std::clamp(prefs->getInt("log_keep", 1), 0, 3);
-
-        return make_shared<Logger>(logPath.string(), static_cast<LogLevel>(lvl),
-                                   sizes[rotIdx], keeps[keepIdx]);
-    });
-
-    // ===== Window =====
-    container_.registerType<Window>([this]() {
-        auto prefs = container_.resolve<Preferences>();
-        auto runtime = container_.resolve<RuntimeConfig>();
-
-        unsigned w = 0, h = 0;
-        bool rememberSize = prefs->getBool("remember_window_size", true);
-        if (rememberSize) {
-            int lastW = runtime->getInt("last_window_width", -1);
-            int lastH = runtime->getInt("last_window_height", -1);
-            if (lastW > 0 && lastH > 0) {
-                w = static_cast<unsigned>(lastW);
-                h = static_cast<unsigned>(lastH);
-            }
-        }
-        if (w == 0 || h == 0) {
-            int idx = clampResolutionIndex(prefs->getInt("resolution_index", 0));
-            w = kResolutions[idx].width;
-            h = kResolutions[idx].height;
-        }
-
-        bool fs = prefs->getBool("fullscreen", false);
-        bool vsync = prefs->getBool("vsync", true);
-        int aa = prefs->getInt("anti_aliasing", 8);
-        int fpsLimit = prefs->getInt("fps_limit", 60);
-
-        auto win =
-            std::make_shared<Window>(w, h, "TEXT-GAME", fs, static_cast<unsigned>(aa));
-        win->setVsync(vsync);
-        win->setFramerateLimit(static_cast<unsigned>(fpsLimit));
-        win->setRenderScale(static_cast<float>(prefs->getDouble("render_scale", 1.0)));
-
-        // ⭐ 加载超分 shader（失败则自动回退到双线性）
-        auto paths = container_.resolve<Paths>();
-        win->loadUpscaler((paths->assetsDir() / "shaders").string());
-        // ⭐ 恢复后处理参数
-        {
-            auto& pp = win->postProcess();
-            pp.setSaturation(static_cast<float>(prefs->getDouble("post_saturation", 1.0)));
-            pp.setContrast  (static_cast<float>(prefs->getDouble("post_contrast",   1.0)));
-            pp.setBrightness(static_cast<float>(prefs->getDouble("post_brightness", 1.0)));
-            pp.setGamma     (static_cast<float>(prefs->getDouble("post_gamma",      1.0)));
-            pp.setVignette  (static_cast<float>(prefs->getDouble("post_vignette",   0.0)));
-            pp.setBloomStrength (static_cast<float>(prefs->getDouble("post_bloom_strength",  0.0)));
-            pp.setBloomThreshold(static_cast<float>(prefs->getDouble("post_bloom_threshold", 0.7)));
-            pp.setChromatic     (static_cast<float>(prefs->getDouble("post_chromatic",       0.0)));
-            pp.setGrain         (static_cast<float>(prefs->getDouble("post_grain",           0.0)));
-            pp.setScanline      (static_cast<float>(prefs->getDouble("post_scanline",        0.0)));
-            pp.setDither        (static_cast<float>(prefs->getDouble("post_dither",          0.0)));
-        }
-        win->setUpscaleMode(prefs->getInt("upscale_mode", 1));
-
-        // ⭐ 启动时根据 window_mode 决定窗口状态
-        int wmode = prefs->getInt("window_mode", 0);
-        if (wmode == 1 && !fs) {
-            win->requestMaximize();
-        }
-        return win;
-    });
-
-    // ===== Background =====
-    container_.registerType<Background>([this]() {
-        auto paths = container_.resolve<Paths>();
-        auto prefs = container_.resolve<Preferences>();
-        auto window = container_.resolve<Window>();
-        auto logger = container_.resolve<Logger>();
-        auto size = window->native().getSize();
-        std::string initial = prefs->get("current_wallpaper", "");
-        return std::make_shared<Background>(paths->wallpaperDir(), initial, size.x,
-                                            size.y, logger);
-    });
-
-    // ===== FontHolder =====
-    container_.registerType<FontHolder>([this]() {
-        auto cfg = container_.resolve<BootstrapConfig>();
-        auto logger = container_.resolve<Logger>();
-        auto fontPath = cfg->assetFile("font.ttf");
-        return std::make_shared<FontHolder>(fontPath, logger);
-    });
-
-    // ===== SaveManager =====
-    container_.registerType<SaveManager>([this]() {
-        auto cfg = container_.resolve<RuntimeConfig>();
-        auto logger = container_.resolve<Logger>();
-        return std::make_shared<SaveManager>(cfg, logger);
-    });
-
-    // ===== Game =====
-    container_.registerType<Game>([this]() {
-        auto window = container_.resolve<Window>();
-        auto logger = container_.resolve<Logger>();
-        auto background = container_.resolve<Background>();
-        auto fontHolder = container_.resolve<FontHolder>();
-        auto saveManager = container_.resolve<SaveManager>();
-        auto prefs = container_.resolve<Preferences>();
-        auto runtime = container_.resolve<RuntimeConfig>();
-        return std::make_shared<Game>(window, logger, background, fontHolder, saveManager,
-                                      prefs, runtime);
-    });
+    if (mainLoop_)
+        mainLoop_->quit();
 }
 
-void Application::run() {
-    auto logger = container_.resolve<Logger>();
-    auto paths = container_.resolve<Paths>();
+// ---------- phase 1: boot ----------
 
-    // ⭐ 初始化手柄振动（evdev / XInput）
-    GamepadVibration::instance().init();
+void Application::phaseBoot() {
+    // 只跑注册函数。此时容器里只有工厂，没有实例。
+    if (bootFn_)
+        bootFn_(*this);
+}
 
-    // ⭐ 初始化成就系统
-    AchievementManager::instance().init(
-        (paths->configDir() / "achievements.conf").string());
+// ---------- phase 2: setup ----------
 
-    logger->info("程序启动");
-    logger->info("平台: " + std::string(Platform::name));
-    logger->info("配置目录: " + paths->configDir().string());
-    logger->info("存档目录: " + paths->savesDir().string());
-    logger->info("资源目录: " + paths->assetsDir().string());
-    logger->info("系统配置目录: " + Platform::userConfigDir().string());
-    logger->info("系统缓存目录: " + Platform::userCacheDir().string());
+void Application::phaseSetup() {
+    // 构造顺序显式化：路径 -> 配置。后面的 logger / window 工厂都依赖这两者，
+    // 由这里决定谁先落地，而不是靠"谁先被解析"碰运气。
+    // 用 contains() 守卫是因为"注册了什么"由入口的 boot 决定。
+    for (const char* name : {"paths", "preferences"}) {
+        if (container_.contains(name))
+            container_.touch(name);
+    }
 
-    auto game = container_.resolve<Game>();
-    game->run();
+    // 前端可选：注册了 main_loop 就抓过来；
+    // 没注册则等 mainLoop() 惰性回退 HeadlessMainLoop。
+    if (auto loop = container_.tryGet<MainLoop>("main_loop"))
+        mainLoop_ = loop;
+}
 
-    // ⭐ 停止振动并释放设备
-    GamepadVibration::instance().shutdown();
+// ---------- phase 3: wire ----------
 
-    logger->info("程序结束");
+void Application::phaseWire() {
+    for (const auto& fn : bootHooks_)
+        runLifecycleHook("on_boot", fn);
+}
+
+// ---------- phase 4: run ----------
+
+int Application::phaseRun() {
+    MainLoop& loop = mainLoop();
+
+    for (const auto& fn : loopHooks_) {
+        try {
+            fn(loop);
+        } catch (const std::exception& e) {
+            handleException(e);
+        }
+    }
+
+    return loop.run();
+}
+
+// ---------- phase 5: teardown ----------
+
+void Application::phaseTeardown() {
+    for (const auto& fn : finalHooks_)
+        runLifecycleHook("on_final", fn);
+}
+
+void Application::runLifecycleHook(const char* phase, const LifecycleHook& fn) {
+    // 某个钩子失败不阻断其余钩子：收尾阶段尤其不能让一个组件
+    // 的异常把别的组件的释放动作一起吞掉。
+    try {
+        fn();
+    } catch (const std::exception& e) {
+        std::cerr << "[text-game] " << phase << " 钩子失败: " << e.what() << '\n';
+        handleException(e);
+    }
+}
+
+// ============================================================
+// 异常处理
+// ============================================================
+
+void Application::setExceptionHandler(ExceptionHandler fn) {
+    exceptionHandler_ = std::move(fn);
+}
+
+bool Application::handleException(const std::exception& e) {
+    if (exceptionHandler_ && exceptionHandler_(e))
+        return true;
+
+    std::cerr << "[text-game] 未处理异常: " << e.what() << '\n';
+    return false;
+}
+
+// ============================================================
+// 调试
+// ============================================================
+
+std::string Application::str() const {
+    std::string out = "Application(\n";
+
+    out += "  main_loop: ";
+    out += mainLoop_ ? mainLoop_->str() : std::string("(未设置，将回退 Headless)");
+    out += '\n';
+
+    out += "  hooks: boot=" + std::to_string(bootHooks_.size()) +
+           " loop=" + std::to_string(loopHooks_.size()) +
+           " quit=" + std::to_string(quitHooks_.size()) +
+           " final=" + std::to_string(finalHooks_.size()) + '\n';
+
+    out += "  " + container_.str() + "\n)";
+    return out;
 }

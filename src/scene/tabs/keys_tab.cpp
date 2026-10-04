@@ -1,9 +1,9 @@
 #include "tabs/keys_tab.h"
 #include "button.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 
 #include <algorithm>
 #include <functional>

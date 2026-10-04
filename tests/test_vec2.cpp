@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "vec2.h"
+#include "utils/vec2.h"
 #include <cmath>
 
 TEST_CASE("Vec2 - 基础运算") {

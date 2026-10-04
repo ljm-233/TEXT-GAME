@@ -1,13 +1,14 @@
 #include "game_scene.h"
-#include "text_strings.h"
-#include "utf8.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
 #include "notification.h"
 #include "sound_manager.h"
-#include "keybindings.h"
+#include "infrastructure/keybindings.h"
 #include "game_constants.h"
 #include "focus_group.h"
-#include "gamepad.h"
+#include "infrastructure/gamepad.h"
 #include "achievement.h"
+#include "config/keys.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -139,7 +140,7 @@ void GameScene::subscribeWorldEvents() {
     if (!world_) return;
 
     world_->bus().subscribe([this](const GameEvent& e) {
-        const bool particlesOn = preferences_->getBool("particles", true);
+        const bool particlesOn = preferences_->getBool(ConfigKey::kParticles, true);
 
         std::visit([this, particlesOn](const auto& ev) {
             using T = std::decay_t<decltype(ev)>;
@@ -147,37 +148,37 @@ void GameScene::subscribeWorldEvents() {
 
             if constexpr (std::is_same_v<T, EvJumped>) {
                 SoundManager::instance().playJump();
-                if (particlesOn) world_->particles().emitJump(ev.pos);
+                if (particlesOn) particles_.emitJump(ev.pos);
             } else if constexpr (std::is_same_v<T, EvLanded>) {
                 SoundManager::instance().playLand();
-                if (particlesOn) world_->particles().emitLand(ev.pos, ev.intensity);
+                if (particlesOn) particles_.emitLand(ev.pos, ev.intensity);
                 // ⭐ 重落地才振动
                 if (ev.intensity > 1.0f) {
                     gp.vibrate(0.f, 0.20f, 0.05f);
                 }
             } else if constexpr (std::is_same_v<T, EvCoined>) {
                 SoundManager::instance().playCoin();
-                if (particlesOn) world_->particles().emitCoin(ev.pos);
+                if (particlesOn) particles_.emitCoin(ev.pos);
                 gp.vibrate(0.f, 0.15f, 0.03f);
                 AchievementManager::instance().unlock("first_coin");
             } else if constexpr (std::is_same_v<T, EvStomped>) {
                 SoundManager::instance().playStomp();
-                if (particlesOn) world_->particles().emitStomp(ev.pos);
+                if (particlesOn) particles_.emitStomp(ev.pos);
                 hitstopTimer_ = 0.06f;
                 gp.vibrate(0.f, 0.30f, 0.08f);
             } else if constexpr (std::is_same_v<T, EvHurt>) {
                 SoundManager::instance().playHurt();
-                if (particlesOn) world_->particles().emitHurt(ev.pos);
+                if (particlesOn) particles_.emitHurt(ev.pos);
                 hitstopTimer_ = 0.04f;
                 gp.vibrate(0.40f, 0.60f, 0.15f);
                 tookDamageThisLevel_ = true;
             } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
                 SoundManager::instance().playCheckpoint();
-                if (particlesOn) world_->particles().emitCoin(ev.pos);
+                if (particlesOn) particles_.emitCoin(ev.pos);
                 gp.vibrate(0.f, 0.25f, 0.10f);
             } else if constexpr (std::is_same_v<T, EvJumpPad>) {
                 SoundManager::instance().playJump();
-                if (particlesOn) world_->particles().emitJump(ev.pos);
+                if (particlesOn) particles_.emitJump(ev.pos);
                 gp.vibrate(0.30f, 0.50f, 0.10f);
             } else if constexpr (std::is_same_v<T, EvLevelComplete>) {
                 finalCoins_      = world_->coins();
@@ -210,6 +211,9 @@ void GameScene::subscribeWorldEvents() {
                 screenFlashDuration_ = 0.35f;
                 screenFlashColor_    = sf::Color(120, 255, 150);
             } else if constexpr (std::is_same_v<T, EvLifeExhausted>) {
+                // 重生时清空粒子：世界不再管这件事，交给持有者
+                particles_.clear();
+
                 SoundManager::instance().playGameOver();
                 NotificationSystem::instance().push(
                     Str::T(Str::NotifLifeExhausted),
@@ -251,10 +255,10 @@ bool GameScene::loadLevel(int index) {
     world_->setViewSize(kLogicalW, kLogicalH);
 
     // ⭐ 校验初始生命值，非法值回退到 1
-    int lives = preferences_->getInt("initial_lives", 1);
+    int lives = preferences_->getInt(ConfigKey::kInitialLives, 1);
     if (lives != 1 && lives != 3 && lives != 5 && lives != 10 && lives != 100) {
         lives = 1;
-        preferences_->setInt("initial_lives", 1);
+        preferences_->setInt(ConfigKey::kInitialLives, 1);
     }
     world_->setInitialLives(lives);
     levelIndex_ = index;
@@ -275,7 +279,7 @@ bool GameScene::loadLevel(int index) {
         prevBestTime_ = 0.f;
     }
 
-    if (preferences_->getBool("level_intro", true)) {
+    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
         if (!intro_) {
             intro_ = std::make_unique<LevelIntro>(*font_);
         }
@@ -792,6 +796,7 @@ void GameScene::handleEvent(const sf::Event& event) {
             }
             if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
                 world_->reset();
+                particles_.clear();
                 levelTime_ = 0.f;
                 hitstopTimer_ = 0.f;
                 screenFlashTimer_ = 0.f;
@@ -823,6 +828,7 @@ void GameScene::handleEvent(const sf::Event& event) {
         }
         if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
             world_->reset();
+            particles_.clear();
             levelTime_ = 0.f;
             hitstopTimer_ = 0.f;
             screenFlashTimer_ = 0.f;
@@ -893,6 +899,7 @@ void GameScene::update(float dt) {
             }
             if (overlayButtons_[1]->consumeClick()) {
                 world_->reset();
+                particles_.clear();
                 levelTime_ = 0.f;
                 finalStars_ = 0;
                 finalCoins_ = 0;
@@ -917,6 +924,14 @@ void GameScene::update(float dt) {
     levelTime_ += dt;
 
     world_->update(dt);
+
+    // 粒子开关每帧同步一次。update 先于 render，所以这一处赋值对两者都生效，
+    // 不需要在 render 里再读一遍偏好。
+    particlesOn_ = preferences_->getBool(ConfigKey::kParticles, true);
+
+    // 开关关闭时直接清空，行为与旧实现一致（旧代码在 GameWorld::update 里）
+    if (particlesOn_) particles_.update(dt);
+    else              particles_.clear();
     if (parallax_) parallax_->update(dt);
 }
 
@@ -966,24 +981,28 @@ void GameScene::render(Window& window) {
     }
 
     world_->setShowColliders(
-        debugShowColliders_ || preferences_->getBool("show_colliders", false));
-    world_->setScreenShake(preferences_->getBool("screen_shake", true));
-    world_->setParticles(preferences_->getBool("particles", true));
-    world_->setPseudo3D(preferences_->getBool("pseudo_3d", true));
-    world_->setPlayerAnimation(preferences_->getBool("player_animation", true));
+        debugShowColliders_ || preferences_->getBool(ConfigKey::kShowColliders, false));
+    world_->setScreenShake(preferences_->getBool(ConfigKey::kScreenShake, true));
+    world_->setPseudo3D(preferences_->getBool(ConfigKey::kPseudo3d, true));
+    world_->setPlayerAnimation(preferences_->getBool(ConfigKey::kPlayerAnimation, true));
 
     Vec2 camCenter = world_->cameraCenter();
     worldView_.setCenter({camCenter.x, camCenter.y});
     rt.setView(worldView_);
     lastWorldView_ = worldView_;   // ⭐ 供调试 HUD 用
 
-    if (parallax_ && preferences_->getBool("parallax", true)) {
+    if (parallax_ && preferences_->getBool(ConfigKey::kParallax, true)) {
         float camLeft = camCenter.x - kLogicalW * 0.5f;
         float camTop  = camCenter.y - kLogicalH * 0.5f;
         parallax_->render(rt, camLeft, camTop, kLogicalW, kLogicalH);
     }
 
     world_->render(rt);
+
+    // 粒子画在场景对象之上。
+    // 注意：调试碰撞盒是在 world_->render() 内部画的，所以粒子现在会盖住它 ——
+    // 与改造前（GameWorld 里 粒子 -> 碰撞盒 的顺序）不同，仅影响 F8 调试视图。
+    if (particlesOn_) particles_.render(rt);
 
     rt.setView(screenView);
 

@@ -1,6 +1,6 @@
 #include "level_select_scene.h"
-#include "text_strings.h"
-#include "utf8.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
 #include "focus_group.h"
 #include <algorithm>
 #include <cstdio>

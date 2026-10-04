@@ -1,11 +1,12 @@
 #include "tabs/audio_tab.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 #include "sound_manager.h"
-#include "gamepad.h"
+#include "infrastructure/gamepad.h"
 #include "focus_group.h"
+#include "config/keys.h"
 
 #include <algorithm>
 #include <functional>
@@ -91,40 +92,40 @@ AudioTab::AudioTab(const sf::Font& font,
 }
 
 void AudioTab::loadFromPrefs() {
-    soundEnabled_            = prefs_->getBool("sound_enabled", true);
-    bgmEnabled_              = prefs_->getBool("bgm_enabled", true);
-    gamepadEnabled_          = prefs_->getBool("gamepad_enabled", true);
-    gamepadVibrationEnabled_ = prefs_->getBool("gamepad_vibration_enabled", true);
+    soundEnabled_            = prefs_->getBool(ConfigKey::kAudioSoundEnabled, true);
+    bgmEnabled_              = prefs_->getBool(ConfigKey::kAudioBgmEnabled, true);
+    gamepadEnabled_          = prefs_->getBool(ConfigKey::kGamepadEnabled, true);
+    gamepadVibrationEnabled_ = prefs_->getBool(ConfigKey::kGamepadVibrationEnabled, true);
 
-    masterVolume_ = static_cast<float>(prefs_->getDouble("master_volume", 1.0));
-    soundVolume_  = static_cast<float>(prefs_->getDouble("sound_volume", 0.6));
-    bgmVolume_    = static_cast<float>(prefs_->getDouble("bgm_volume", 0.4));
+    masterVolume_ = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioMasterVolume, 1.0));
+    soundVolume_  = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioSoundVolume, 0.6));
+    bgmVolume_    = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioBgmVolume, 0.4));
     gamepadVibrationIntensity_ = static_cast<float>(
-        prefs_->getDouble("gamepad_vibration_intensity", 1.0));
+        prefs_->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0));
 }
 
 void AudioTab::applySound() {
     SoundManager::instance().setEnabled(soundEnabled_);
     SoundManager::instance().setSFXVolume(soundVolume_);
-    prefs_->setBool("sound_enabled", soundEnabled_);
-    prefs_->setDouble("sound_volume", soundVolume_);
+    prefs_->setBool(ConfigKey::kAudioSoundEnabled, soundEnabled_);
+    prefs_->setDouble(ConfigKey::kAudioSoundVolume, soundVolume_);
     if (soundEnabled_) SoundManager::instance().playCoin();
 }
 
 void AudioTab::applyBGM() {
     SoundManager::instance().setBGMEnabled(bgmEnabled_);
     SoundManager::instance().setMusicVolume(bgmVolume_);
-    prefs_->setBool("bgm_enabled", bgmEnabled_);
-    prefs_->setDouble("bgm_volume", bgmVolume_);
+    prefs_->setBool(ConfigKey::kAudioBgmEnabled, bgmEnabled_);
+    prefs_->setDouble(ConfigKey::kAudioBgmVolume, bgmVolume_);
 }
 
 void AudioTab::applyGamepad() {
-    prefs_->setBool("gamepad_enabled", gamepadEnabled_);
+    prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
     FocusGroup::instance().setEnabled(gamepadEnabled_);
 }
 
 void AudioTab::applyGamepadVibration() {
-    prefs_->setBool("gamepad_vibration_enabled", gamepadVibrationEnabled_);
+    prefs_->setBool(ConfigKey::kGamepadVibrationEnabled, gamepadVibrationEnabled_);
     Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
 }
 
@@ -174,7 +175,7 @@ void AudioTab::update() {
     if (masterVolumeSlider_->consumeChanged()) {
         masterVolume_ = masterVolumeSlider_->value() / 100.f;
         SoundManager::instance().setMasterVolume(masterVolume_);
-        prefs_->setDouble("master_volume", masterVolume_);
+        prefs_->setDouble(ConfigKey::kAudioMasterVolume, masterVolume_);
     }
 
     for (auto& row : toggles_) {
@@ -191,17 +192,17 @@ void AudioTab::update() {
     if (soundVolumeSlider_->consumeChanged()) {
         soundVolume_ = soundVolumeSlider_->value() / 100.f;
         SoundManager::instance().setSFXVolume(soundVolume_);
-        prefs_->setDouble("sound_volume", soundVolume_);
+        prefs_->setDouble(ConfigKey::kAudioSoundVolume, soundVolume_);
     }
     if (bgmVolumeSlider_->consumeChanged()) {
         bgmVolume_ = bgmVolumeSlider_->value() / 100.f;
         SoundManager::instance().setMusicVolume(bgmVolume_);
-        prefs_->setDouble("bgm_volume", bgmVolume_);
+        prefs_->setDouble(ConfigKey::kAudioBgmVolume, bgmVolume_);
     }
     if (gamepadVibrationSlider_->consumeChanged()) {
         gamepadVibrationIntensity_ = gamepadVibrationSlider_->value() / 100.f;
         Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
-        prefs_->setDouble("gamepad_vibration_intensity",
+        prefs_->setDouble(ConfigKey::kGamepadVibrationIntensity,
                           gamepadVibrationIntensity_);
     }
 }

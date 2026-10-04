@@ -1,7 +1,9 @@
 #include "tabs/other_tab.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
+#include "log/rotation.h"
+#include "config/keys.h"
 
 #include <algorithm>
 #include <functional>
@@ -10,19 +12,10 @@ namespace {
 
 constexpr float kRowH = 50.f;
 
-const size_t kLogRotateSizes[] = {0, 1*1024*1024, 5*1024*1024, 10*1024*1024};
-constexpr int kLogRotateCount = 4;
+// 轮转档位的取值范围与取值本身由日志层维护（log/rotation.h 是唯一权威来源），
+// 这里只保留展示用的标签。UI 与日志层各存一份档位表，迟早会漂移。
 const char* kLogRotateLabels[] = {"无限", "1MB", "5MB", "10MB"};
-
-const int kLogKeeps[] = {1, 3, 5, 10};
-constexpr int kLogKeepCount = 4;
-
-int indexOfLogRotate(int idx) {
-    return (idx < 0 || idx >= kLogRotateCount) ? 0 : idx;
-}
-int indexOfLogKeep(int idx) {
-    return (idx < 0 || idx >= kLogKeepCount) ? 1 : idx;
-}
+static_assert(kLogRotationSteps == 4, "标签表必须与日志层的档位数一致");
 
 } // namespace
 
@@ -63,7 +56,7 @@ OtherTab::OtherTab(const sf::Font& font,
             logRotateIndex_ = i;
             refreshSelection(); applyLogRotation();
         });
-        for (int i = 0; i < kLogRotateCount; ++i)
+        for (int i = 0; i < kLogRotationSteps; ++i)
             row->addButton(std::make_unique<Button>(
                 kLogRotateLabels[i], font_,
                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
@@ -74,16 +67,16 @@ OtherTab::OtherTab(const sf::Font& font,
             logKeepIndex_ = i;
             refreshSelection(); applyLogRotation();
         });
-        for (int i = 0; i < kLogKeepCount; ++i)
+        for (int i = 0; i < kLogRotationSteps; ++i)
             row->addButton(std::make_unique<Button>(
-                std::to_string(kLogKeeps[i]), font_,
+                std::to_string(logRotationKeepAt(i)), font_,
                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
     }
 
     // Toggles
     addToggle(Str::LabelRememberSize, [this](bool v) {
         rememberSize_ = v; refreshSelection();
-        prefs_->setBool("remember_window_size", v);
+        prefs_->setBool(ConfigKey::kRememberWindowSize, v);
     });
     addToggle(Str::LabelAutoPause, [this](bool v) {
         autoPauseOnBlur_ = v; refreshSelection(); applyAutoPause();
@@ -95,9 +88,9 @@ OtherTab::OtherTab(const sf::Font& font,
     playerNameInput_ = std::make_unique<TextInput>(
         font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 40.f},
         Str::PlayerNamePlaceholder, 18, 16);
-    playerNameInput_->setText(prefs_->get("player_name", ""));
+    playerNameInput_->setText(prefs_->get(ConfigKey::kPlayerName, ""));
     playerNameInput_->setOnChanged([this](const std::string& s) {
-        prefs_->set("player_name", s);
+        prefs_->set(ConfigKey::kPlayerName, s);
     });
 
     refreshLabels();
@@ -105,20 +98,21 @@ OtherTab::OtherTab(const sf::Font& font,
 }
 
 void OtherTab::loadFromPrefs() {
-    rememberSize_    = prefs_->getBool("remember_window_size", true);
-    autoPauseOnBlur_ = prefs_->getBool("auto_pause_on_blur", true);
-    logRotateIndex_  = indexOfLogRotate(prefs_->getInt("log_rotate", 0));
-    logKeepIndex_    = indexOfLogKeep(prefs_->getInt("log_keep", 1));
+    rememberSize_    = prefs_->getBool(ConfigKey::kRememberWindowSize, true);
+    autoPauseOnBlur_ = prefs_->getBool(ConfigKey::kAutoPauseOnBlur, true);
+    logRotateIndex_  = clampLogRotationIndex(prefs_->getInt(ConfigKey::kLogRotate, 0));
+    logKeepIndex_    = clampLogKeepIndex(prefs_->getInt(ConfigKey::kLogKeep, 1));
 }
 
 void OtherTab::applyAutoPause() {
-    prefs_->setBool("auto_pause_on_blur", autoPauseOnBlur_);
+    prefs_->setBool(ConfigKey::kAutoPauseOnBlur, autoPauseOnBlur_);
 }
 
 void OtherTab::applyLogRotation() {
-    logger_->setRotation(kLogRotateSizes[logRotateIndex_], kLogKeeps[logKeepIndex_]);
-    prefs_->setInt("log_rotate", logRotateIndex_);
-    prefs_->setInt("log_keep",   logKeepIndex_);
+    logger_->setRotation(logRotationSizeAt(logRotateIndex_),
+                         logRotationKeepAt(logKeepIndex_));
+    prefs_->setInt(ConfigKey::kLogRotate, logRotateIndex_);
+    prefs_->setInt(ConfigKey::kLogKeep,   logKeepIndex_);
 }
 
 void OtherTab::refreshLabels() {

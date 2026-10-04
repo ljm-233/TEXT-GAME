@@ -1,4 +1,4 @@
-#include "gamepad.h"
+#include "infrastructure/gamepad.h"
 #include <algorithm>
 #include <cmath>
 

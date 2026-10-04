@@ -1,5 +1,5 @@
 #pragma once
-#include "vec2.h"
+#include "utils/vec2.h"
 
 struct AABB {
     float x = 0.f; // 左上角 x

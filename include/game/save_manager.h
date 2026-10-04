@@ -3,7 +3,7 @@
 #include <vector>
 #include <memory>
 #include "runtime_config.h"
-#include "logging.h"
+#include "log/logger.h"
 
 struct SaveInfo {
     std::string filename;

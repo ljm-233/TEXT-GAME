@@ -1,6 +1,6 @@
 #pragma once
 #include "preferences.h"
-#include "logging.h"
+#include "log/logger.h"
 #include "toggle_row.h"
 #include "multi_row.h"
 #include "text_input.h"

@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "animator.h"
+#include "utils/animator.h"
 
 TEST_CASE("Animator - 添加和播放") {
     Animator anim;

@@ -1,8 +1,8 @@
 #include "new_save_dialog.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 
 NewSaveDialog::NewSaveDialog(const sf::Font& font, const std::string& defaultName,
                              sf::Vector2f windowSize)

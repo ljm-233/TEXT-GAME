@@ -1,6 +1,6 @@
 #include "focus_group.h"
-#include "gamepad.h"
-#include "gamepad_config.h"
+#include "infrastructure/gamepad.h"
+#include "infrastructure/gamepad_config.h"
 #include <algorithm>
 
 FocusGroup& FocusGroup::instance() {

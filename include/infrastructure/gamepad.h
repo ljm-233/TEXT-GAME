@@ -2,8 +2,8 @@
 #include <SFML/Window/Joystick.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/System/Time.hpp>
-#include "gamepad_config.h"
-#include "gamepad_vibration.h"
+#include "infrastructure/gamepad_config.h"
+#include "infrastructure/gamepad_vibration.h"
 
 // 手柄封装：自动检测、死区、按钮查询、振动
 class Gamepad {

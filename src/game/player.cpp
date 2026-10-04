@@ -1,11 +1,11 @@
 #include "player.h"
 #include "level.h"
-#include "animation.h"
+#include "utils/animation.h"
 #include "game_constants.h"
 #include "player_sprite_factory.h"
-#include "gamepad.h"
-#include "gamepad_config.h"
-#include "keybindings.h"
+#include "infrastructure/gamepad.h"
+#include "infrastructure/gamepad_config.h"
+#include "infrastructure/keybindings.h"
 #include <algorithm>
 #include <cmath>
 

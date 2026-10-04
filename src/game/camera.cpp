@@ -1,5 +1,5 @@
 #include "camera.h"
-#include "animation.h"
+#include "utils/animation.h"
 #include <algorithm>
 #include <cstdlib>
 

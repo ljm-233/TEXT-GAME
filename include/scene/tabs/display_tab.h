@@ -2,7 +2,7 @@
 #include "preferences.h"
 #include "runtime_config.h"
 #include "window.h"
-#include "logging.h"
+#include "log/logger.h"
 #include "toggle_row.h"
 #include "multi_row.h"
 

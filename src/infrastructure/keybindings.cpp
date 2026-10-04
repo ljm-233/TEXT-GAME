@@ -1,4 +1,4 @@
-#include "keybindings.h"
+#include "infrastructure/keybindings.h"
 
 namespace {
 constexpr sf::Keyboard::Key kDefaults[KeyBindings::Count] = {

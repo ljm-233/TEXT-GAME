@@ -1,5 +1,4 @@
 #include "sound_manager.h"
-#include "game_constants.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -7,7 +6,10 @@
 
 namespace {
 
-constexpr unsigned kSampleRate = GameConst::kSoundSampleRate;
+// 采样率是**音频设备**的属性，不是游戏的物理常量。
+// 它以前住在 game/game_constants.h 里，害得 ui 层为了一个数字
+// 反向 include 了 game 层 —— 现在归它自己的模块所有。
+constexpr unsigned kSampleRate = 44100;
 constexpr float kPi = 3.14159265358979323846f;
 
 std::vector<std::int16_t> generateSweep(float startFreq, float endFreq, float duration,

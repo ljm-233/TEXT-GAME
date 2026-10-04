@@ -2,9 +2,9 @@
 #include "theme.h"
 #include "sound_manager.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 #include "button_style.h"
-#include "animation.h"
+#include "utils/animation.h"
 #include <algorithm>
 #include <cmath>
 

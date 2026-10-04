@@ -1,12 +1,13 @@
 #include "tabs/graphics_tab.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
-#include "animation.h"
+#include "utils/utf8.h"
+#include "utils/animation.h"
 #include "notification.h"
 #include "button_style.h"
 #include "focus_group.h"
+#include "config/keys.h"
 
 #include <algorithm>
 #include <cmath>
@@ -118,7 +119,7 @@ GraphicsTab::GraphicsTab(const sf::Font& font,
             const int kLives[] = {1, 3, 5, 10, 100};
             initialLives_ = kLives[i];
             refreshSelection();
-            prefs_->setInt("initial_lives", initialLives_);
+            prefs_->setInt(ConfigKey::kInitialLives, initialLives_);
         });
         for (int i = 0; i < 5; ++i) {
             row->addButton(std::make_unique<Button>(
@@ -296,50 +297,50 @@ GraphicsTab::GraphicsTab(const sf::Font& font,
 }
 
 void GraphicsTab::loadFromPrefs() {
-    animationEnabled_      = prefs_->getBool("animation_enabled", true);
-    animationSpeedIndex_   = std::clamp(prefs_->getInt("animation_speed_index", 1), 0, 2);
-    pseudo3D_              = prefs_->getBool("pseudo_3d", true);
-    parallaxEnabled_       = prefs_->getBool("parallax", true);
-    playerAnimEnabled_     = prefs_->getBool("player_animation", true);
-    levelIntroEnabled_     = prefs_->getBool("level_intro", true);
-    particlesEnabled_      = prefs_->getBool("particles", true);
-    screenShake_           = prefs_->getBool("screen_shake", true);
-    notificationEnabled_   = prefs_->getBool("notification_enabled", true);
-    showColliders_         = prefs_->getBool("show_colliders", false);
-    initialLives_          = prefs_->getInt("initial_lives", 1);
-    notificationPosition_  = prefs_->getInt("notification_position", 1);
-    buttonCorner_          = static_cast<float>(prefs_->getDouble("button_corner", 6.0));
-    buttonOutline_         = static_cast<float>(prefs_->getDouble("button_outline", 2.0));
+    animationEnabled_      = prefs_->getBool(ConfigKey::kAnimationEnabled, true);
+    animationSpeedIndex_   = std::clamp(prefs_->getInt(ConfigKey::kAnimationSpeedIndex, 1), 0, 2);
+    pseudo3D_              = prefs_->getBool(ConfigKey::kPseudo3d, true);
+    parallaxEnabled_       = prefs_->getBool(ConfigKey::kParallax, true);
+    playerAnimEnabled_     = prefs_->getBool(ConfigKey::kPlayerAnimation, true);
+    levelIntroEnabled_     = prefs_->getBool(ConfigKey::kLevelIntro, true);
+    particlesEnabled_      = prefs_->getBool(ConfigKey::kParticles, true);
+    screenShake_           = prefs_->getBool(ConfigKey::kScreenShake, true);
+    notificationEnabled_   = prefs_->getBool(ConfigKey::kNotificationEnabled, true);
+    showColliders_         = prefs_->getBool(ConfigKey::kShowColliders, false);
+    initialLives_          = prefs_->getInt(ConfigKey::kInitialLives, 1);
+    notificationPosition_  = prefs_->getInt(ConfigKey::kNotificationPosition, 1);
+    buttonCorner_          = static_cast<float>(prefs_->getDouble(ConfigKey::kButtonCorner, 6.0));
+    buttonOutline_         = static_cast<float>(prefs_->getDouble(ConfigKey::kButtonOutline, 2.0));
 }
 
 void GraphicsTab::applyAnimation() {
     Anim::setEnabled(animationEnabled_);
     static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
     Anim::setSpeed(kSpeeds[std::clamp(animationSpeedIndex_, 0, 2)]);
-    prefs_->setBool("animation_enabled", animationEnabled_);
-    prefs_->setInt("animation_speed_index", animationSpeedIndex_);
+    prefs_->setBool(ConfigKey::kAnimationEnabled, animationEnabled_);
+    prefs_->setInt(ConfigKey::kAnimationSpeedIndex, animationSpeedIndex_);
 }
-void GraphicsTab::applyPseudo3D()     { prefs_->setBool("pseudo_3d", pseudo3D_); }
-void GraphicsTab::applyParallax()     { prefs_->setBool("parallax", parallaxEnabled_); }
-void GraphicsTab::applyPlayerAnimation() { prefs_->setBool("player_animation", playerAnimEnabled_); }
-void GraphicsTab::applyLevelIntro()   { prefs_->setBool("level_intro", levelIntroEnabled_); }
-void GraphicsTab::applyParticles()    { prefs_->setBool("particles", particlesEnabled_); }
-void GraphicsTab::applyScreenShake()  { prefs_->setBool("screen_shake", screenShake_); }
-void GraphicsTab::applyShowColliders(){ prefs_->setBool("show_colliders", showColliders_); }
+void GraphicsTab::applyPseudo3D()     { prefs_->setBool(ConfigKey::kPseudo3d, pseudo3D_); }
+void GraphicsTab::applyParallax()     { prefs_->setBool(ConfigKey::kParallax, parallaxEnabled_); }
+void GraphicsTab::applyPlayerAnimation() { prefs_->setBool(ConfigKey::kPlayerAnimation, playerAnimEnabled_); }
+void GraphicsTab::applyLevelIntro()   { prefs_->setBool(ConfigKey::kLevelIntro, levelIntroEnabled_); }
+void GraphicsTab::applyParticles()    { prefs_->setBool(ConfigKey::kParticles, particlesEnabled_); }
+void GraphicsTab::applyScreenShake()  { prefs_->setBool(ConfigKey::kScreenShake, screenShake_); }
+void GraphicsTab::applyShowColliders(){ prefs_->setBool(ConfigKey::kShowColliders, showColliders_); }
 void GraphicsTab::applyNotification() {
     NotificationSystem::instance().setEnabled(notificationEnabled_);
     NotificationSystem::instance().setPosition(
         static_cast<NotificationPos>(notificationPosition_));
-    prefs_->setBool("notification_enabled", notificationEnabled_);
-    prefs_->setInt("notification_position", notificationPosition_);
+    prefs_->setBool(ConfigKey::kNotificationEnabled, notificationEnabled_);
+    prefs_->setInt(ConfigKey::kNotificationPosition, notificationPosition_);
 }
 void GraphicsTab::applyButtonStyle() {
     ButtonStyle bs;
     bs.cornerRadius     = buttonCorner_;
     bs.outlineThickness = buttonOutline_;
     setButtonStyle(bs);
-    prefs_->setDouble("button_corner",  buttonCorner_);
-    prefs_->setDouble("button_outline", buttonOutline_);
+    prefs_->setDouble(ConfigKey::kButtonCorner,  buttonCorner_);
+    prefs_->setDouble(ConfigKey::kButtonOutline, buttonOutline_);
 }
 
 void GraphicsTab::applyPreset(int idx) {
@@ -371,17 +372,17 @@ void GraphicsTab::applyPreset(int idx) {
     scanlineSlider_->setValue(p.scanline);
     ditherSlider_->setValue(p.dither);
 
-    prefs_->setDouble("post_saturation",      p.saturation      / 100.f);
-    prefs_->setDouble("post_contrast",        p.contrast        / 100.f);
-    prefs_->setDouble("post_brightness",      p.brightness      / 100.f);
-    prefs_->setDouble("post_gamma",           p.gamma           / 100.f);
-    prefs_->setDouble("post_vignette",        p.vignette        / 100.f);
-    prefs_->setDouble("post_bloom_strength",  p.bloomStrength   / 100.f);
-    prefs_->setDouble("post_bloom_threshold", p.bloomThreshold  / 100.f);
-    prefs_->setDouble("post_chromatic",       p.chromatic       / 100.f);
-    prefs_->setDouble("post_grain",           p.grain           / 100.f);
-    prefs_->setDouble("post_scanline",        p.scanline        / 100.f);
-    prefs_->setDouble("post_dither",          p.dither          / 100.f);
+    prefs_->setDouble(ConfigKey::kPostSaturation,      p.saturation      / 100.f);
+    prefs_->setDouble(ConfigKey::kPostContrast,        p.contrast        / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBrightness,      p.brightness      / 100.f);
+    prefs_->setDouble(ConfigKey::kPostGamma,           p.gamma           / 100.f);
+    prefs_->setDouble(ConfigKey::kPostVignette,        p.vignette        / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBloomStrength,  p.bloomStrength   / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBloomThreshold, p.bloomThreshold  / 100.f);
+    prefs_->setDouble(ConfigKey::kPostChromatic,       p.chromatic       / 100.f);
+    prefs_->setDouble(ConfigKey::kPostGrain,           p.grain           / 100.f);
+    prefs_->setDouble(ConfigKey::kPostScanline,        p.scanline        / 100.f);
+    prefs_->setDouble(ConfigKey::kPostDither,          p.dither          / 100.f);
 }
 
 void GraphicsTab::resetPost() {
@@ -410,17 +411,17 @@ void GraphicsTab::resetPost() {
     scanlineSlider_->setValue(0.f);
     ditherSlider_->setValue(0.f);
 
-    prefs_->setDouble("post_saturation", 1.0);
-    prefs_->setDouble("post_contrast", 1.0);
-    prefs_->setDouble("post_brightness", 1.0);
-    prefs_->setDouble("post_gamma", 1.0);
-    prefs_->setDouble("post_vignette", 0.0);
-    prefs_->setDouble("post_bloom_strength", 0.0);
-    prefs_->setDouble("post_bloom_threshold", 0.7);
-    prefs_->setDouble("post_chromatic", 0.0);
-    prefs_->setDouble("post_grain", 0.0);
-    prefs_->setDouble("post_scanline", 0.0);
-    prefs_->setDouble("post_dither", 0.0);
+    prefs_->setDouble(ConfigKey::kPostSaturation, 1.0);
+    prefs_->setDouble(ConfigKey::kPostContrast, 1.0);
+    prefs_->setDouble(ConfigKey::kPostBrightness, 1.0);
+    prefs_->setDouble(ConfigKey::kPostGamma, 1.0);
+    prefs_->setDouble(ConfigKey::kPostVignette, 0.0);
+    prefs_->setDouble(ConfigKey::kPostBloomStrength, 0.0);
+    prefs_->setDouble(ConfigKey::kPostBloomThreshold, 0.7);
+    prefs_->setDouble(ConfigKey::kPostChromatic, 0.0);
+    prefs_->setDouble(ConfigKey::kPostGrain, 0.0);
+    prefs_->setDouble(ConfigKey::kPostScanline, 0.0);
+    prefs_->setDouble(ConfigKey::kPostDither, 0.0);
 }
 
 void GraphicsTab::refreshLabels() {
@@ -529,47 +530,47 @@ void GraphicsTab::update() {
         auto& pp = window_->postProcess();
         if (saturationSlider_->consumeChanged()) {
             pp.setSaturation(saturationSlider_->value() / 100.f);
-            prefs_->setDouble("post_saturation", pp.saturation());
+            prefs_->setDouble(ConfigKey::kPostSaturation, pp.saturation());
         }
         if (contrastSlider_->consumeChanged()) {
             pp.setContrast(contrastSlider_->value() / 100.f);
-            prefs_->setDouble("post_contrast", pp.contrast());
+            prefs_->setDouble(ConfigKey::kPostContrast, pp.contrast());
         }
         if (brightnessSlider_->consumeChanged()) {
             pp.setBrightness(brightnessSlider_->value() / 100.f);
-            prefs_->setDouble("post_brightness", pp.brightness());
+            prefs_->setDouble(ConfigKey::kPostBrightness, pp.brightness());
         }
         if (gammaSlider_->consumeChanged()) {
             pp.setGamma(gammaSlider_->value() / 100.f);
-            prefs_->setDouble("post_gamma", pp.gamma());
+            prefs_->setDouble(ConfigKey::kPostGamma, pp.gamma());
         }
         if (vignetteSlider_->consumeChanged()) {
             pp.setVignette(vignetteSlider_->value() / 100.f);
-            prefs_->setDouble("post_vignette", pp.vignette());
+            prefs_->setDouble(ConfigKey::kPostVignette, pp.vignette());
         }
         if (bloomStrengthSlider_->consumeChanged()) {
             pp.setBloomStrength(bloomStrengthSlider_->value() / 100.f);
-            prefs_->setDouble("post_bloom_strength", pp.bloomStrength());
+            prefs_->setDouble(ConfigKey::kPostBloomStrength, pp.bloomStrength());
         }
         if (bloomThresholdSlider_->consumeChanged()) {
             pp.setBloomThreshold(bloomThresholdSlider_->value() / 100.f);
-            prefs_->setDouble("post_bloom_threshold", pp.bloomThreshold());
+            prefs_->setDouble(ConfigKey::kPostBloomThreshold, pp.bloomThreshold());
         }
         if (chromaticSlider_->consumeChanged()) {
             pp.setChromatic(chromaticSlider_->value() / 100.f);
-            prefs_->setDouble("post_chromatic", pp.chromatic());
+            prefs_->setDouble(ConfigKey::kPostChromatic, pp.chromatic());
         }
         if (grainSlider_->consumeChanged()) {
             pp.setGrain(grainSlider_->value() / 100.f);
-            prefs_->setDouble("post_grain", pp.grain());
+            prefs_->setDouble(ConfigKey::kPostGrain, pp.grain());
         }
         if (scanlineSlider_->consumeChanged()) {
             pp.setScanline(scanlineSlider_->value() / 100.f);
-            prefs_->setDouble("post_scanline", pp.scanline());
+            prefs_->setDouble(ConfigKey::kPostScanline, pp.scanline());
         }
         if (ditherSlider_->consumeChanged()) {
             pp.setDither(ditherSlider_->value() / 100.f);
-            prefs_->setDouble("post_dither", pp.dither());
+            prefs_->setDouble(ConfigKey::kPostDither, pp.dither());
         }
     }
 }

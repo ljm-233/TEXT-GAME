@@ -3,7 +3,6 @@
 #include "event_bus.h"
 #include "game_object.h"
 #include "level.h"
-#include "particle_system.h"
 #include "player.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
@@ -31,7 +30,6 @@ public:
     }
     void setShowColliders(bool b) { showColliders_ = b; }
     void setScreenShake(bool b) { screenShake_ = b; }
-    void setParticles(bool b) { particlesEnabled_ = b; }
     void setPseudo3D(bool b) {
         pseudo3D_ = b;
         if (level_)
@@ -48,8 +46,11 @@ public:
     Vec2 cameraCenter() const { return camera_.center(); }
 
     // ===== 事件总线（供 GameScene 订阅）=====
+    //
+    // 粒子系统**曾经也挂在这里**，结果 game 层直接持有了一个渲染器，
+    // 还自己调 render()。现在粒子归 GameScene —— 本层只负责发事件，
+    // "事件要不要变成火花"是表现层的事。
     EventBus& bus() { return bus_; }
-    ParticleSystem& particles() { return particles_; }
 
     void reset();
     void respawnAtCheckpoint();   // 从最近的存档点重生（生命重置，金币保留）
@@ -82,7 +83,6 @@ private:
     Camera camera_;
     mutable sf::Texture shadowTex_;
     mutable bool shadowTexReady_ = false;
-    ParticleSystem particles_;
     EventBus bus_;
 
     int lives_ = 1;
@@ -97,7 +97,6 @@ private:
 
     bool showColliders_ = false;
     bool screenShake_ = true;
-    bool particlesEnabled_ = true;
     bool pseudo3D_ = true;
     struct DoorEntry {
         Door* door;

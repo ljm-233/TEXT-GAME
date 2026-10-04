@@ -1,7 +1,7 @@
 #pragma once
 #include "game_object.h"
-#include "vec2.h"
-#include "animator.h"
+#include "utils/vec2.h"
+#include "utils/animator.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
 

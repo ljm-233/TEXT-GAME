@@ -1,23 +1,16 @@
 #include "game.h"
-#include "main_menu_scene.h"
-#include "save_select_scene.h"
-#include "level_select_scene.h"
-#include "game_scene.h"
-#include "settings_scene.h"
-#include "console_scene.h"
-#include "editor_scene.h"
-#include "achievement_scene.h"
 #include "notification.h"
 #include "sound_manager.h"
-#include "gamepad.h"
-#include "keybindings.h"
+#include "infrastructure/gamepad.h"
+#include "infrastructure/keybindings.h"
 #include "focus_group.h"
+#include "config/keys.h"
 #include <SFML/System/Clock.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
-#include "text_strings.h"
+#include "utils/text_strings.h"
 
 Game::Game(std::shared_ptr<Window>        window,
            std::shared_ptr<Logger>        logger,
@@ -25,7 +18,8 @@ Game::Game(std::shared_ptr<Window>        window,
            std::shared_ptr<FontHolder>    fontHolder,
            std::shared_ptr<SaveManager>   saveManager,
            std::shared_ptr<Preferences>   preferences,
-           std::shared_ptr<RuntimeConfig> runtimeConfig)
+           std::shared_ptr<RuntimeConfig> runtimeConfig,
+           std::shared_ptr<SceneRegistry> sceneRegistry)
     : window_(std::move(window)),
       logger_(std::move(logger)),
       background_(std::move(background)),
@@ -33,48 +27,17 @@ Game::Game(std::shared_ptr<Window>        window,
       saveManager_(std::move(saveManager)),
       preferences_(std::move(preferences)),
       runtimeConfig_(std::move(runtimeConfig)),
+      sceneRegistry_(std::move(sceneRegistry)),
       fpsText_(fontHolder_->get(), sf::String("FPS: 0"), 20),
       clockText_(fontHolder_->get(), sf::String(""), 20) {
     fpsText_.setFillColor(sf::Color(255, 255, 100));
     clockText_.setFillColor(sf::Color(220, 220, 240));
 
     NotificationSystem::instance().setFont(fontHolder_->get());
-    sceneManager_ = std::make_unique<SceneManager>(
-        [this](SceneId id) { return createScene(id); });
-}
 
-std::unique_ptr<Scene> Game::createScene(SceneId id) {
-    const sf::Font& font = fontHolder_->get();
-    switch (id) {
-        case SceneId::MainMenu:
-            return std::make_unique<MainMenuScene>(background_, font, logger_);
-        case SceneId::SaveSelect:
-            return std::make_unique<SaveSelectScene>(
-                background_, saveManager_, font, logger_);
-        case SceneId::LevelSelect:
-            return std::make_unique<LevelSelectScene>(
-                background_, saveManager_, font, logger_);
-        case SceneId::Game:
-            return std::make_unique<GameScene>(
-                background_, font, logger_,
-                saveManager_,
-                preferences_);
-        case SceneId::Settings:
-            return std::make_unique<SettingsScene>(
-                background_, preferences_, runtimeConfig_,
-                window_, font, logger_);
-        case SceneId::Console:
-            return std::make_unique<ConsoleScene>(
-                background_, preferences_, saveManager_, font, logger_);
-        case SceneId::Editor:
-            return std::make_unique<EditorScene>(
-                background_, preferences_, font, logger_);
-        case SceneId::Achievements:
-            return std::make_unique<AchievementScene>(
-                background_, font, logger_);
-        default:
-            return nullptr;
-    }
+    // 场景从注册表按 id 取，Game 本身不认识任何具体场景类型。
+    sceneManager_ = std::make_unique<SceneManager>(
+        [this](SceneId id) { return sceneRegistry_->create(id); });
 }
 
 void Game::switchScene(SceneId next) {
@@ -103,7 +66,7 @@ void Game::switchScene(SceneId next) {
 
 void Game::saveWindowState() {
     if (!window_->isOpen()) return;
-    if (!preferences_->getBool("remember_window_size", true)) return;
+    if (!preferences_->getBool(ConfigKey::kRememberWindowSize, true)) return;
     auto size = window_->native().getSize();
     runtimeConfig_->setInt("last_window_width",  static_cast<int>(size.x));
     runtimeConfig_->setInt("last_window_height", static_cast<int>(size.y));
@@ -146,8 +109,8 @@ void Game::renderOverlays(float dt) {
 
     const float margin = 20.f;
 
-    if (preferences_->getBool("show_fps", false)) {
-        int fmt = preferences_->getInt("fps_format", 1);
+    if (preferences_->getBool(ConfigKey::kShowFps, false)) {
+        int fmt = preferences_->getInt(ConfigKey::kFpsFormat, 1);
         std::string s;
         switch (fmt) {
             case 0: s = std::to_string(static_cast<int>(fpsDisplayed_)); break;
@@ -162,7 +125,7 @@ void Game::renderOverlays(float dt) {
         }
         fpsText_.setString(s);
         auto b = fpsText_.getLocalBounds();
-        int pos = preferences_->getInt("fps_position", 1);
+        int pos = preferences_->getInt(ConfigKey::kFpsPosition, 1);
         sf::Vector2f p;
         switch (pos) {
             case 0: p = {margin, margin}; break;
@@ -175,7 +138,7 @@ void Game::renderOverlays(float dt) {
         rt.draw(fpsText_);
     }
 
-    if (preferences_->getBool("show_clock", false)) {
+    if (preferences_->getBool(ConfigKey::kShowClock, false)) {
         auto now = std::chrono::system_clock::now();
         std::time_t t = std::chrono::system_clock::to_time_t(now);
         std::tm tm{};
@@ -189,7 +152,7 @@ void Game::renderOverlays(float dt) {
         clockText_.setString(std::string(buf));
 
         auto b = clockText_.getLocalBounds();
-        int pos = preferences_->getInt("clock_position", 0);
+        int pos = preferences_->getInt(ConfigKey::kClockPosition, 0);
         sf::Vector2f p;
         switch (pos) {
             case 0: p = {margin, margin}; break;
@@ -210,11 +173,11 @@ void Game::flushConfigs() {
     runtimeConfig_->flush();
 }
 
-void Game::run() {
+int Game::run() {
     logger_->info("游戏启动");
     if (!sceneManager_->start(SceneId::MainMenu)) {
         logger_->error("无法创建主菜单场景");
-        return;
+        return 1;
     }
 
     // 主菜单初始标题
@@ -230,11 +193,11 @@ void Game::run() {
         Gamepad::instance().update();
 
         FocusGroup::instance().setEnabled(
-            preferences_->getBool("gamepad_enabled", true));
+            preferences_->getBool(ConfigKey::kGamepadEnabled, true));
         FocusGroup::instance().update(dt);
 
         // 自动暂停
-        if (preferences_->getBool("auto_pause_on_blur", true)) {
+        if (preferences_->getBool(ConfigKey::kAutoPauseOnBlur, true)) {
             bool focused = window_->isFocused();
             if (!focused && !autoPaused_) {
                 autoPaused_ = true;
@@ -299,4 +262,17 @@ void Game::run() {
     saveWindowState();
     flushConfigs();
     logger_->info("游戏结束");
+    return 0;
+}
+
+void Game::quit() {
+    // 主循环的条件是 window_->isOpen()，所以"请求退出"就是关窗。
+    // 不另设一个循环标志位，避免和 SFML 自己的事件处理产生两个真相。
+    window_->close();
+}
+
+std::string Game::str() const {
+    return "Game(sceneId=" +
+           std::to_string(static_cast<int>(sceneManager_->currentId())) +
+           ", windowOpen=" + (window_->isOpen() ? "true" : "false") + ")";
 }

@@ -31,9 +31,12 @@ TEST_CASE("GameConst - 固定步长合理") {
     CHECK(GameConst::kFixedTimeStep < 0.05f);   // 小于 50ms
 }
 
-TEST_CASE("GameConst - 音效采样率") {
-    CHECK(GameConst::kSoundSampleRate == 44100u);
-}
+// 这里原本有一条 "音效采样率 == 44100" 的用例。
+// kSoundSampleRate 已从 GameConst 移除 —— 它是**音频设备**的属性，
+// 不是游戏的物理常量；它住在 game_constants.h 里的时候，害得 ui 层的
+// sound_manager.cpp 为了一个数字反向 include 了 game 层。
+// 现在它是 sound_manager.cpp 的模块私有常量，不再是对外契约，
+// 断言一个字面量本身没有价值，所以随之下线。
 
 TEST_CASE("GameConst - 弹跳是轻轻反弹（比跳跃矮）") {
     // 数值更小 = 弹得更矮

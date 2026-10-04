@@ -7,6 +7,7 @@
 #include "pause_menu.h"
 #include "parallax.h"
 #include "level_intro.h"
+#include "particle_system.h"
 #include "button.h"
 #include <memory>
 #include <vector>
@@ -61,6 +62,11 @@ private:
     std::unique_ptr<GameWorld> world_;
     std::unique_ptr<PauseMenu> pauseMenu_;
     bool paused_ = false;
+
+    // 粒子归表现层所有。GameWorld 只发事件，这里决定事件要不要变成火花。
+    // 之前它挂在 GameWorld 上，等于让 game 层持有一个渲染器并自己调 render()。
+    ParticleSystem particles_;
+    bool           particlesOn_ = true;   // 每帧从偏好同步，见 applyPreferences
 
     float levelTime_ = 0.f;
     float hitstopTimer_ = 0.f;   // 受击停顿时长（秒）

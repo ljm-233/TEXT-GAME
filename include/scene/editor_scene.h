@@ -2,7 +2,7 @@
 #include "scene.h"
 #include "background.h"
 #include "preferences.h"
-#include "logging.h"
+#include "log/logger.h"
 #include "level_validator.h"
 #include <SFML/Graphics.hpp>
 #include <memory>

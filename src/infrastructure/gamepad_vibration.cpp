@@ -1,5 +1,5 @@
 // src/ui/gamepad_vibration.cpp
-#include "gamepad_vibration.h"
+#include "infrastructure/gamepad_vibration.h"
 #include <cstdio>
 
 GamepadVibration& GamepadVibration::instance() {

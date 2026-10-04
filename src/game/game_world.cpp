@@ -179,8 +179,8 @@ void GameWorld::update(float dt) {
     if (pendingRestart_) {
         if (respawnDelayTimer_ > 0.f) {
             respawnDelayTimer_ -= dt;
-            // 冻结游戏逻辑，但保留粒子和摄像机效果
-            if (particlesEnabled_) particles_.update(dt);
+            // 冻结游戏逻辑，但保留摄像机的震屏效果。
+            // 粒子由 GameScene 每帧推进，不在这里管。
             camera_.updateShake(dt);
             if (player_) camera_.follow(player_->bounds().center(),
                                         {0.f, 0.f}, dt);
@@ -202,8 +202,6 @@ void GameWorld::update(float dt) {
     if (player_) camera_.follow(player_->bounds().center(),
                                 player_->velocity(), dt);
     camera_.updateShake(dt);
-    if (particlesEnabled_) particles_.update(dt);
-    else                    particles_.clear();
 }
 
 void GameWorld::checkCollisionsSafe() {
@@ -436,7 +434,6 @@ void GameWorld::render(sf::RenderTarget& target) {
         obj->render(target);
     }
 
-    if (particlesEnabled_) particles_.render(target);
     if (showColliders_) renderDebugColliders(target);
 }
 
@@ -450,7 +447,6 @@ void GameWorld::respawnAtCheckpoint() {
     pendingRestart_ = false;
     respawnDelayTimer_ = 0.f;
     accumulator_ = 0.f;
-    particles_.clear();
 
     if (player_) {
         player_->respawn(player_->spawn());
@@ -472,7 +468,6 @@ void GameWorld::reset() {
     coins_ = 0;
     state_ = State::Playing;
     accumulator_ = 0.f;
-    particles_.clear();
 
     // ⭐ 对象即将销毁，先清空指针避免悬垂
     activeCheckpoint_ = nullptr;

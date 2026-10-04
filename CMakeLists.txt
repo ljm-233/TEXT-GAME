@@ -98,11 +98,15 @@ message(STATUS "  路径: ${SFML_DIR}")
 # 源文件收集（自动扫描，加新文件无需改本文件）
 # ============================================================
 file(GLOB_RECURSE TEXTGAME_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/src/common/*.cpp
     ${CMAKE_SOURCE_DIR}/src/core/*.cpp
     ${CMAKE_SOURCE_DIR}/src/config/*.cpp
     ${CMAKE_SOURCE_DIR}/src/game/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/infrastructure/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/log/*.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/*.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/*.cpp
 )
 list(LENGTH TEXTGAME_SOURCES TEXTGAME_SOURCES_COUNT)
 message(STATUS "=== 源文件扫描 ===")
@@ -129,13 +133,19 @@ if(WIN32)
     target_link_libraries(text_game PRIVATE xinput)
 endif()
 
+# 注意：utils / infrastructure 两层刻意**不**加入下面的 include 路径。
+# 不在路径里，就只能写限定形式 #include "utils/utf8.h"，
+# 于是跨层依赖在 include 行上直接可见、也能被 grep 出来，
+# 而不是像平铺写法那样"看着像同层"。老层保留平铺写法是为了不制造无谓改动。
 target_include_directories(text_game PRIVATE
     include
+    include/common
     include/core
     include/config
     include/ui
     include/game
     include/scene
+    include/log
 )
 
 string(TIMESTAMP BUILD_DATE "%Y-%m-%d")

@@ -1,9 +1,9 @@
 #include "achievement_scene.h"
-#include "text_strings.h"
-#include "utf8.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
 #include "theme.h"
 #include "achievement.h"
-#include "lang.h"
+#include "utils/lang.h"
 #include "focus_group.h"
 
 AchievementScene::AchievementScene(std::shared_ptr<Background> background,

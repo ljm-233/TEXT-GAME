@@ -1,6 +1,6 @@
 #pragma once
 #include "game_object.h"
-#include "vec2.h"
+#include "utils/vec2.h"
 #include <SFML/Graphics.hpp>
 
 class MovingPlatform : public GameObject {

@@ -1,10 +1,12 @@
 #pragma once
 #include "paths.h"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 class Config {
 public:
@@ -120,6 +122,34 @@ public:
 
     // 测试用：直接访问本 Config 对应的文件路径
     const std::filesystem::path& filePath() const { return filePath_; }
+
+    // ---------- 调试 ----------
+    /// 已设置的键数量。
+    size_t size() const { return values_.size(); }
+
+    /// 多行快照，键按字典序排列。
+    ///
+    /// 排序而不是按哈希序输出，是为了让两次运行的快照能直接 diff ——
+    /// "这次启动和上次差了哪个键"是排查配置问题时最常问的一句话。
+    /// 对应 albuswall Configue 的 __str__。
+    std::string str() const {
+        std::vector<std::string> keys;
+        keys.reserve(values_.size());
+        for (const auto& entry : values_)
+            keys.push_back(entry.first);
+        std::sort(keys.begin(), keys.end());
+
+        std::string head = filePath_.filename().string() + " (" +
+                           std::to_string(values_.size()) + " 项";
+        if (dirty_)
+            head += "，有未落盘改动";
+        head += ")";
+
+        std::string out = head;
+        for (const auto& key : keys)
+            out += "\n    " + key + " = " + values_.at(key);
+        return out;
+    }
 
 protected:
     const Paths* paths_ = nullptr;   // 可空

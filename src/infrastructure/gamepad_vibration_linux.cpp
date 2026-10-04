@@ -1,6 +1,6 @@
 // src/ui/gamepad_vibration_linux.cpp
 #ifdef __linux__
-#include "gamepad_vibration.h"
+#include "infrastructure/gamepad_vibration.h"
 
 #include <linux/input.h> // 核心头文件，定义了 ff_effect 等结构
 #include <sys/ioctl.h>

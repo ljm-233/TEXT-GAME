@@ -1,6 +1,6 @@
 #include "achievement.h"
 #include "notification.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 
 #include <fstream>
 

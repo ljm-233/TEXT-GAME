@@ -1,6 +1,6 @@
 // src/ui/gamepad_vibration_windows.cpp
 #ifdef _WIN32
-#include "gamepad_vibration.h"
+#include "infrastructure/gamepad_vibration.h"
 #include <windows.h>
 #include <xinput.h> // 需要链接 XInput.lib
 #include <iostream>

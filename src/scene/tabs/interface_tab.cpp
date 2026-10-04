@@ -1,10 +1,11 @@
 #include "tabs/interface_tab.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
-#include "lang.h"
-#include "animation.h"
+#include "utils/utf8.h"
+#include "utils/lang.h"
+#include "utils/animation.h"
+#include "config/keys.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,7 +151,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             uiScale_ = kUiScales[i];
             refreshSelection();
             setUiScale(uiScale_);
-            prefs_->setDouble("ui_scale", uiScale_);
+            prefs_->setDouble(ConfigKey::kUiScale, uiScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
             row->addButton(std::make_unique<Button>(
@@ -163,7 +164,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             fontScale_ = kUiScales[i];
             refreshSelection();
             setFontScale(fontScale_);
-            prefs_->setDouble("font_scale", fontScale_);
+            prefs_->setDouble(ConfigKey::kFontScale, fontScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
             row->addButton(std::make_unique<Button>(
@@ -176,7 +177,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             renderScale_ = kRenderScales[i];
             refreshSelection();
             window_->setRenderScale(renderScale_);
-            prefs_->setDouble("render_scale", renderScale_);
+            prefs_->setDouble(ConfigKey::kRenderScale, renderScale_);
         });
         row->stepX = 96.f;
         row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200),
@@ -204,7 +205,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             upscaleMode_ = i;
             refreshSelection();
             window_->setUpscaleMode(upscaleMode_);
-            prefs_->setInt("upscale_mode", upscaleMode_);
+            prefs_->setInt(ConfigKey::kUpscaleMode, upscaleMode_);
         });
         row->stepX = 100.f;
         row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff),
@@ -248,7 +249,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     {
         auto* row = addMulti(Str::LabelClockPos, [this](int i) {
             clockPosition_ = i; refreshSelection();
-            prefs_->setInt("clock_position", clockPosition_);
+            prefs_->setInt(ConfigKey::kClockPosition, clockPosition_);
         });
         row->stepX = 86.f;
         for (int i = 0; i < kPosCount; ++i)
@@ -260,7 +261,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     {
         auto* row = addMulti(Str::LabelConsoleFont, [this](int i) {
             consoleFontSize_ = kConsoleFonts[i]; refreshSelection();
-            prefs_->setInt("console_font_size", consoleFontSize_);
+            prefs_->setInt(ConfigKey::kConsoleFontSize, consoleFontSize_);
         });
         for (int i = 0; i < kConsoleFontCount; ++i)
             row->addButton(std::make_unique<Button>(
@@ -271,7 +272,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     {
         auto* row = addMulti(Str::LabelConsoleHistory, [this](int i) {
             consoleHistoryLines_ = kConsoleHistory[i]; refreshSelection();
-            prefs_->setInt("console_history_lines", consoleHistoryLines_);
+            prefs_->setInt(ConfigKey::kConsoleHistoryLines, consoleHistoryLines_);
         });
         for (int i = 0; i < kConsoleHistoryCount; ++i)
             row->addButton(std::make_unique<Button>(
@@ -282,7 +283,7 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     {
         auto* row = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
             consoleLineHeight_ = kConsoleLineHeights[i]; refreshSelection();
-            prefs_->setInt("console_line_height", consoleLineHeight_);
+            prefs_->setInt(ConfigKey::kConsoleLineHeight, consoleLineHeight_);
         });
         for (int i = 0; i < kConsoleLineHeightCount; ++i)
             row->addButton(std::make_unique<Button>(
@@ -304,19 +305,19 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     // Toggles
     addToggle(Str::LabelFps, [this](bool v) {
         showFps_ = v; refreshSelection();
-        prefs_->setBool("show_fps", v);
+        prefs_->setBool(ConfigKey::kShowFps, v);
     });
     addToggle(Str::LabelClock, [this](bool v) {
         showClock_ = v; refreshSelection();
-        prefs_->setBool("show_clock", v);
+        prefs_->setBool(ConfigKey::kShowClock, v);
     });
     addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
         consoleAutoScroll_ = v; refreshSelection();
-        prefs_->setBool("console_auto_scroll", v);
+        prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
     });
     addToggle(Str::LabelConsoleBlink, [this](bool v) {
         consoleBlinkCursor_ = v; refreshSelection();
-        prefs_->setBool("console_blink_cursor", v);
+        prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
     });
 
     // Wallpaper button
@@ -340,27 +341,27 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
 }
 
 void InterfaceTab::loadFromPrefs() {
-    showFps_             = prefs_->getBool("show_fps", false);
-    fpsPosition_         = prefs_->getInt("fps_position", 1);
-    fpsFormat_           = indexOfFpsFormat(prefs_->getInt("fps_format", 1));
-    uiScale_             = static_cast<float>(prefs_->getDouble("ui_scale", 1.0));
-    fontScale_           = static_cast<float>(prefs_->getDouble("font_scale", 1.0));
-    renderScale_         = static_cast<float>(prefs_->getDouble("render_scale", 1.0));
-    upscaleMode_         = prefs_->getInt("upscale_mode", 1);
-    themeId_             = prefs_->getInt("theme", 0);
-    showClock_           = prefs_->getBool("show_clock", false);
-    clockPosition_       = prefs_->getInt("clock_position", 0);
-    consoleMask_         = std::clamp(prefs_->getInt("console_mask", 160), 0, 255);
-    consolePanelAlpha_   = std::clamp(prefs_->getInt("console_panel_alpha", 220), 0, 255);
-    consoleFontSize_     = prefs_->getInt("console_font_size", 18);
-    consoleHistoryLines_ = prefs_->getInt("console_history_lines", 200);
-    consoleLineHeight_   = prefs_->getInt("console_line_height", 26);
-    consoleAutoScroll_   = prefs_->getBool("console_auto_scroll", true);
-    consoleBlinkCursor_  = prefs_->getBool("console_blink_cursor", true);
-    consolePrompt_       = indexOfConsolePrompt(prefs_->getInt("console_prompt", 0));
+    showFps_             = prefs_->getBool(ConfigKey::kShowFps, false);
+    fpsPosition_         = prefs_->getInt(ConfigKey::kFpsPosition, 1);
+    fpsFormat_           = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
+    uiScale_             = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
+    fontScale_           = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
+    renderScale_         = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
+    upscaleMode_         = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
+    themeId_             = prefs_->getInt(ConfigKey::kTheme, 0);
+    showClock_           = prefs_->getBool(ConfigKey::kShowClock, false);
+    clockPosition_       = prefs_->getInt(ConfigKey::kClockPosition, 0);
+    consoleMask_         = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
+    consolePanelAlpha_   = std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
+    consoleFontSize_     = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
+    consoleHistoryLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
+    consoleLineHeight_   = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
+    consoleAutoScroll_   = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
+    consoleBlinkCursor_  = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
+    consolePrompt_       = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
 
     {
-        std::string langCode = prefs_->get("language", "zh");
+        std::string langCode = prefs_->get(ConfigKey::kLanguage, "zh");
         const auto& avail = Lang::instance().available();
         languageIdx_ = 0;
         for (std::size_t i = 0; i < avail.size(); ++i) {
@@ -370,14 +371,14 @@ void InterfaceTab::loadFromPrefs() {
 }
 
 void InterfaceTab::applyFpsPosition() {
-    prefs_->setInt("fps_position", fpsPosition_);
+    prefs_->setInt(ConfigKey::kFpsPosition, fpsPosition_);
 }
 void InterfaceTab::applyFpsFormat() {
-    prefs_->setInt("fps_format", fpsFormat_);
+    prefs_->setInt(ConfigKey::kFpsFormat, fpsFormat_);
 }
 void InterfaceTab::applyTheme() {
     setTheme(static_cast<ThemeId>(themeId_));
-    prefs_->setInt("theme", themeId_);
+    prefs_->setInt(ConfigKey::kTheme, themeId_);
 }
 void InterfaceTab::applyLanguage() {
     const auto& avail = Lang::instance().available();
@@ -385,16 +386,16 @@ void InterfaceTab::applyLanguage() {
 
     const std::string& code = avail[languageIdx_];
     Lang::instance().load(code);
-    prefs_->set("language", code);
+    prefs_->set(ConfigKey::kLanguage, code);
 }
 void InterfaceTab::applyWallpaper() {
     if (!background_) return;
     if (background_->next()) {
-        prefs_->set("current_wallpaper", background_->currentFile());
+        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
     }
 }
 void InterfaceTab::applyConsolePrompt() {
-    prefs_->setInt("console_prompt", consolePrompt_);
+    prefs_->setInt(ConfigKey::kConsolePrompt, consolePrompt_);
 }
 
 void InterfaceTab::refreshLabels() {
@@ -496,11 +497,11 @@ void InterfaceTab::update() {
     }
     if (consoleMaskSlider_->consumeChanged()) {
         consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
-        prefs_->setInt("console_mask", consoleMask_);
+        prefs_->setInt(ConfigKey::kConsoleMask, consoleMask_);
     }
     if (consolePanelAlphaSlider_->consumeChanged()) {
         consolePanelAlpha_ = static_cast<int>(consolePanelAlphaSlider_->value());
-        prefs_->setInt("console_panel_alpha", consolePanelAlpha_);
+        prefs_->setInt(ConfigKey::kConsolePanelAlpha, consolePanelAlpha_);
     }
 }
 

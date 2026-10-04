@@ -234,3 +234,56 @@ TEST_CASE("Config - filePath 访问器") {
     Config cfg(file);
     CHECK(cfg.filePath() == file);
 }
+
+TEST_CASE("Config - str 快照按 key 排序") {
+    TempDir tmp;
+    fs::path file = tmp.root / "dump.conf";
+
+    Config cfg(file);
+    // 故意乱序写入：哈希序不等于字典序，快照必须自己排
+    cfg.set("zeta", "1");
+    cfg.set("alpha", "2");
+    cfg.set("mid", "3");
+
+    const std::string dump = cfg.str();
+
+    CHECK(cfg.size() == 3);
+    CHECK(dump.find("dump.conf") != std::string::npos);
+    CHECK(dump.find("alpha = 2") != std::string::npos);
+
+    // 排序保证两次启动的快照能直接 diff
+    const auto posAlpha = dump.find("alpha");
+    const auto posMid = dump.find("mid");
+    const auto posZeta = dump.find("zeta");
+    REQUIRE(posAlpha != std::string::npos);
+    REQUIRE(posMid != std::string::npos);
+    REQUIRE(posZeta != std::string::npos);
+    CHECK(posAlpha < posMid);
+    CHECK(posMid < posZeta);
+}
+
+TEST_CASE("Config - str 标出未落盘改动") {
+    TempDir tmp;
+    fs::path file = tmp.root / "dirty.conf";
+
+    Config cfg(file);
+    cfg.set("k", "v");
+
+    CHECK(cfg.isDirty());
+    CHECK(cfg.str().find("未落盘") != std::string::npos);
+
+    cfg.flush();
+
+    CHECK_FALSE(cfg.isDirty());
+    CHECK(cfg.str().find("未落盘") == std::string::npos);
+}
+
+TEST_CASE("Config - 空配置的 str 不炸") {
+    TempDir tmp;
+    fs::path file = tmp.root / "empty.conf";
+
+    Config cfg(file);
+
+    CHECK(cfg.size() == 0);
+    CHECK(cfg.str().find("0 项") != std::string::npos);
+}

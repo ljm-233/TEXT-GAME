@@ -1,9 +1,10 @@
 #include "tabs/display_tab.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
-#include "resolution.h"
+#include "utils/utf8.h"
+#include "ui/resolution.h"
+#include "config/keys.h"
 
 #include <algorithm>
 #include <cmath>
@@ -97,7 +98,7 @@ DisplayTab::DisplayTab(const sf::Font& font,
     {
         auto* row = addMulti(Str::LabelWindowMode, [this](int i) {
             windowMode_ = i;
-            prefs_->setInt("window_mode", i);
+            prefs_->setInt(ConfigKey::kWindowMode, i);
             applyWindowMode();
         });
         row->stepX = 110.f;
@@ -156,19 +157,19 @@ DisplayTab::DisplayTab(const sf::Font& font,
 }
 
 void DisplayTab::loadFromPrefs() {
-    selectedResolution_ = clampResolutionIndex(prefs_->getInt("resolution_index", 0));
-    fullscreen_         = prefs_->getBool("fullscreen", false);
-    windowMode_         = prefs_->getInt("window_mode", 0);
-    vsync_              = prefs_->getBool("vsync", true);
-    antiAliasingLevel_  = prefs_->getInt("anti_aliasing", 8);
-    logLevel_           = prefs_->getInt("log_level", static_cast<int>(LogLevel::Info));
-    fpsLimit_           = prefs_->getInt("fps_limit", 60);
+    selectedResolution_ = clampResolutionIndex(prefs_->getInt(ConfigKey::kResolutionIndex, 0));
+    fullscreen_         = prefs_->getBool(ConfigKey::kFullscreen, false);
+    windowMode_         = prefs_->getInt(ConfigKey::kWindowMode, 0);
+    vsync_              = prefs_->getBool(ConfigKey::kVsync, true);
+    antiAliasingLevel_  = prefs_->getInt(ConfigKey::kAntiAliasing, 8);
+    logLevel_           = prefs_->getInt(ConfigKey::kLogLevel, static_cast<int>(LogLevel::Info));
+    fpsLimit_           = prefs_->getInt(ConfigKey::kFpsLimit, 60);
 }
 
 void DisplayTab::applyResolution() {
     const auto& res = kResolutions[selectedResolution_];
     window_->recreate(res.width, res.height, fullscreen_);
-    prefs_->setInt("resolution_index", selectedResolution_);
+    prefs_->setInt(ConfigKey::kResolutionIndex, selectedResolution_);
     runtime_->setInt("last_window_width",  static_cast<int>(res.width));
     runtime_->setInt("last_window_height", static_cast<int>(res.height));
 }
@@ -176,7 +177,7 @@ void DisplayTab::applyResolution() {
 void DisplayTab::applyFullscreen() {
     const auto& res = kResolutions[selectedResolution_];
     window_->recreate(res.width, res.height, fullscreen_);
-    prefs_->setBool("fullscreen", fullscreen_);
+    prefs_->setBool(ConfigKey::kFullscreen, fullscreen_);
 }
 
 void DisplayTab::applyWindowMode() {
@@ -187,24 +188,24 @@ void DisplayTab::applyWindowMode() {
 
 void DisplayTab::applyVsync() {
     window_->setVsync(vsync_);
-    prefs_->setBool("vsync", vsync_);
+    prefs_->setBool(ConfigKey::kVsync, vsync_);
 }
 
 void DisplayTab::applyAntiAliasing() {
     window_->setAntiAliasing(static_cast<unsigned>(antiAliasingLevel_));
     const auto& res = kResolutions[selectedResolution_];
     window_->recreate(res.width, res.height, fullscreen_);
-    prefs_->setInt("anti_aliasing", antiAliasingLevel_);
+    prefs_->setInt(ConfigKey::kAntiAliasing, antiAliasingLevel_);
 }
 
 void DisplayTab::applyLogLevel() {
     logger_->setMinLevel(static_cast<LogLevel>(logLevel_));
-    prefs_->setInt("log_level", logLevel_);
+    prefs_->setInt(ConfigKey::kLogLevel, logLevel_);
 }
 
 void DisplayTab::applyFpsLimit() {
     window_->setFramerateLimit(static_cast<unsigned>(fpsLimit_));
-    prefs_->setInt("fps_limit", fpsLimit_);
+    prefs_->setInt(ConfigKey::kFpsLimit, fpsLimit_);
 }
 
 void DisplayTab::refreshLabels() {

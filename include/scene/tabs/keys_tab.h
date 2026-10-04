@@ -1,7 +1,7 @@
 #pragma once
 #include "button.h"
 #include "preferences.h"
-#include "keybindings.h"
+#include "infrastructure/keybindings.h"
 
 #include <SFML/Graphics.hpp>
 #include <memory>

@@ -1,15 +1,15 @@
 #include "settings_scene.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include <string>
-#include "utf8.h"
+#include "utils/utf8.h"
 #include "ui_scale.h"
 #include "button_style.h"
-#include "animation.h"
+#include "utils/animation.h"
 #include "notification.h"
 #include "sound_manager.h"
 #include "focus_group.h"
-#include "keybindings.h"
-#include "gamepad.h"
+#include "infrastructure/keybindings.h"
+#include "infrastructure/gamepad.h"
 #include "tabs/audio_tab.h"
 #include "tabs/graphics_tab.h"
 #include "tabs/interface_tab.h"
@@ -18,7 +18,7 @@
 #include "tabs/keys_tab.h"
 #include <algorithm>
 #include <cmath>
-#include "lang.h"
+#include "utils/lang.h"
 
 namespace {
 

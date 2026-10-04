@@ -1,7 +1,7 @@
 #pragma once
 #include "background.h"
 #include "console.h"
-#include "logging.h"
+#include "log/logger.h"
 #include "preferences.h"
 #include "save_manager.h"
 #include "scene.h"

@@ -1,5 +1,5 @@
 #pragma once
-#include "lang.h"
+#include "utils/lang.h"
 
 // 所有用户可见的字符串集中在这里
 // 用 constexpr const char* 而非 std::string，避免静态初始化顺序问题

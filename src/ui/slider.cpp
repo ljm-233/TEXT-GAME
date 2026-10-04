@@ -1,7 +1,7 @@
 #include "slider.h"
 #include "theme.h"
 #include "ui_scale.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 #include <algorithm>
 #include <cmath>
 #include <string>

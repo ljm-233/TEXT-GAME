@@ -1,10 +1,11 @@
 #include "console_scene.h"
-#include "calculator.h"
+#include "scene/console/calculator.h"
 #include "sound_manager.h"
 #include "achievement.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "theme.h"
-#include "utf8.h"
+#include "utils/utf8.h"
+#include "config/keys.h"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -39,18 +40,18 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
         preferences_(std::move(preferences)),
         saveManager_(std::move(saveManager)),
         logger_(std::move(logger)) {
-    int fontSize = preferences_->getInt("console_font_size", 18);
-    int historyLines = preferences_->getInt("console_history_lines", 200);
-    int lineHeight = preferences_->getInt("console_line_height", 26);
-    bool autoScroll = preferences_->getBool("console_auto_scroll", true);
-    bool blinkCursor = preferences_->getBool("console_blink_cursor", true);
+    int fontSize = preferences_->getInt(ConfigKey::kConsoleFontSize, 18);
+    int historyLines = preferences_->getInt(ConfigKey::kConsoleHistoryLines, 200);
+    int lineHeight = preferences_->getInt(ConfigKey::kConsoleLineHeight, 26);
+    bool autoScroll = preferences_->getBool(ConfigKey::kConsoleAutoScroll, true);
+    bool blinkCursor = preferences_->getBool(ConfigKey::kConsoleBlinkCursor, true);
 
     console_ = std::make_unique<Console>(font, static_cast<unsigned>(fontSize),
                                          static_cast<unsigned>(lineHeight),
                                          static_cast<unsigned>(historyLines), autoScroll,
                                          blinkCursor, sf::Vector2u{1280, 720});
     // 提示符
-    int promptIdx = preferences_->getInt("console_prompt", 0);
+    int promptIdx = preferences_->getInt(ConfigKey::kConsolePrompt, 0);
     static const char* prompts[] = {"> ", "$ ", "λ ", "❯ "};
     if (promptIdx < 0 || promptIdx > 3)
         promptIdx = 0;
@@ -218,7 +219,7 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
             return;
         }
         logger_->setMinLevel(lv);
-        preferences_->setInt("log_level", static_cast<int>(lv));
+        preferences_->setInt(ConfigKey::kLogLevel, static_cast<int>(lv));
         std::cout << Str::T(Str::ConsoleLogLevelChanged) << level << '\n';
     }
 
@@ -241,7 +242,7 @@ void ConsoleScene::dispatchCommand(const std::string& line) {
             return;
         }
         setTheme(id);
-        preferences_->setInt("theme", static_cast<int>(id));
+        preferences_->setInt(ConfigKey::kTheme, static_cast<int>(id));
         std::cout << Str::T(Str::ConsoleThemeChanged) << "\n";
     }
 
@@ -314,13 +315,13 @@ void ConsoleScene::render(Window& window) {
     if (background_)
         background_->render(rt);
 
-    int mask = preferences_->getInt("console_mask", 160);
+    int mask = preferences_->getInt(ConfigKey::kConsoleMask, 160);
     mask = std::max(0, std::min(255, mask));
     sf::RectangleShape overlay(sf::Vector2f{w, h});
     overlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(mask)));
     rt.draw(overlay);
 
-    int panelAlpha = preferences_->getInt("console_panel_alpha", 220);
+    int panelAlpha = preferences_->getInt(ConfigKey::kConsolePanelAlpha, 220);
     panelAlpha = std::max(0, std::min(255, panelAlpha));
 
     const float pad = 16.f;

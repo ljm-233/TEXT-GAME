@@ -1,6 +1,6 @@
 #include "level_validator.h"
 #include "level.h"
-#include "vec2.h"
+#include "utils/vec2.h"
 #include "game_constants.h"
 #include <algorithm>
 #include <cmath>

@@ -1,10 +1,10 @@
 #include "editor_scene.h"
-#include "text_strings.h"
+#include "utils/text_strings.h"
 #include "level_codec.h"
 #include "level.h"
 #include "level_validator.h"
 #include "achievement.h"
-#include "utf8.h"
+#include "utils/utf8.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>

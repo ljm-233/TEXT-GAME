@@ -7,7 +7,7 @@
 #include "preferences.h"
 #include "runtime_config.h"
 #include "window.h"
-#include "resolution.h"
+#include "ui/resolution.h"
 #include "confirm_dialog.h"
 #include "theme.h"
 #include "toggle_row.h"
