@@ -21,6 +21,7 @@ add_executable(unit_tests
     test_save_manager.cpp
     test_score_rules.cpp
     test_editor_tools.cpp
+    test_focus_nav.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -79,6 +80,7 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/focus_nav.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
     # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
     # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——

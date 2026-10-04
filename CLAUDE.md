@@ -144,7 +144,8 @@ code = app.exec();
 9. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
 10. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
 11. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
-12. **手柄焦点导航**：每个 Scene 的 `render()` 末尾调 `FocusGroup::instance().setItems({...})`，或者由 Tab 的 `registerFocus()` 收集。
+12. **手柄焦点导航**：在**状态变化时**注册焦点（`onEnter` / `onResume` / `update` / 自己的 `syncFocus()`），
+    **不要放在 `render()` 里** —— 渲染函数不该有副作用。设置 Tab 由 `registerFocus()` 收集。
 13. **日志用 `log/logger.h` 的 `Logger`**（`logger->info(...)`），
     不要再用已删除的 `core/logging.h` 转发头。
 14. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
@@ -222,6 +223,10 @@ Scene 绘制 ──> RenderTexture (rt_)
 SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底层：
 - Linux：evdev `/dev/input/event*` + `EVIOCSFF`
 - Windows：XInput `XInputSetState`
+- 其它平台（macOS 等）：`gamepad_vibration_stub.cpp` 空实现，保证能编译链接
+
+已在 `GameScene` 接在 8 个游戏事件上（跳跃/落地/金币/踩敌/受伤/弹跳板/…），
+设置里有开关。**这个功能是完成的，README 里"待接入"的说法已过时。**
 
 `Gamepad::vibrate(low, high, duration)` 是入口，内部有正弦包络（0 → 1 → 0）。
 
@@ -268,13 +273,13 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 - **场景工厂里不要有副作用**（现在是 `registerScenes()` 注册的 lambda）。
   `GameScene` 的 `takePendingSave()` 已挪到 `onEnter()`。
 - `EventBus::subscribe` 的回调是同步的，`emit` 时会立刻执行。
-- `save_manager::updateProgress` 的 `progress` 参数实际存的是金币数（命名误导）。
-- `FocusGroup::setItems` 目前在 `render()` 里调用（反模式，但已稳定）。
-- `PauseMenu::render` 会重设 `FocusGroup::setItems`，与 Scene 的焦点注册冲突。
 - `SettingsScene::anySliderEditing()` 检查所有 Tab 的 `anyEditing()`，用于判断 ESC 是否应该退出场景。
 - 场景常驻后 `SceneManager::pop` 不再销毁场景，`history_` 存指针。
 - **程序退出时可能会卡 1~2 秒**（缓存场景统一析构），`main.cpp` 用了
   `std::_Exit(code)` 直接终止进程绕过（跳过所有静态/单例析构）。
+  **这样不会丢数据**，已经核查过：配置有 `Game::flushConfigs()`
+  （初始化时 + 每 5 秒 + 退出时各一次），成就是解锁即 `save()`。
+  往析构函数里塞持久化才是危险的 —— `_Exit` 不会执行它们。
 
 ### 编辑器
 
@@ -321,6 +326,7 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 | SaveManager（存档读写 / 只增不减 / PB 取最小 / 旧字段兼容 / 沙箱隔离） | ✅ |
 | ScoreRules（星级 / 目标时间 / PB）—— 从 GameScene 抽出的纯逻辑 | ✅ |
 | EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
+| FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。

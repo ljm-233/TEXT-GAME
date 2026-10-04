@@ -97,61 +97,31 @@ void FocusGroup::moveFocus(Direction dir) {
     if (items_.empty()) return;
     if (index_ < 0 || index_ >= static_cast<int>(items_.size())) return;
 
-    // ⭐ 几何导航：读每个按钮的实际屏幕位置，找"该方向上最近"的按钮
-    Button* cur = items_[index_];
-    auto cp = cur->position();
-    auto cs = cur->size();
-    sf::Vector2f ccenter = { cp.x + cs.x * 0.5f, cp.y + cs.y * 0.5f };
-
-    float dx = (dir == Direction::Right) ? 1.f
-             : (dir == Direction::Left)  ? -1.f : 0.f;
-    float dy = (dir == Direction::Down)  ? 1.f
-             : (dir == Direction::Up)    ? -1.f : 0.f;
-
-    int bestIdx = -1;
-    float bestScore = 1e30f;
-
-    for (size_t i = 0; i < items_.size(); ++i) {
-        if (static_cast<int>(i) == index_) continue;
-        Button* b = items_[i];
-        auto bp = b->position();
-        auto bs = b->size();
-        // 跳过未定位的按钮（位置为 0 且尺寸为 0）
-        if (bs.x <= 0.f || bs.y <= 0.f) continue;
-
-        sf::Vector2f bc = { bp.x + bs.x * 0.5f, bp.y + bs.y * 0.5f };
-        sf::Vector2f delta = { bc.x - ccenter.x, bc.y - ccenter.y };
-
-        // 主方向投影：必须为正，否则该按钮不在 dir 方向上
-        float proj = delta.x * dx + delta.y * dy;
-        if (proj < 2.f) continue;
-
-        // 垂直偏移（叉积绝对值）
-        float perp = std::abs(delta.x * dy - delta.y * dx);
-
-        // 评分：主方向距离 + 垂直偏移 * 3（垂直偏移惩罚更重，让同行/同列优先）
-        float score = proj + perp * 3.f;
-
-        if (score < bestScore) {
-            bestScore = score;
-            bestIdx = static_cast<int>(i);
-        }
+    // "往哪个方向走"由 FocusNav 算（纯几何），这里只负责把按钮位置喂进去、
+    // 再把结果应用回按钮的聚焦状态
+    std::vector<sf::FloatRect> rects;
+    rects.reserve(items_.size());
+    for (Button* b : items_) {
+        const auto p = b->position();
+        const auto s = b->size();
+        rects.emplace_back(p, s);
     }
 
-    if (bestIdx >= 0) {
-        index_ = bestIdx;
-        for (size_t i = 0; i < items_.size(); ++i) {
-            items_[i]->setFocused(static_cast<int>(i) == index_);
-        }
+    const int bestIdx = FocusNav::nextInDirection(rects, index_, dir);
+    if (bestIdx < 0) return;   // 该方向上没有按钮：停在原地
+
+    index_ = bestIdx;
+    for (std::size_t i = 0; i < items_.size(); ++i) {
+        items_[i]->setFocused(static_cast<int>(i) == index_);
     }
-    // 该方向上没有按钮：停在原地
 }
 
 void FocusGroup::moveFocusLinear(int delta) {
-    if (items_.empty()) return;
-    int n = static_cast<int>(items_.size());
-    index_ = (index_ + delta + n) % n;
+    const int n = static_cast<int>(items_.size());
+    const int next = FocusNav::nextLinear(index_, delta, n);
+    if (next < 0) return;
 
+    index_ = next;
     for (int i = 0; i < n; ++i) {
         items_[i]->setFocused(i == index_);
     }

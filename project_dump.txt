@@ -2775,61 +2775,31 @@ void FocusGroup::moveFocus(Direction dir) {
     if (items_.empty()) return;
     if (index_ < 0 || index_ >= static_cast<int>(items_.size())) return;
 
-    // ⭐ 几何导航：读每个按钮的实际屏幕位置，找"该方向上最近"的按钮
-    Button* cur = items_[index_];
-    auto cp = cur->position();
-    auto cs = cur->size();
-    sf::Vector2f ccenter = { cp.x + cs.x * 0.5f, cp.y + cs.y * 0.5f };
-
-    float dx = (dir == Direction::Right) ? 1.f
-             : (dir == Direction::Left)  ? -1.f : 0.f;
-    float dy = (dir == Direction::Down)  ? 1.f
-             : (dir == Direction::Up)    ? -1.f : 0.f;
-
-    int bestIdx = -1;
-    float bestScore = 1e30f;
-
-    for (size_t i = 0; i < items_.size(); ++i) {
-        if (static_cast<int>(i) == index_) continue;
-        Button* b = items_[i];
-        auto bp = b->position();
-        auto bs = b->size();
-        // 跳过未定位的按钮（位置为 0 且尺寸为 0）
-        if (bs.x <= 0.f || bs.y <= 0.f) continue;
-
-        sf::Vector2f bc = { bp.x + bs.x * 0.5f, bp.y + bs.y * 0.5f };
-        sf::Vector2f delta = { bc.x - ccenter.x, bc.y - ccenter.y };
-
-        // 主方向投影：必须为正，否则该按钮不在 dir 方向上
-        float proj = delta.x * dx + delta.y * dy;
-        if (proj < 2.f) continue;
-
-        // 垂直偏移（叉积绝对值）
-        float perp = std::abs(delta.x * dy - delta.y * dx);
-
-        // 评分：主方向距离 + 垂直偏移 * 3（垂直偏移惩罚更重，让同行/同列优先）
-        float score = proj + perp * 3.f;
-
-        if (score < bestScore) {
-            bestScore = score;
-            bestIdx = static_cast<int>(i);
-        }
+    // "往哪个方向走"由 FocusNav 算（纯几何），这里只负责把按钮位置喂进去、
+    // 再把结果应用回按钮的聚焦状态
+    std::vector<sf::FloatRect> rects;
+    rects.reserve(items_.size());
+    for (Button* b : items_) {
+        const auto p = b->position();
+        const auto s = b->size();
+        rects.emplace_back(p, s);
     }
 
-    if (bestIdx >= 0) {
-        index_ = bestIdx;
-        for (size_t i = 0; i < items_.size(); ++i) {
-            items_[i]->setFocused(static_cast<int>(i) == index_);
-        }
+    const int bestIdx = FocusNav::nextInDirection(rects, index_, dir);
+    if (bestIdx < 0) return;   // 该方向上没有按钮：停在原地
+
+    index_ = bestIdx;
+    for (std::size_t i = 0; i < items_.size(); ++i) {
+        items_[i]->setFocused(static_cast<int>(i) == index_);
     }
-    // 该方向上没有按钮：停在原地
 }
 
 void FocusGroup::moveFocusLinear(int delta) {
-    if (items_.empty()) return;
-    int n = static_cast<int>(items_.size());
-    index_ = (index_ + delta + n) % n;
+    const int n = static_cast<int>(items_.size());
+    const int next = FocusNav::nextLinear(index_, delta, n);
+    if (next < 0) return;
 
+    index_ = next;
     for (int i = 0; i < n; ++i) {
         items_[i]->setFocused(i == index_);
     }
@@ -4469,7 +4439,78 @@ void SoundManager::resumeBGM() {
 
 void SoundManager::rebuildBGM() {
     // 占位：如果以后要换 BGM，可以重新生成
-}===== ./src/game/coin.cpp =====
+}===== ./src/ui/focus_nav.cpp =====
+#include "ui/focus_nav.h"
+
+#include <cmath>
+
+namespace FocusNav {
+
+namespace {
+
+/// 方向单位向量
+void directionVector(Direction dir, float& dx, float& dy) {
+    dx = (dir == Direction::Right) ? 1.f
+       : (dir == Direction::Left)  ? -1.f : 0.f;
+    dy = (dir == Direction::Down)  ? 1.f
+       : (dir == Direction::Up)    ? -1.f : 0.f;
+}
+
+sf::Vector2f centerOf(const sf::FloatRect& r) {
+    return {r.position.x + r.size.x * 0.5f,
+            r.position.y + r.size.y * 0.5f};
+}
+
+} // namespace
+
+int nextInDirection(const std::vector<sf::FloatRect>& rects, int cur, Direction dir) {
+    if (rects.empty()) return -1;
+    if (cur < 0 || cur >= static_cast<int>(rects.size())) return -1;
+
+    float dx = 0.f, dy = 0.f;
+    directionVector(dir, dx, dy);
+    const sf::Vector2f ccenter = centerOf(rects[static_cast<std::size_t>(cur)]);
+
+    int bestIdx = -1;
+    float bestScore = 0.f;
+
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        if (static_cast<int>(i) == cur) continue;
+        const sf::FloatRect& r = rects[i];
+
+        // 跳过未定位的按钮（位置为 0 且尺寸为 0）
+        if (r.size.x <= 0.f || r.size.y <= 0.f) continue;
+
+        const sf::Vector2f bc = centerOf(r);
+        const sf::Vector2f delta = {bc.x - ccenter.x, bc.y - ccenter.y};
+
+        // 主方向投影：必须为正，否则该按钮不在 dir 方向上
+        const float proj = delta.x * dx + delta.y * dy;
+        if (proj < kMinProjection) continue;
+
+        // 垂直偏移（叉积绝对值）
+        const float perp = std::abs(delta.x * dy - delta.y * dx);
+
+        // 评分：主方向距离 + 垂直偏移 × kPerpWeight（垂直偏移惩罚更重，
+        // 让同行/同列优先）
+        const float score = proj + perp * kPerpWeight;
+
+        if (bestIdx < 0 || score < bestScore) {
+            bestScore = score;
+            bestIdx = static_cast<int>(i);
+        }
+    }
+
+    return bestIdx;
+}
+
+int nextLinear(int cur, int delta, int count) {
+    if (count <= 0) return -1;
+    return ((cur + delta) % count + count) % count;
+}
+
+} // namespace FocusNav
+===== ./src/game/coin.cpp =====
 #include "coin.h"
 #include "coin_sprite_factory.h"
 #include <cmath>
@@ -17338,6 +17379,7 @@ private:
 };===== ./include/ui/focus_group.h =====
 #pragma once
 #include "button.h"
+#include "focus_nav.h"
 #include <SFML/Window/Event.hpp>
 #include <vector>
 
@@ -17371,7 +17413,8 @@ public:
 private:
     FocusGroup() = default;
 
-    enum class Direction { Up, Down, Left, Right };
+    // 导航算法本身在 FocusNav（纯几何，可测），这里只借用它的方向枚举
+    using Direction = FocusNav::Direction;
 
     std::vector<Button*> items_;
     int   index_ = 0;
@@ -17667,7 +17710,53 @@ inline int clampResolutionIndex(int idx) {
     if (idx < 0 || idx >= kResolutionCount)
         return 0;
     return idx;
-}===== ./include/game/save_manager.h =====
+}===== ./include/ui/focus_nav.h =====
+#pragma once
+//
+// 焦点导航：手柄方向键在"一堆矩形按钮"之间怎么走。
+//
+// 从 FocusGroup 里抽出来的。原先它和 Button*、按键重复触发状态、待分发事件
+// 挤在同一个类里，而 Button 的构造需要 sf::Font（也就是 GlResource），
+// 整个 FocusGroup 因此在无界面环境里根本构造不了，算法再好也测不到。
+//
+// 剩下的这部分只依赖矩形几何，搬出来就是纯函数。
+// 手感全靠它：每个场景每个设置 Tab 的手柄导航都走这里。
+//
+#include <SFML/Graphics/Rect.hpp>
+#include <vector>
+
+namespace FocusNav {
+
+enum class Direction { Up, Down, Left, Right };
+
+/// 主方向投影的阈值（像素）。小于它的候选算作"不在这个方向上"，
+/// 避免正上/正下方的按钮被当成左右邻居。
+inline constexpr float kMinProjection = 2.f;
+
+/// 垂直偏移的惩罚权重。比 1 大得多，于是"同一行/同一列"的按钮优先于
+/// "斜前方更近"的按钮。
+inline constexpr float kPerpWeight = 3.f;
+
+/// 几何导航：从 `cur` 出发，沿 `dir` 找"该方向上最近"的那个，返回其下标。
+///
+/// 规则（顺序即优先级）：
+///   1. 尺寸非正（x 或 y ≤ 0）的矩形跳过 —— 那是还没布局的按钮
+///   2. 主方向投影 < kMinProjection 的跳过 —— 它不在这个方向上
+///   3. 剩下的按 `投影 + 垂直偏移 × kPerpWeight` 打分，取最小
+///
+/// 该方向上没有候选时返回 **-1**（由调用方决定停在原地还是绕回，
+/// 当前 FocusGroup 是停在原地）。
+///
+/// `cur` 越界或 `rects` 为空时同样返回 -1。
+int nextInDirection(const std::vector<sf::FloatRect>& rects, int cur, Direction dir);
+
+/// 线性导航：在长度为 `count` 的列表里前后移动 `delta` 步，越界绕回。
+///
+/// `count ≤ 0` 时返回 -1。
+int nextLinear(int cur, int delta, int count);
+
+} // namespace FocusNav
+===== ./include/game/save_manager.h =====
 #pragma once
 #include <string>
 #include <vector>
@@ -34336,6 +34425,7 @@ add_executable(unit_tests
     test_save_manager.cpp
     test_score_rules.cpp
     test_editor_tools.cpp
+    test_focus_nav.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -34394,6 +34484,7 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/focus_nav.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
     # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
     # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
@@ -34422,7 +34513,198 @@ target_link_libraries(unit_tests PRIVATE
     SFML::Graphics
 )
 
-add_test(NAME unit_tests COMMAND unit_tests)===== ./tools/validate_levels.cpp =====
+add_test(NAME unit_tests COMMAND unit_tests)===== ./tests/test_focus_nav.cpp =====
+#include "doctest.h"
+#include "ui/focus_nav.h"
+
+#include <vector>
+
+// 手柄焦点导航的算法。
+//
+// 从 FocusGroup 里抽出来的：那个类持有 Button*，而 Button 构造需要 sf::Font
+// （GlResource），在无界面环境里根本构造不了，算法再好也测不到。
+// 抽出来之后只剩矩形几何，纯函数。
+//
+// 这段决定手感 —— 每个场景、每个设置 Tab 的手柄导航都走它。
+namespace {
+
+using FocusNav::Direction;
+
+sf::FloatRect rect(float x, float y, float w = 100.f, float h = 40.f) {
+    return sf::FloatRect({x, y}, {w, h});
+}
+
+/// 2×2 网格：
+///     [0] (0,0)     [1] (200,0)
+///     [2] (0,100)   [3] (200,100)
+std::vector<sf::FloatRect> grid2x2() {
+    return {rect(0.f, 0.f), rect(200.f, 0.f),
+            rect(0.f, 100.f), rect(200.f, 100.f)};
+}
+
+} // namespace
+
+// ============================================================
+// 几何导航
+// ============================================================
+
+TEST_CASE("FocusNav - 网格里四个方向都走到正确的邻居") {
+    const auto g = grid2x2();
+
+    CHECK(FocusNav::nextInDirection(g, 0, Direction::Right) == 1);
+    CHECK(FocusNav::nextInDirection(g, 0, Direction::Down)  == 2);
+    CHECK(FocusNav::nextInDirection(g, 1, Direction::Left)  == 0);
+    CHECK(FocusNav::nextInDirection(g, 1, Direction::Down)  == 3);
+    CHECK(FocusNav::nextInDirection(g, 2, Direction::Up)    == 0);
+    CHECK(FocusNav::nextInDirection(g, 2, Direction::Right) == 3);
+    CHECK(FocusNav::nextInDirection(g, 3, Direction::Up)    == 1);
+    CHECK(FocusNav::nextInDirection(g, 3, Direction::Left)  == 2);
+}
+
+TEST_CASE("FocusNav - 该方向上没有按钮时返回 -1（停在原地）") {
+    const auto g = grid2x2();
+
+    CHECK(FocusNav::nextInDirection(g, 0, Direction::Up)    == -1);   // 已经在顶上
+    CHECK(FocusNav::nextInDirection(g, 0, Direction::Left)  == -1);   // 已经在最左
+    CHECK(FocusNav::nextInDirection(g, 3, Direction::Right) == -1);
+    CHECK(FocusNav::nextInDirection(g, 3, Direction::Down)  == -1);
+}
+
+TEST_CASE("FocusNav - 同一行/列的按钮优先于斜前方的") {
+    // [0] 在原点；[1] 正右方；[2] 斜右下方但直线距离更近
+    std::vector<sf::FloatRect> r = {
+        rect(0.f, 0.f),
+        rect(300.f, 0.f),      // 正右，主方向 300，垂直 0
+        rect(120.f, 90.f),     // 斜右下，直线更近但垂直偏移大
+    };
+
+    // 往右应该选正右方那个
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == 1);
+}
+
+TEST_CASE("FocusNav - 同方向多个候选时取评分最低的") {
+    std::vector<sf::FloatRect> r = {
+        rect(0.f, 0.f),
+        rect(400.f, 0.f),    // 远
+        rect(150.f, 0.f),    // 近 —— 应该选它
+    };
+
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == 2);
+}
+
+TEST_CASE("FocusNav - 未布局的按钮（尺寸为 0）被跳过") {
+    std::vector<sf::FloatRect> r = {
+        rect(0.f, 0.f),
+        rect(150.f, 0.f, 0.f, 0.f),   // 还没布局
+        rect(400.f, 0.f),
+    };
+
+    // 跳过尺寸为 0 的那个，选更远但有效的
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == 2);
+}
+
+TEST_CASE("FocusNav - 垂直偏移在阈值内的算「同一行」") {
+    // 正右方与"几乎正右方"（偏移 < 阈值）—— 应该仍能选中
+    std::vector<sf::FloatRect> r = {
+        rect(0.f, 0.f),
+        rect(200.f, 1.f),   // 中心差不多同高
+    };
+
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == 1);
+}
+
+TEST_CASE("FocusNav - 重叠/同心的按钮不会被选中") {
+    std::vector<sf::FloatRect> r = {
+        rect(0.f, 0.f),
+        rect(0.f, 0.f),     // 完全重合：投影为 0，小于阈值
+    };
+
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == -1);
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Down) == -1);
+}
+
+TEST_CASE("FocusNav - 只有一个按钮时任何方向都返回 -1") {
+    std::vector<sf::FloatRect> r = {rect(0.f, 0.f)};
+
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Up)    == -1);
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Down)  == -1);
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Left)  == -1);
+    CHECK(FocusNav::nextInDirection(r, 0, Direction::Right) == -1);
+}
+
+// ============================================================
+// 非法输入
+// ============================================================
+
+TEST_CASE("FocusNav - 空列表返回 -1 而不是崩") {
+    const std::vector<sf::FloatRect> empty;
+
+    CHECK(FocusNav::nextInDirection(empty, 0, Direction::Up) == -1);
+}
+
+TEST_CASE("FocusNav - 当前下标越界返回 -1") {
+    const auto g = grid2x2();
+
+    CHECK(FocusNav::nextInDirection(g, -1, Direction::Right) == -1);
+    CHECK(FocusNav::nextInDirection(g, 4, Direction::Right) == -1);
+    CHECK(FocusNav::nextInDirection(g, 999, Direction::Up) == -1);
+}
+
+TEST_CASE("FocusNav - 返回的下标永远合法（或 -1）") {
+    const auto g = grid2x2();
+    const Direction dirs[] = {Direction::Up, Direction::Down,
+                              Direction::Left, Direction::Right};
+
+    for (int cur = 0; cur < 4; ++cur) {
+        for (Direction d : dirs) {
+            const int r = FocusNav::nextInDirection(g, cur, d);
+            CHECK(r >= -1);
+            CHECK(r < 4);
+            CHECK(r != cur);   // 永远不会选中自己
+        }
+    }
+}
+
+// ============================================================
+// 线性导航
+// ============================================================
+
+TEST_CASE("FocusNav - 线性移动越界绕回") {
+    CHECK(FocusNav::nextLinear(0, 1, 3) == 1);
+    CHECK(FocusNav::nextLinear(2, 1, 3) == 0);   // 末尾往后绕回开头
+    CHECK(FocusNav::nextLinear(0, -1, 3) == 2);  // 开头往前绕回末尾
+    CHECK(FocusNav::nextLinear(1, -1, 3) == 0);
+}
+
+TEST_CASE("FocusNav - 线性移动支持跨多步与负数") {
+    CHECK(FocusNav::nextLinear(0, 5, 3) == 2);
+    CHECK(FocusNav::nextLinear(0, -5, 3) == 1);
+    CHECK(FocusNav::nextLinear(0, 0, 3) == 0);
+    CHECK(FocusNav::nextLinear(0, 300, 3) == 0);   // 整圈回到原地
+}
+
+TEST_CASE("FocusNav - 空列表的线性移动返回 -1") {
+    CHECK(FocusNav::nextLinear(0, 1, 0) == -1);
+    CHECK(FocusNav::nextLinear(0, 1, -3) == -1);
+}
+
+TEST_CASE("FocusNav - 单个元素的线性移动永远停在原地") {
+    CHECK(FocusNav::nextLinear(0, 1, 1) == 0);
+    CHECK(FocusNav::nextLinear(0, -7, 1) == 0);
+}
+
+TEST_CASE("FocusNav - 线性移动的结果永远在范围内") {
+    for (int n = 1; n <= 8; ++n) {
+        for (int cur = 0; cur < n; ++cur) {
+            for (int delta = -20; delta <= 20; ++delta) {
+                const int r = FocusNav::nextLinear(cur, delta, n);
+                CHECK(r >= 0);
+                CHECK(r < n);
+            }
+        }
+    }
+}
+===== ./tools/validate_levels.cpp =====
 #include "level.h"
 #include "level_validator.h"
 #include <filesystem>
@@ -43662,7 +43944,7 @@ grep -rn "insert(0)" --include="*.py" .                                   # 仅�
 
 ## 🚧 当前状态
 
-> 最后更新：2026-09
+> 最后更新：2026-10
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
@@ -43682,21 +43964,19 @@ grep -rn "insert(0)" --include="*.py" .                                   # 仅�
 | 调试工具 | ✅ 完成 | F1~F10 快捷键 / 性能面板 / 截图 / 慢动作 / 碰撞盒 |
 | 多语言 | ✅ 完成 | 中文 / 繁體中文 / English / 日本語 / 한국어 |
 | 桌面集成 | ✅ 完成 | Linux AppImage / Windows NSIS 安装包 / 自定义图标 |
-| 手柄振动 | ⚠️ **接口保留** | SFML 3 已移除振动 API，接口和设置项保留待后续接入 |
+| 手柄振动 | ✅ 完成 | SFML 3 移除了振动 API，项目自己接底层：Linux evdev `EVIOCSFF` / Windows XInput；已接在跳跃、落地、金币、踩敌、受伤等 8 个游戏事件上，设置里可关 |
 | **关卡内容** | ⚠️ **进行中** | 5 个第一版关卡，1~4 关存在可达性问题，待重做 |
-| **测试覆盖** | ⚠️ **部分** | 62 个单元测试用例，纯逻辑覆盖较好，游戏对象部分覆盖 |
+| **测试覆盖** | ⚠️ **部分** | 206 个单元测试用例 / 1665 断言，**无 DISPLAY 也能全绿**；场景与 UI 组件因构造需要 `sf::Font` 仍无法直接测 |
 | 开发工具 | ✅ 完成 | Sanitizer / clang-tidy / CMake Presets / 覆盖率 / 关卡验证器 / 硬编码检测 |
 
 ### 已知问题
 
 - 部分 UI 控件（SettingsScene / EditorScene）的回归测试靠手动
 - Wayland 下窗口图标无法通过 SFML API 设置（协议限制）
-- 手柄振动因 SFML 3 API 缺失未实现
 
 ### 短期路线
 
 1. 依次重做 `level2~5`
-2. 手柄振动（等 SFML 更新或接入原生 API）
 
 ## 📸 截图
 
@@ -62178,6 +62458,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/ui/confirm_dialog.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/console.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/focus_group.cpp"
+  "/home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/font_holder.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/new_save_dialog.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/notification.cpp"
@@ -62922,6 +63203,12 @@ endif()
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/ui/focus_group.cpp.o -c /home/link/coding/TEXT-GAME/src/ui/focus_group.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/ui/focus_group.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/ui/focus_group.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/release",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/ui/focus_nav.cpp.o -c /home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/ui/focus_nav.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/release",
@@ -67431,6 +67718,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/ui/confirm_dialog.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/console.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/focus_group.cpp"
+  "/home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/font_holder.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/new_save_dialog.cpp"
   "/home/link/coding/TEXT-GAME/src/ui/notification.cpp"
@@ -67715,7 +68003,7 @@ endif()
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
 add_test("unit_tests" "/home/link/coding/TEXT-GAME/build/tests/tests/unit_tests")
-set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;110;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
+set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;112;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
 ===== ./build/tests/cmake_install.cmake =====
 # Install script for directory: /home/link/coding/TEXT-GAME
 
@@ -68251,6 +68539,12 @@ subdirs("tests")
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/ui/focus_nav.cpp.o -c /home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/ui/focus_nav.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/ui/font_holder.cpp.o -c /home/link/coding/TEXT-GAME/src/ui/font_holder.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/ui/font_holder.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/ui/font_holder.cpp.o"
@@ -68509,6 +68803,12 @@ subdirs("tests")
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/test_focus_nav.cpp.o -c /home/link/coding/TEXT-GAME/tests/test_focus_nav.cpp",
+  "file": "/home/link/coding/TEXT-GAME/tests/test_focus_nav.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/test_focus_nav.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o -c /home/link/coding/TEXT-GAME/src/game/level.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/level.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o"
@@ -68626,6 +68926,12 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/scene/editor_tools.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/scene/editor_tools.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/ui/focus_nav.cpp.o -c /home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/ui/focus_nav.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/ui/focus_nav.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -69309,7 +69615,8 @@ code = app.exec();
 9. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
 10. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
 11. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
-12. **手柄焦点导航**：每个 Scene 的 `render()` 末尾调 `FocusGroup::instance().setItems({...})`，或者由 Tab 的 `registerFocus()` 收集。
+12. **手柄焦点导航**：在**状态变化时**注册焦点（`onEnter` / `onResume` / `update` / 自己的 `syncFocus()`），
+    **不要放在 `render()` 里** —— 渲染函数不该有副作用。设置 Tab 由 `registerFocus()` 收集。
 13. **日志用 `log/logger.h` 的 `Logger`**（`logger->info(...)`），
     不要再用已删除的 `core/logging.h` 转发头。
 14. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
@@ -69387,6 +69694,10 @@ Scene 绘制 ──> RenderTexture (rt_)
 SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底层：
 - Linux：evdev `/dev/input/event*` + `EVIOCSFF`
 - Windows：XInput `XInputSetState`
+- 其它平台（macOS 等）：`gamepad_vibration_stub.cpp` 空实现，保证能编译链接
+
+已在 `GameScene` 接在 8 个游戏事件上（跳跃/落地/金币/踩敌/受伤/弹跳板/…），
+设置里有开关。**这个功能是完成的，README 里"待接入"的说法已过时。**
 
 `Gamepad::vibrate(low, high, duration)` 是入口，内部有正弦包络（0 → 1 → 0）。
 
@@ -69433,13 +69744,13 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 - **场景工厂里不要有副作用**（现在是 `registerScenes()` 注册的 lambda）。
   `GameScene` 的 `takePendingSave()` 已挪到 `onEnter()`。
 - `EventBus::subscribe` 的回调是同步的，`emit` 时会立刻执行。
-- `save_manager::updateProgress` 的 `progress` 参数实际存的是金币数（命名误导）。
-- `FocusGroup::setItems` 目前在 `render()` 里调用（反模式，但已稳定）。
-- `PauseMenu::render` 会重设 `FocusGroup::setItems`，与 Scene 的焦点注册冲突。
 - `SettingsScene::anySliderEditing()` 检查所有 Tab 的 `anyEditing()`，用于判断 ESC 是否应该退出场景。
 - 场景常驻后 `SceneManager::pop` 不再销毁场景，`history_` 存指针。
 - **程序退出时可能会卡 1~2 秒**（缓存场景统一析构），`main.cpp` 用了
   `std::_Exit(code)` 直接终止进程绕过（跳过所有静态/单例析构）。
+  **这样不会丢数据**，已经核查过：配置有 `Game::flushConfigs()`
+  （初始化时 + 每 5 秒 + 退出时各一次），成就是解锁即 `save()`。
+  往析构函数里塞持久化才是危险的 —— `_Exit` 不会执行它们。
 
 ### 编辑器
 
@@ -69486,6 +69797,7 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 | SaveManager（存档读写 / 只增不减 / PB 取最小 / 旧字段兼容 / 沙箱隔离） | ✅ |
 | ScoreRules（星级 / 目标时间 / PB）—— 从 GameScene 抽出的纯逻辑 | ✅ |
 | EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
+| FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。

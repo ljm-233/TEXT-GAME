@@ -1,5 +1,6 @@
 #pragma once
 #include "button.h"
+#include "focus_nav.h"
 #include <SFML/Window/Event.hpp>
 #include <vector>
 
@@ -33,7 +34,8 @@ public:
 private:
     FocusGroup() = default;
 
-    enum class Direction { Up, Down, Left, Right };
+    // 导航算法本身在 FocusNav（纯几何，可测），这里只借用它的方向枚举
+    using Direction = FocusNav::Direction;
 
     std::vector<Button*> items_;
     int   index_ = 0;
