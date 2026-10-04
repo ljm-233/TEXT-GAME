@@ -285,42 +285,65 @@ TEXT-GAME/
 │       ├── postprocess.frag  # 后处理合成
 │       ├── brightpass.frag   # 泛光：亮部提取
 │       └── blur.frag         # 泛光：高斯模糊
-├── include/
-│   ├── config/               # 配置类（Bootstrap / Runtime / Preferences）
-│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、text_strings）
-│   ├── game/                 # 游戏本体
+├── include/                  # 与 src/ 一一对应，共 9 层（从叶子到顶层）
+│   ├── utils/                # 零内部依赖的叶子
+│   │   ├── utf8.h            # std::string ↔ sf::String（中文必须走 toSf）
 │   │   ├── vec2.h            # 二维向量
-│   │   ├── aabb.h            # 碰撞盒
-│   │   ├── game_constants.h  # 物理常量
-│   │   ├── game_object.h     # 对象基类
-│   │   ├── event_bus.h       # 事件总线
+│   │   ├── animation.h       # 缓动函数 + 全局动画开关
+│   │   ├── animator.h        # 精灵帧动画
+│   │   ├── lang.h            # 多语言加载
+│   │   └── text_strings.h    # 所有用户可见字符串
+│   ├── common/               # 共享基元（AppError / ContainerError）
+│   ├── infrastructure/       # 设备层（不认识应用层与前端）
+│   │   ├── gamepad.h         # 手柄 + 焦点导航
+│   │   ├── gamepad_vibration.h
+│   │   └── keybindings.h     # 运行时键位重映射
+│   ├── config/               # 配置
+│   │   ├── config.h          # key=value 存储 + 延迟落盘
+│   │   ├── keys.h            # 配置键的唯一权威来源
+│   │   └── bootstrap.h       # registerConfig()
+│   ├── log/                  # 日志（门面 / 格式化 / 落点 三层）
+│   │   ├── logger.h          # 级别过滤 + 打时间戳 + 分发
+│   │   ├── protocol.h        # LogFormatter / LogHandler 抽象
+│   │   ├── formatters/       # TextFormatter / ConsoleFormatter
+│   │   ├── handlers/         # ConsoleHandler / FileHandler（含轮转）
+│   │   └── bootstrap.h       # registerLog()
+│   ├── core/                 # 应用骨架与场景契约
+│   │   ├── container.h       # 命名式 DI 容器
+│   │   ├── application.h     # 五阶段生命周期 + 四类钩子
+│   │   ├── main_loop.h       # MainLoop 抽象 + Headless 兜底
+│   │   ├── scene_registry.h  # SceneId → 工厂
+│   │   ├── scene_manager.h   # 场景常驻缓存
+│   │   ├── bootstrap.h       # registerCore() / wireCore()
+│   │   ├── game.h            # 游戏主循环（MainLoop 的实现）
+│   │   ├── paths.h           # 资源目录（支持测试沙箱）
+│   │   └── achievement.h
+│   ├── ui/                   # UI 组件与渲染
+│   │   ├── window.h          # 窗口 + 渲染缩放管线
+│   │   ├── upscaler.h        # 超分控制器
+│   │   ├── postprocess.h     # 后处理控制器
+│   │   ├── particle_system.h # 粒子（归表现层所有）
+│   │   ├── button.h / slider.h / text_input.h
+│   │   ├── theme.h / ui_scale.h / button_style.h
+│   │   ├── sound_manager.h / notification.h
+│   │   └── ...
+│   ├── game/                 # 游戏本体
+│   │   ├── game_world.h      # 世界：物理 + 碰撞 + 发事件
 │   │   ├── level.h           # ASCII 关卡
 │   │   ├── level_validator.h # 关卡可达性验证
-│   │   ├── level_codec.h     # 关卡编码（分享码）
-│   │   ├── camera.h          # 摄像机
-│   │   ├── player.h          # 玩家
-│   │   ├── enemy.h           # 敌人
-│   │   ├── coin.h            # 金币
-│   │   ├── jump_pad.h        # 弹跳板
-│   │   ├── checkpoint.h      # 存档点
-│   │   ├── moving_platform.h # 移动平台
-│   │   ├── key.h / door.h    # 钥匙 / 门
-│   │   ├── spike.h           # 尖刺
-│   │   ├── parallax.h        # 视差背景
-│   │   ├── level_intro.h     # 关卡开场文字
-│   │   └── game_world.h      # 游戏世界
-│   ├── scene/                # 7 个场景
-│   └── ui/                   # UI 组件
-│       ├── button.h
-│       ├── slider.h          # 滑条（带数字输入 + 重置按钮）
-│       ├── text_input.h
-│       ├── window.h          # 窗口 + 渲染缩放管线
-│       ├── upscaler.h        # 超分控制器
-│       ├── postprocess.h     # 后处理控制器
-│       ├── console.h
-│       ├── sound_manager.h
-│       ├── gamepad.h         # 手柄（振动接口保留）
-│       └── ...
+│   │   ├── level_codec.h     # 分享码（RLE + Base64）
+│   │   ├── score_rules.h     # 星级 / 目标时间 / PB 规则
+│   │   ├── save_manager.h    # 存档读写
+│   │   ├── player.h / enemy.h / coin.h / checkpoint.h / door.h / spike.h
+│   │   ├── key.h / jump_pad.h / moving_platform.h / parallax.h
+│   │   └── ...
+│   └── scene/                # 8 个场景 + 设置 Tab + 编辑器工具
+│       ├── main_menu_scene.h / save_select_scene.h / level_select_scene.h
+│       ├── game_scene.h / settings_scene.h / console_scene.h
+│       ├── editor_scene.h / achievement_scene.h
+│       ├── editor_tools.h    # 编辑器格子几何（纯函数，可测）
+│       ├── console/          # 控制台命令（计算器等）
+│       └── tabs/             # 6 个设置 Tab
 ├── packaging/
 │   ├── icons/                # 图标生成脚本 + 生成结果
 │   │   └── generate_icons.py
@@ -333,12 +356,15 @@ TEXT-GAME/
 ├── scripts/
 │   ├── check_hardcoded.py    # 中文硬编码检测
 │   ├── test.sh               # 一键跑单元测试
+│   ├── install-desktop.sh    # 装进应用菜单 / 终端命令
 │   └── gen_levels.py         # 关卡生成器
 ├── src/                      # 对应 include 的实现
-├── tests/                    # 单元测试（doctest，62 个用例）
+├── tests/                    # 单元测试（doctest，206 个用例，含分层架构测试）
 ├── tools/
 │   └── validate_levels.cpp   # 关卡验证器（命令行）
 ├── wallpaper/                # 壁纸资源
+├── s.sh                      # 一键构建 + 启动游戏
+├── dump.sh                   # 生成源码快照 project_dump.txt（喂给 AI）
 ├── .clang-format
 ├── .clang-tidy               # 静态分析配置
 ├── .editorconfig
@@ -356,9 +382,11 @@ TEXT-GAME/
 
 | 模块 | 职责 |
 | :--- | :--- |
-| **DI 容器** | 统一注册/解析所有依赖，自动缓存单例 |
+| **DI 容器** | 命名式注册表（`reg`/`get`/`require`/`tryGet`/`peek`/`touch`），只管注册与解析，不认识生命周期 |
+| **应用生命周期** | `Application::exec()` 五阶段 boot → setup → wire → run → teardown（RAII 保证 teardown 必达）+ 四类钩子 `onBoot`/`onLoop`/`onQuit`/`onFinal` |
+| **分层** | utils / common / infrastructure / config / log / core / ui / game / scene，共 9 层；`ui` 与 `game` 双向不许互相 include，由 `tests/test_layers.cpp` 扫描源码树守护 |
 | **事件总线** | GameWorld 发出游戏事件（跳跃/落地/金币/踩敌/受伤/...），GameScene 订阅处理音效/粒子/振动。解耦 `game` 层与 `ui` 层 |
-| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
+| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器 / 成就；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
 | **配置分层** | Bootstrap / Runtime / Preferences，延迟落盘 |
 | **日志** | 彩色终端 + 文件 + 多级别 + 轮转 + 保留份数 |
 | **多语言** | 用中文原文作 key，运行时查表；支持中/繁中/英/日/韩 |
@@ -410,7 +438,7 @@ TEXT-GAME/
 - **依赖注入**：自研简易 `Container`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，62 个用例）
+- **测试**：doctest（单头文件，206 个用例 / 1665 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
 - **覆盖率**：gcov + lcov
@@ -462,6 +490,10 @@ ttc.fonts[2].save('assets/font.otf')
 ```bash
 git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
+
+# 一键启动：增量构建 Release 后直接进游戏（日常用这个）
+./s.sh
+./s.sh --debug      # 要接调试器时
 
 cmake --list-presets
 
@@ -542,7 +574,7 @@ cmake --build --preset asan
 ```bash
 cmake --preset coverage
 cmake --build --preset coverage
-cmake --build build/coverage --target coverage
+cmake --build --preset coverage --target coverage
 # 报告生成在 build/coverage/coverage_html/index.html
 ```
 
@@ -662,9 +694,12 @@ exit              关闭控制台
 9. **渲染用世界坐标**，平移交给 `sf::View`。
 10. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
 11. **新场景加 `FocusGroup::instance().setItems({...})`** 以支持手柄。
-12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/core/text_strings.h`。
+12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
 13. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
 14. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
+15. **配置键用 `include/config/keys.h` 的常量**，不要写字面量 —— 写错字只会静默回退默认值。
+16. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口只负责按"底层在前"的顺序调用。
+17. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。`include/utils` 与 `include/infrastructure` 刻意不在 include 路径里，平铺写法编译不过，跨层依赖因此在 include 行上直接可见。
 
 ### 代码格式化
 

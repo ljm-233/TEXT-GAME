@@ -6466,281 +6466,6 @@ std::string ValidationReport::summary() const {
         }
     }
     return oss.str();
-}===== ./src/game/save_manager.cpp =====
-#include "save_manager.h"
-#include "utils/text_strings.h"
-#include <filesystem>
-#include <fstream>
-#include <chrono>
-#include <ctime>
-#include <algorithm>
-#include <sstream>
-#include <cstdio>
-
-namespace fs = std::filesystem;
-
-SaveManager::SaveManager(std::shared_ptr<RuntimeConfig> config,
-                         std::shared_ptr<Logger> logger)
-    : config_(std::move(config)), logger_(std::move(logger)) {}
-
-std::string SaveManager::currentTimestamp() const {
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &t);
-#else
-    localtime_r(&t, &tm);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-    return buf;
-}
-
-std::string SaveManager::serializeStars(const std::vector<int>& stars) {
-    std::string out;
-    for (size_t i = 0; i < stars.size(); ++i) {
-        if (i > 0) out += ',';
-        out += std::to_string(stars[i]);
-    }
-    return out;
-}
-
-std::vector<int> SaveManager::parseStars(const std::string& s) {
-    std::vector<int> out;
-    std::istringstream iss(s);
-    std::string token;
-    while (std::getline(iss, token, ',')) {
-        try { out.push_back(std::stoi(token)); }
-        catch (...) { out.push_back(0); }
-    }
-    return out;
-}
-
-std::string SaveManager::serializeTimes(const std::vector<float>& times) {
-    std::string out;
-    for (std::size_t i = 0; i < times.size(); ++i) {
-        if (i > 0) out += ',';
-        // 用 snprintf 控制小数位，避免 to_string 产生 6 位小数
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.2f", times[i]);
-        out += buf;
-    }
-    return out;
-}
-
-std::vector<float> SaveManager::parseTimes(const std::string& s) {
-    std::vector<float> out;
-    std::istringstream iss(s);
-    std::string token;
-    while (std::getline(iss, token, ',')) {
-        try { out.push_back(std::stof(token)); }
-        catch (...) { out.push_back(0.f); }
-    }
-    return out;
-}
-
-std::vector<SaveInfo> SaveManager::listSaves() const {
-    std::vector<SaveInfo> result;
-    auto dir = config_->savesDir();
-    if (!fs::exists(dir)) return result;
-
-    for (const auto& entry : fs::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
-        auto path = entry.path();
-        if (path.extension() != ".conf") continue;
-
-        SaveInfo info;
-        if (loadSave(path.filename().string(), info))
-            result.push_back(info);
-    }
-
-    std::sort(result.begin(), result.end(),
-              [](const SaveInfo& a, const SaveInfo& b) {
-                  return a.lastPlayed > b.lastPlayed;
-              });
-    return result;
-}
-
-SaveInfo SaveManager::createSave(const std::string& customName) {
-    auto now = currentTimestamp();
-    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
-    std::string filename = "save_" + std::to_string(ts) + ".conf";
-
-    SaveInfo info;
-    info.filename   = filename;
-    info.name       = customName.empty()
-                        ? (std::string(Str::SaveNamePrefix) + now)
-                        : customName;
-    info.createdAt  = now;
-    info.lastPlayed = now;
-    info.coins        = 0;
-    info.currentLevel = 1;
-    info.levelStars   = std::vector<int>(9, 0);
-    info.levelBestTimes = std::vector<float>(9, 0.f);
-
-    auto path = config_->saveFile(filename);
-    std::ofstream out(path);
-    if (!out) {
-        logger_->error("创建存档失败: 无法写入 " + path.string());
-        return {};
-    }
-    out << "name="             << info.name         << '\n';
-    out << "created_at="       << info.createdAt    << '\n';
-    out << "last_played="      << info.lastPlayed   << '\n';
-    out << "coins="            << info.coins        << '\n';
-    out << "current_level="    << info.currentLevel << '\n';
-    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
-    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
-    out.flush();
-    if (!out) {
-        logger_->error("创建存档失败: 写入过程中断 " + path.string());
-        return {};
-    }
-
-    logger_->info("创建存档: " + path.string());
-    return info;
-}
-
-bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
-    auto path = config_->saveFile(filename);
-    std::ifstream in(path);
-    if (!in) return false;
-
-    out.filename   = filename;
-    out.name       = Str::UnnamedSave;
-    out.createdAt  = "";
-    out.lastPlayed = "";
-    out.coins        = 0;
-    out.currentLevel = 1;
-    out.levelStars   = std::vector<int>(9, 0);
-    out.levelBestTimes = std::vector<float>(9, 0.f);
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        auto pos = line.find('=');
-        if (pos == std::string::npos) continue;
-        std::string k = line.substr(0, pos);
-        std::string v = line.substr(pos + 1);
-        if      (k == "name")        out.name       = v;
-        else if (k == "created_at")  out.createdAt  = v;
-        else if (k == "last_played") out.lastPlayed = v;
-        // ⭐ 兼容旧字段名 progress= 和新字段名 coins=
-        else if (k == "coins" || k == "progress") {
-            try { out.coins = std::stoi(v); } catch (...) { out.coins = 0; }
-        }
-        else if (k == "current_level") {
-            try { out.currentLevel = std::stoi(v); } catch (...) { out.currentLevel = 1; }
-        }
-        else if (k == "level_stars") {
-            out.levelStars = parseStars(v);
-            if (out.levelStars.size() < 9)
-                out.levelStars.resize(9, 0);
-        }
-        else if (k == "level_best_times") {
-            out.levelBestTimes = parseTimes(v);
-            if (out.levelBestTimes.size() < 9)
-                out.levelBestTimes.resize(9, 0.f);
-        }
-    }
-    return true;
-}
-
-bool SaveManager::deleteSave(const std::string& filename) {
-    auto path = config_->saveFile(filename);
-    if (!fs::exists(path)) return false;
-    std::error_code ec;
-    fs::remove(path, ec);
-    if (ec) {
-        logger_->error("删除存档失败: " + path.string() + " " + ec.message());
-        return false;
-    }
-    logger_->info("删除存档: " + path.string());
-    return true;
-}
-
-bool SaveManager::updateProgress(const std::string& filename,
-                                 int coins,
-                                 int currentLevel) {
-    SaveInfo info;
-    if (!loadSave(filename, info)) return false;
-    info.coins        = std::max(info.coins, coins);
-    info.currentLevel = std::max(info.currentLevel, currentLevel);
-    info.lastPlayed   = currentTimestamp();
-
-    auto path = config_->saveFile(filename);
-    std::ofstream out(path);
-    if (!out) return false;
-    out << "name="             << info.name         << '\n';
-    out << "created_at="       << info.createdAt    << '\n';
-    out << "last_played="      << info.lastPlayed   << '\n';
-    out << "coins="            << info.coins        << '\n';
-    out << "current_level="    << info.currentLevel << '\n';
-    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
-    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
-    return true;
-}
-
-bool SaveManager::setLevelStar(const std::string& filename,
-                               int level, int stars) {
-    SaveInfo info;
-    if (!loadSave(filename, info)) return false;
-    if (level < 1 || level > static_cast<int>(info.levelStars.size()))
-        return false;
-
-    int idx = level - 1;
-    if (stars > info.levelStars[idx]) {
-        info.levelStars[idx] = stars;
-        info.lastPlayed = currentTimestamp();
-
-        auto path = config_->saveFile(filename);
-        std::ofstream out(path);
-        if (!out) return false;
-        out << "name="             << info.name         << '\n';
-        out << "created_at="       << info.createdAt    << '\n';
-        out << "last_played="      << info.lastPlayed   << '\n';
-        out << "coins="            << info.coins        << '\n';
-        out << "current_level="    << info.currentLevel << '\n';
-        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
-        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
-
-        logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
-                      std::to_string(stars));
-    }
-    return true;
-}
-
-bool SaveManager::setLevelBestTime(const std::string& filename,
-                                   int level, float seconds) {
-    SaveInfo info;
-    if (!loadSave(filename, info)) return false;
-    if (level < 1 || level > static_cast<int>(info.levelBestTimes.size()))
-        return false;
-    if (seconds <= 0.f) return false;
-
-    int idx = level - 1;
-    // 首次通关，或刷新 PB
-    if (info.levelBestTimes[idx] <= 0.f || seconds < info.levelBestTimes[idx]) {
-        info.levelBestTimes[idx] = seconds;
-        info.lastPlayed = currentTimestamp();
-
-        auto path = config_->saveFile(filename);
-        std::ofstream out(path);
-        if (!out) return false;
-        out << "name="             << info.name         << '\n';
-        out << "created_at="       << info.createdAt    << '\n';
-        out << "last_played="      << info.lastPlayed   << '\n';
-        out << "coins="            << info.coins        << '\n';
-        out << "current_level="    << info.currentLevel << '\n';
-        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
-        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
-
-        logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
-                      std::to_string(seconds) + " 秒");
-        return true;
-    }
-    return false;   // 未刷新
 }===== ./src/game/level_codec.cpp =====
 #include "level_codec.h"
 #include <cctype>
@@ -7567,7 +7292,308 @@ void GameWorld::reset() {
     spawnLevelObjects();
 
     camera_.snapTo(player_->bounds().center());
-}===== ./src/scene/save_select_scene.cpp =====
+}===== ./src/game/save_manager.cpp =====
+#include "save_manager.h"
+#include "utils/text_strings.h"
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+#include <ctime>
+#include <algorithm>
+#include <sstream>
+#include <cstdio>
+
+namespace fs = std::filesystem;
+
+SaveManager::SaveManager(std::shared_ptr<RuntimeConfig> config,
+                         std::shared_ptr<Logger> logger)
+    : config_(std::move(config)), logger_(std::move(logger)) {}
+
+std::string SaveManager::currentTimestamp() const {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    return buf;
+}
+
+std::string SaveManager::serializeStars(const std::vector<int>& stars) {
+    std::string out;
+    for (size_t i = 0; i < stars.size(); ++i) {
+        if (i > 0) out += ',';
+        out += std::to_string(stars[i]);
+    }
+    return out;
+}
+
+std::vector<int> SaveManager::parseStars(const std::string& s) {
+    std::vector<int> out;
+    std::istringstream iss(s);
+    std::string token;
+    while (std::getline(iss, token, ',')) {
+        try { out.push_back(std::stoi(token)); }
+        catch (...) { out.push_back(0); }
+    }
+    return out;
+}
+
+std::string SaveManager::serializeTimes(const std::vector<float>& times) {
+    std::string out;
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        if (i > 0) out += ',';
+        // 用 snprintf 控制小数位，避免 to_string 产生 6 位小数
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.2f", times[i]);
+        out += buf;
+    }
+    return out;
+}
+
+std::vector<float> SaveManager::parseTimes(const std::string& s) {
+    std::vector<float> out;
+    std::istringstream iss(s);
+    std::string token;
+    while (std::getline(iss, token, ',')) {
+        try { out.push_back(std::stof(token)); }
+        catch (...) { out.push_back(0.f); }
+    }
+    return out;
+}
+
+std::vector<SaveInfo> SaveManager::listSaves() const {
+    std::vector<SaveInfo> result;
+    auto dir = config_->savesDir();
+    if (!fs::exists(dir)) return result;
+
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (!entry.is_regular_file()) continue;
+        auto path = entry.path();
+        if (path.extension() != ".conf") continue;
+
+        SaveInfo info;
+        if (loadSave(path.filename().string(), info))
+            result.push_back(info);
+    }
+
+    std::sort(result.begin(), result.end(),
+              [](const SaveInfo& a, const SaveInfo& b) {
+                  return a.lastPlayed > b.lastPlayed;
+              });
+    return result;
+}
+
+SaveInfo SaveManager::createSave(const std::string& customName) {
+    auto now = currentTimestamp();
+    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+    std::string filename = "save_" + std::to_string(ts) + ".conf";
+
+    SaveInfo info;
+    info.filename   = filename;
+    info.name       = customName.empty()
+                        ? (std::string(Str::SaveNamePrefix) + now)
+                        : customName;
+    info.createdAt  = now;
+    info.lastPlayed = now;
+    info.coins        = 0;
+    info.currentLevel = 1;
+    info.levelStars   = std::vector<int>(9, 0);
+    info.levelBestTimes = std::vector<float>(9, 0.f);
+
+    auto path = config_->saveFile(filename);
+    std::ofstream out(path);
+    if (!out) {
+        logger_->error("创建存档失败: 无法写入 " + path.string());
+        return {};
+    }
+    out << "name="             << info.name         << '\n';
+    out << "created_at="       << info.createdAt    << '\n';
+    out << "last_played="      << info.lastPlayed   << '\n';
+    out << "coins="            << info.coins        << '\n';
+    out << "current_level="    << info.currentLevel << '\n';
+    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    out.flush();
+    if (!out) {
+        logger_->error("创建存档失败: 写入过程中断 " + path.string());
+        return {};
+    }
+
+    logger_->info("创建存档: " + path.string());
+    return info;
+}
+
+bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
+    auto path = config_->saveFile(filename);
+    std::ifstream in(path);
+    if (!in) return false;
+
+    out.filename   = filename;
+    out.name       = Str::UnnamedSave;
+    out.createdAt  = "";
+    out.lastPlayed = "";
+    out.coins        = 0;
+    out.currentLevel = 1;
+    out.levelStars   = std::vector<int>(9, 0);
+    out.levelBestTimes = std::vector<float>(9, 0.f);
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        auto pos = line.find('=');
+        if (pos == std::string::npos) continue;
+        std::string k = line.substr(0, pos);
+        std::string v = line.substr(pos + 1);
+        if      (k == "name")        out.name       = v;
+        else if (k == "created_at")  out.createdAt  = v;
+        else if (k == "last_played") out.lastPlayed = v;
+        // ⭐ 兼容旧字段名 progress= 和新字段名 coins=
+        else if (k == "coins" || k == "progress") {
+            try { out.coins = std::stoi(v); } catch (...) { out.coins = 0; }
+        }
+        else if (k == "current_level") {
+            try { out.currentLevel = std::stoi(v); } catch (...) { out.currentLevel = 1; }
+        }
+        else if (k == "level_stars") {
+            out.levelStars = parseStars(v);
+            if (out.levelStars.size() < 9)
+                out.levelStars.resize(9, 0);
+        }
+        else if (k == "level_best_times") {
+            out.levelBestTimes = parseTimes(v);
+            if (out.levelBestTimes.size() < 9)
+                out.levelBestTimes.resize(9, 0.f);
+        }
+    }
+    return true;
+}
+
+bool SaveManager::deleteSave(const std::string& filename) {
+    auto path = config_->saveFile(filename);
+    if (!fs::exists(path)) return false;
+    std::error_code ec;
+    fs::remove(path, ec);
+    if (ec) {
+        logger_->error("删除存档失败: " + path.string() + " " + ec.message());
+        return false;
+    }
+    logger_->info("删除存档: " + path.string());
+    return true;
+}
+
+bool SaveManager::updateProgress(const std::string& filename,
+                                 int coins,
+                                 int currentLevel) {
+    SaveInfo info;
+    if (!loadSave(filename, info)) return false;
+    info.coins        = std::max(info.coins, coins);
+    info.currentLevel = std::max(info.currentLevel, currentLevel);
+    info.lastPlayed   = currentTimestamp();
+
+    auto path = config_->saveFile(filename);
+    std::ofstream out(path);
+    if (!out) return false;
+    out << "name="             << info.name         << '\n';
+    out << "created_at="       << info.createdAt    << '\n';
+    out << "last_played="      << info.lastPlayed   << '\n';
+    out << "coins="            << info.coins        << '\n';
+    out << "current_level="    << info.currentLevel << '\n';
+    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    return true;
+}
+
+bool SaveManager::setLevelStar(const std::string& filename,
+                               int level, int stars) {
+    SaveInfo info;
+    if (!loadSave(filename, info)) return false;
+    if (level < 1 || level > static_cast<int>(info.levelStars.size()))
+        return false;
+
+    int idx = level - 1;
+    if (stars > info.levelStars[idx]) {
+        info.levelStars[idx] = stars;
+        info.lastPlayed = currentTimestamp();
+
+        auto path = config_->saveFile(filename);
+        std::ofstream out(path);
+        if (!out) return false;
+        out << "name="             << info.name         << '\n';
+        out << "created_at="       << info.createdAt    << '\n';
+        out << "last_played="      << info.lastPlayed   << '\n';
+        out << "coins="            << info.coins        << '\n';
+        out << "current_level="    << info.currentLevel << '\n';
+        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+
+        logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
+                      std::to_string(stars));
+    }
+    return true;
+}
+
+bool SaveManager::setLevelBestTime(const std::string& filename,
+                                   int level, float seconds) {
+    SaveInfo info;
+    if (!loadSave(filename, info)) return false;
+    if (level < 1 || level > static_cast<int>(info.levelBestTimes.size()))
+        return false;
+    if (seconds <= 0.f) return false;
+
+    int idx = level - 1;
+    // 首次通关，或刷新 PB
+    if (info.levelBestTimes[idx] <= 0.f || seconds < info.levelBestTimes[idx]) {
+        info.levelBestTimes[idx] = seconds;
+        info.lastPlayed = currentTimestamp();
+
+        auto path = config_->saveFile(filename);
+        std::ofstream out(path);
+        if (!out) return false;
+        out << "name="             << info.name         << '\n';
+        out << "created_at="       << info.createdAt    << '\n';
+        out << "last_played="      << info.lastPlayed   << '\n';
+        out << "coins="            << info.coins        << '\n';
+        out << "current_level="    << info.currentLevel << '\n';
+        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+
+        logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
+                      std::to_string(seconds) + " 秒");
+        return true;
+    }
+    return false;   // 未刷新
+}===== ./src/game/score_rules.cpp =====
+#include "game/score_rules.h"
+
+namespace ScoreRules {
+
+int targetTimeSeconds(int totalCoins) {
+    if (totalCoins < 0)
+        totalCoins = 0;
+    return static_cast<int>(kBaseTime + static_cast<float>(totalCoins) * kPerCoinTime);
+}
+
+int starsFor(int coins, int totalCoins, float levelTime) {
+    const bool allCoins = (coins == totalCoins);
+    const bool fastEnough =
+        (levelTime <= static_cast<float>(targetTimeSeconds(totalCoins)));
+
+    if (allCoins && fastEnough) return 3;
+    if (allCoins || fastEnough) return 2;
+    return 1;
+}
+
+bool isNewRecord(float previousBest, float levelTime) {
+    return previousBest <= 0.f || levelTime < previousBest;
+}
+
+} // namespace ScoreRules
+===== ./src/scene/save_select_scene.cpp =====
 #include "save_select_scene.h"
 #include "utils/text_strings.h"
 #include "focus_group.h"
@@ -8478,6 +8504,7 @@ void LevelSelectScene::render(Window& window) {
     backButton_->render(window.target());
 }===== ./src/scene/editor_scene.cpp =====
 #include "editor_scene.h"
+#include "scene/editor_tools.h"
 #include "utils/text_strings.h"
 #include "level_codec.h"
 #include "level.h"
@@ -9068,26 +9095,14 @@ void EditorScene::paintCell(int tx, int ty, char newChar) {
 }
 
 void EditorScene::paintLine(sf::Vector2i from, sf::Vector2i to, char newChar) {
-    int x0 = from.x, y0 = from.y;
-    int x1 = to.x,   y1 = to.y;
-    int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    while (true) {
-        paintCell(x0, y0, newChar);
-        if (x0 == x1 && y0 == y1) break;
-        int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
-    }
+    // "画哪几格"由 EditorTools 算（纯几何，可测），这里只负责落笔
+    for (const auto& c : EditorTools::lineCells(from, to))
+        paintCell(c.x, c.y, newChar);
 }
 
 void EditorScene::paintRect(sf::Vector2i a, sf::Vector2i b, char newChar) {
-    int x0 = std::min(a.x, b.x), x1 = std::max(a.x, b.x);
-    int y0 = std::min(a.y, b.y), y1 = std::max(a.y, b.y);
-    for (int y = y0; y <= y1; ++y)
-        for (int x = x0; x <= x1; ++x)
-            paintCell(x, y, newChar);
+    for (const auto& c : EditorTools::rectCells(a, b))
+        paintCell(c.x, c.y, newChar);
 }
 
 void EditorScene::enforceUniquePlayer(int keepX, int keepY) {
@@ -12486,1110 +12501,6 @@ void Calculator::run() {
         logger_->normal(std::string(Str::T(Str::CalcResult)) + to_string(result));
         return;
     }
-}===== ./src/scene/game_scene.cpp =====
-#include "game_scene.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-#include "notification.h"
-#include "sound_manager.h"
-#include "infrastructure/keybindings.h"
-#include "game_constants.h"
-#include "focus_group.h"
-#include "infrastructure/gamepad.h"
-#include "achievement.h"
-#include "config/keys.h"
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <filesystem>
-#include <SFML/OpenGL.hpp>
-#include <chrono>
-#include <cstdint>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
-#include <vector>
-#include <type_traits>
-#include <variant>
-
-namespace {
-// ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
-constexpr float kBaseTime = 30.f;
-constexpr float kPerCoinTime = 3.f;
-
-// ⭐ 作用域计时器（EMA 平滑写入）
-struct ScopeTimer {
-    using Clock = std::chrono::high_resolution_clock;
-    Clock::time_point t0;
-    float& out;
-    explicit ScopeTimer(float& target)
-        : t0(Clock::now()), out(target) {}
-    ~ScopeTimer() {
-        auto t1 = Clock::now();
-        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
-        out = out * 0.9f + ms * 0.1f;
-    }
-};
-}
-
-GameScene::GameScene(std::shared_ptr<Background>  background,
-                     const sf::Font&              font,
-                     std::shared_ptr<Logger>      logger,
-                     std::shared_ptr<SaveManager> saveManager,
-                     std::shared_ptr<Preferences> preferences)
-    : background_(std::move(background)),
-      logger_(std::move(logger)),
-      saveManager_(std::move(saveManager)),
-      preferences_(std::move(preferences)),
-      font_(&font),
-      hudText_(font, sf::String(), 20),
-      overlayTitle_(font, sf::String(), 48),
-      overlayHint_(font, sf::String(), 24),
-      overlaySubHint_(font, sf::String(), 20),
-      overlayTime_(font, sf::String(), 22),
-      overlayStars_(font, sf::String(), 56),
-      debugText_(font, sf::String(), 14),
-      perfText_(font, sf::String(), 14) {
-    debugText_.setFillColor(sf::Color(255, 255, 130));
-    debugText_.setOutlineThickness(2.f);
-    debugText_.setOutlineColor(sf::Color(0, 0, 0, 200));
-    perfText_.setFillColor(sf::Color(160, 240, 255));
-    perfText_.setOutlineThickness(2.f);
-    perfText_.setOutlineColor(sf::Color(0, 0, 0, 200));
-
-    // ⭐ PauseMenu 常驻，避免频繁析构 sf::Text
-    pauseMenu_ = std::make_unique<PauseMenu>(
-        font, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
-
-    hudText_.setFillColor(sf::Color::White);
-    overlayTitle_.setFillColor(sf::Color(255, 255, 255));
-    overlayHint_.setFillColor(sf::Color(200, 200, 220));
-    overlaySubHint_.setFillColor(sf::Color(180, 180, 200));
-    overlayTime_.setFillColor(sf::Color(220, 220, 240));
-    overlayStars_.setFillColor(sf::Color(255, 220, 80));
-}
-
-void GameScene::onEnter() {
-    nextScene_ = SceneId::None;
-    // （原有的 save_ / parallax_ / loadLevel 逻辑保持不变）
-    // ⭐ 场景常驻后，onEnter 可能被多次调用。
-    //    pending save 为空时沿用上次的 save_
-    SaveInfo pending = saveManager_->takePendingSave();
-    if (!pending.filename.empty()) {
-        save_ = pending;
-    }
-    syncFocus();
-
-    save_ = saveManager_->takePendingSave();
-    levelIndex_ = std::max(1, save_.currentLevel);
-
-    // ⭐ 读取本关之前的 PB
-    if (levelIndex_ >= 1 && levelIndex_ <= static_cast<int>(save_.levelBestTimes.size())) {
-        prevBestTime_ = save_.levelBestTimes[levelIndex_ - 1];
-    } else {
-        prevBestTime_ = 0.f;
-    }
-
-    parallax_ = std::make_unique<ParallaxBackground>();
-
-    if (!loadLevel(levelIndex_)) {
-        logger_->error("加载关卡 " + std::to_string(levelIndex_) + " 失败");
-        NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
-                                            NotificationType::Error, 5.f);
-    }
-
-    logger_->info("进入游戏场景，存档: " + save_.filename);
-    syncFocus();
-}
-
-void GameScene::onResume() {
-    nextScene_ = SceneId::None;
-
-    // ⭐ 从 SettingsScene 返回：保持 paused_ 不变（仍显示 PauseMenu）
-    //    但焦点被 SettingsScene 抢走了，要让 PauseMenu 重新接管
-    if (paused_ && pauseMenu_) {
-        pauseMenu_->syncFocus();
-    } else {
-        syncFocus();
-    }
-}
-
-std::string GameScene::windowTitleHint() const {
-    if (paused_) {
-        return Str::T(Str::WinTitleLevelPrefix) +
-               std::to_string(levelIndex_) +
-               Str::T(Str::WinTitlePausedSuffix);
-    }
-    return Str::T(Str::WinTitleLevelPrefix) +
-           std::to_string(levelIndex_) +
-           Str::T(Str::WinTitleLevelSuffix);
-}
-
-void GameScene::subscribeWorldEvents() {
-    if (!world_) return;
-
-    world_->bus().subscribe([this](const GameEvent& e) {
-        const bool particlesOn = preferences_->getBool(ConfigKey::kParticles, true);
-
-        std::visit([this, particlesOn](const auto& ev) {
-            using T = std::decay_t<decltype(ev)>;
-            auto& gp = Gamepad::instance();
-
-            if constexpr (std::is_same_v<T, EvJumped>) {
-                SoundManager::instance().playJump();
-                if (particlesOn) particles_.emitJump(ev.pos);
-            } else if constexpr (std::is_same_v<T, EvLanded>) {
-                SoundManager::instance().playLand();
-                if (particlesOn) particles_.emitLand(ev.pos, ev.intensity);
-                // ⭐ 重落地才振动
-                if (ev.intensity > 1.0f) {
-                    gp.vibrate(0.f, 0.20f, 0.05f);
-                }
-            } else if constexpr (std::is_same_v<T, EvCoined>) {
-                SoundManager::instance().playCoin();
-                if (particlesOn) particles_.emitCoin(ev.pos);
-                gp.vibrate(0.f, 0.15f, 0.03f);
-                AchievementManager::instance().unlock("first_coin");
-            } else if constexpr (std::is_same_v<T, EvStomped>) {
-                SoundManager::instance().playStomp();
-                if (particlesOn) particles_.emitStomp(ev.pos);
-                hitstopTimer_ = 0.06f;
-                gp.vibrate(0.f, 0.30f, 0.08f);
-            } else if constexpr (std::is_same_v<T, EvHurt>) {
-                SoundManager::instance().playHurt();
-                if (particlesOn) particles_.emitHurt(ev.pos);
-                hitstopTimer_ = 0.04f;
-                gp.vibrate(0.40f, 0.60f, 0.15f);
-                tookDamageThisLevel_ = true;
-            } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
-                SoundManager::instance().playCheckpoint();
-                if (particlesOn) particles_.emitCoin(ev.pos);
-                gp.vibrate(0.f, 0.25f, 0.10f);
-            } else if constexpr (std::is_same_v<T, EvJumpPad>) {
-                SoundManager::instance().playJump();
-                if (particlesOn) particles_.emitJump(ev.pos);
-                gp.vibrate(0.30f, 0.50f, 0.10f);
-            } else if constexpr (std::is_same_v<T, EvLevelComplete>) {
-                finalCoins_      = world_->coins();
-                finalTotalCoins_ = world_->totalCoins();
-                finalStars_      = calcStars();
-                applyStars();
-                saveManager_->updateProgress(save_.filename,
-                                             world_->coins(), levelIndex_);
-
-                newRecord_ = (prevBestTime_ <= 0.f || levelTime_ < prevBestTime_);
-                if (newRecord_) {
-                    saveManager_->setLevelBestTime(save_.filename,
-                                                   levelIndex_, levelTime_);
-                }
-
-                SoundManager::instance().playLevelComplete();
-                NotificationSystem::instance().push(
-                    Str::T(Str::NotifLevelCompleteStars) +
-                        std::to_string(finalStars_) +
-                        Str::T(Str::NotifStarSuffix),
-                    NotificationType::Success, 5.f);
-
-                // ⭐ 庆祝振动
-                gp.vibrate(0.70f, 0.80f, 0.40f);
-
-                // ⭐ 检查成就
-                checkAchievements();
-
-                screenFlashTimer_    = 0.35f;
-                screenFlashDuration_ = 0.35f;
-                screenFlashColor_    = sf::Color(120, 255, 150);
-            } else if constexpr (std::is_same_v<T, EvLifeExhausted>) {
-                // 重生时清空粒子：世界不再管这件事，交给持有者
-                particles_.clear();
-
-                SoundManager::instance().playGameOver();
-                NotificationSystem::instance().push(
-                    Str::T(Str::NotifLifeExhausted),
-                    NotificationType::Error, 4.f);
-
-                // ⭐ 长振
-                gp.vibrate(0.60f, 0.70f, 0.30f);
-
-                levelTime_ = 0.f;
-                lastOverlayState_ = GameWorld::State::Playing;
-            }
-        }, e);
-    });
-}
-
-bool GameScene::loadLevel(int index) {
-    auto levelPath = preferences_->assetFile(
-        "levels/level" + std::to_string(index) + ".txt");
-    std::string path = levelPath.string();
-
-    if (!std::filesystem::exists(path)) {
-        logger_->error("关卡文件不存在: " + path);
-        return false;
-    }
-
-    auto level = std::make_unique<Level>();
-    if (!level->loadFromFile(path)) {
-        logger_->error("关卡解析失败: " + path);
-        return false;
-    }
-
-    level->setFont(font_);
-
-    logger_->info("关卡已加载: level" + std::to_string(index) + " " +
-        std::to_string(level->width()) + "x" +
-        std::to_string(level->height()) + " 瓦片");
-
-    world_ = std::make_unique<GameWorld>(
-        std::move(level), index, GameWorld::SpriteSheets::fromFactories());
-    world_->setViewSize(kLogicalW, kLogicalH);
-
-    // ⭐ 校验初始生命值，非法值回退到 1
-    int lives = preferences_->getInt(ConfigKey::kInitialLives, 1);
-    if (lives != 1 && lives != 3 && lives != 5 && lives != 10 && lives != 100) {
-        lives = 1;
-        preferences_->setInt(ConfigKey::kInitialLives, 1);
-    }
-    world_->setInitialLives(lives);
-    levelIndex_ = index;
-
-    levelTime_ = 0.f;
-    hitstopTimer_ = 0.f;
-    screenFlashTimer_ = 0.f;
-    finalStars_ = 0;
-    finalCoins_ = 0;
-    finalTotalCoins_ = 0;
-    newRecord_ = false;
-    tookDamageThisLevel_ = false;
-
-    // ⭐ 读取新关的 PB
-    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
-        prevBestTime_ = save_.levelBestTimes[index - 1];
-    } else {
-        prevBestTime_ = 0.f;
-    }
-
-    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
-        if (!intro_) {
-            intro_ = std::make_unique<LevelIntro>(*font_);
-        }
-        intro_->restart(index, static_cast<float>(world_->totalCoins()),
-                        world_->level().name());
-        introActive_ = true;
-    } else {
-        introActive_ = false;
-    }
-
-    lastHudLives_ = -1;
-    lastOverlayState_ = GameWorld::State::Playing;
-
-    // ⭐ 调试：切关 / 重载时清除暂停
-    paused_ = false;
-
-    // ⭐ 调试：保持无敌状态
-    if (debugInvincible_) {
-        world_->player().setInvincible(true);
-    }
-
-    subscribeWorldEvents();
-    syncFocus();
-
-    return true;
-}
-
-bool GameScene::handleDebugKey(sf::Keyboard::Key k) {
-    // ⭐ 任意调试键都算
-    if (k >= sf::Keyboard::Key::F1 && k <= sf::Keyboard::Key::F10) {
-        AchievementManager::instance().unlock("debug_mode");
-    }
-
-    switch (k) {
-        case sf::Keyboard::Key::F1:
-            debugHud_ = !debugHud_;
-            NotificationSystem::instance().push(
-                debugHud_ ? "调试 HUD: 开" : "调试 HUD: 关",
-                NotificationType::Info, 1.2f);
-            return true;
-
-        case sf::Keyboard::Key::F2:
-            debugInvincible_ = !debugInvincible_;
-            if (world_) world_->player().setInvincible(debugInvincible_);
-            NotificationSystem::instance().push(
-                debugInvincible_ ? "无敌: 开" : "无敌: 关",
-                NotificationType::Info, 1.2f);
-            return true;
-
-        case sf::Keyboard::Key::F3:
-            if (world_) world_->killAllEnemies();
-            NotificationSystem::instance().push(
-                "已清空敌人", NotificationType::Info, 1.2f);
-            return true;
-
-        case sf::Keyboard::Key::F4:
-            loadLevel(levelIndex_);
-            NotificationSystem::instance().push(
-                "重载关卡 " + std::to_string(levelIndex_),
-                NotificationType::Info, 1.2f);
-            return true;
-
-        case sf::Keyboard::Key::F5:
-            if (levelIndex_ > 1) {
-                loadLevel(levelIndex_ - 1);
-                NotificationSystem::instance().push(
-                    "关卡 " + std::to_string(levelIndex_),
-                    NotificationType::Info, 1.2f);
-            }
-            return true;
-
-        case sf::Keyboard::Key::F6:
-            if (levelIndex_ < kMaxLevels) {
-                loadLevel(levelIndex_ + 1);
-                NotificationSystem::instance().push(
-                    "关卡 " + std::to_string(levelIndex_),
-                    NotificationType::Info, 1.2f);
-            }
-            return true;
-
-        case sf::Keyboard::Key::F7: {
-            // 1.0 → 0.5 → 0.25 → 0.1 → 1.0
-            if (debugTimeScale_ > 0.75f)      debugTimeScale_ = 0.5f;
-            else if (debugTimeScale_ > 0.4f)  debugTimeScale_ = 0.25f;
-            else if (debugTimeScale_ > 0.15f) debugTimeScale_ = 0.1f;
-            else                              debugTimeScale_ = 1.f;
-
-            char buf[32];
-            std::snprintf(buf, sizeof(buf), "慢动作: %.2fx",
-                          static_cast<double>(debugTimeScale_));
-            NotificationSystem::instance().push(buf, NotificationType::Info, 1.2f);
-            return true;
-        }
-
-        case sf::Keyboard::Key::F8:
-            debugShowColliders_ = !debugShowColliders_;
-            NotificationSystem::instance().push(
-                debugShowColliders_ ? "碰撞盒: 开" : "碰撞盒: 关",
-                NotificationType::Info, 1.2f);
-            return true;
-
-        case sf::Keyboard::Key::F9:
-            pendingScreenshot_ = true;
-            return true;
-
-        case sf::Keyboard::Key::F10:
-            perfHud_ = !perfHud_;
-            NotificationSystem::instance().push(
-                perfHud_ ? "性能面板: 开" : "性能面板: 关",
-                NotificationType::Info, 1.2f);
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-void GameScene::renderDebugHud(sf::RenderTarget& rt, Window& window) {
-    if (!world_) return;
-
-    const auto& level  = world_->level();
-    const auto& player = world_->player();
-
-    Vec2 pos  = player.position();
-    Vec2 vel  = player.velocity();
-    Vec2 cam  = world_->cameraCenter();
-
-    // 鼠标世界坐标
-    sf::Vector2i mousePix = sf::Mouse::getPosition(window.native());
-    sf::Vector2f mouseWorld =
-        window.native().mapPixelToCoords(mousePix, lastWorldView_);
-    int ts = level.tileSize();
-    int tx = static_cast<int>(std::floor(mouseWorld.x / ts));
-    int ty = static_cast<int>(std::floor(mouseWorld.y / ts));
-    char tileChar = ' ';
-    if (tx >= 0 && tx < level.width() && ty >= 0 && ty < level.height()) {
-        tileChar = level.tileAt(tx, ty);
-    }
-
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(1);
-    oss << "关卡 " << levelIndex_;
-    if (!level.name().empty()) oss << " [" << level.name() << "]";
-    oss << "  " << level.width() << "x" << level.height();
-    oss << "\n玩家 (" << pos.x << ", " << pos.y << ")";
-    oss << "  vel (" << vel.x << ", " << vel.y << ")";
-    oss << "\n" << (player.onGround() ? "地面" : "空中");
-    if (player.isInvincible()) oss << "  无敌";
-    if (player.isInvinciblePersistent()) oss << " ⚡";
-    oss << "\n相机 (" << cam.x << ", " << cam.y << ")";
-    oss << "\n金币 " << world_->coins() << "/" << world_->totalCoins()
-        << "  生命 " << world_->lives();
-    oss << "\n鼠标 tile(" << tx << ", " << ty << ") '" << tileChar << "'";
-    oss << "\n[F1]HUD [F2]无敌 [F3]杀敌 [F4]重载 [F5]上关 [F6]下关";
-    oss << " [F7]慢动作 [F8]碰撞盒 [F9]截图";
-
-    debugText_.setString(toSf(oss.str()));
-
-    // 背景
-    auto b = debugText_.getLocalBounds();
-    const float padX = 8.f, padY = 6.f;
-    sf::RectangleShape bg({
-        b.size.x + padX * 2.f,
-        b.size.y + padY * 2.f
-    });
-    bg.setPosition({12.f, 42.f});
-    bg.setFillColor(sf::Color(0, 0, 0, 160));
-    bg.setOutlineThickness(1.f);
-    bg.setOutlineColor(sf::Color(120, 120, 160, 180));
-    rt.draw(bg);
-
-    debugText_.setPosition({12.f + padX - b.position.x, 42.f + padY - b.position.y});
-    rt.draw(debugText_);
-}
-
-void GameScene::renderPerfHud(sf::RenderTarget& rt, Window& window,
-                              float winW, float /*winH*/) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2);
-
-    float fps = (perfFrameMs_ > 0.01f) ? (1000.f / perfFrameMs_) : 0.f;
-    float endFrameMs = window.upscalePostMs();
-
-    oss << "性能面板 [F10]\n";
-    oss << "帧时间      " << perfFrameMs_ << " ms";
-    oss << "  (" << std::setprecision(1) << fps << " FPS)\n";
-    oss << std::setprecision(2);
-    oss << "update      " << perfUpdateMs_ << " ms\n";
-    oss << "render      " << perfRenderMs_ << " ms\n";
-    oss << "上采样+后处理 " << endFrameMs << " ms\n";
-    oss << "渲染缩放    " << std::setprecision(0)
-        << static_cast<int>(window.getRenderScale() * 100.f) << "%\n";
-    oss << "超分模式    ";
-    switch (window.getUpscaleMode()) {
-        case 0: oss << "关";       break;
-        case 1: oss << "双三次";   break;
-        case 2: oss << "FSR1";     break;
-        default: oss << "?";       break;
-    }
-
-    perfText_.setString(toSf(oss.str()));
-
-    auto b = perfText_.getLocalBounds();
-    const float padX = 10.f, padY = 8.f;
-    float boxW = b.size.x + padX * 2.f;
-    float boxH = b.size.y + padY * 2.f;
-
-    float bx = winW - boxW - 12.f;
-    float by = 42.f;
-
-    sf::RectangleShape bg({boxW, boxH});
-    bg.setPosition({bx, by});
-    bg.setFillColor(sf::Color(0, 0, 0, 170));
-    bg.setOutlineThickness(1.f);
-    bg.setOutlineColor(sf::Color(160, 220, 255, 180));
-    rt.draw(bg);
-
-    perfText_.setPosition({bx + padX - b.position.x, by + padY - b.position.y});
-    rt.draw(perfText_);
-}
-
-
-void GameScene::syncFocus() {
-    // 暂停菜单打开时，焦点交给 PauseMenu 管理，这里不动
-    if (paused_ && pauseMenu_) return;
-
-    // 开场动画显示中，不设焦点
-    if (introActive_) {
-        FocusGroup::instance().clear();
-        return;
-    }
-
-    // LevelComplete 状态：设 overlay 按钮
-    if (world_ && world_->state() == GameWorld::State::LevelComplete
-        && !overlayButtons_.empty()) {
-        std::vector<Button*> items;
-        for (auto& b : overlayButtons_) items.push_back(b.get());
-        FocusGroup::instance().setItems(items);
-        return;
-    }
-
-    // Playing 状态：无焦点
-    FocusGroup::instance().clear();
-}
-
-
-bool GameScene::advanceToNextLevel() {
-    int next = levelIndex_ + 1;
-    if (next > kMaxLevels) return false;
-
-    // 先确认关卡文件存在，避免 loadLevel 打 error 日志
-    auto nextPath = preferences_->assetFile(
-        "levels/level" + std::to_string(next) + ".txt");
-    if (!std::filesystem::exists(nextPath)) return false;
-
-    if (!loadLevel(next)) return false;
-
-    NotificationSystem::instance().push(
-        Str::T(Str::NotifEnterLevel) + std::to_string(levelIndex_) +
-            Str::T(Str::NotifLevelSuffix),
-        NotificationType::Info);
-    saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
-    return true;
-}
-
-void GameScene::refreshHud() {
-    int lives = world_->lives();
-    int coins = world_->coins();
-
-    if (lives == lastHudLives_ &&
-        coins == lastHudCoins_ &&
-        levelIndex_ == lastHudLevel_) {
-        return;
-    }
-
-    lastHudLives_ = lives;
-    lastHudCoins_ = coins;
-    lastHudLevel_ = levelIndex_;
-
-    char timeBuf[32];
-    std::snprintf(timeBuf, sizeof(timeBuf), "%.1f", levelTime_);
-
-    std::string hud =
-        Str::T(Str::HudSave) + save_.name +
-        "   " + Str::T(Str::HudLevel) + std::to_string(levelIndex_) +
-        "   " + Str::T(Str::HudLives) + std::to_string(lives) +
-        "   " + Str::T(Str::HudCoins) + std::to_string(coins) +
-        " / " + std::to_string(world_->totalCoins()) +
-        "   " + Str::T(Str::HudTime) + timeBuf + "s";
-
-    if (world_->player().keys() > 0) {
-        hud += "   " + Str::T(Str::HudKeys) + std::to_string(world_->player().keys());
-    }
-    hud += "   " + Str::T(Str::HudHelp);
-    hudText_.setString(toSf(hud));
-}
-
-int GameScene::targetTime() const {
-    if (!world_) return 60;
-    int totalCoins = world_->totalCoins();
-    return static_cast<int>(kBaseTime + totalCoins * kPerCoinTime);
-}
-
-int GameScene::calcStars() const {
-    if (!world_) return 1;
-
-    bool allCoins = (world_->coins() == world_->totalCoins());
-    bool fastEnough = (levelTime_ <= static_cast<float>(targetTime()));
-
-    if (allCoins && fastEnough) return 3;
-    if (allCoins || fastEnough) return 2;
-    return 1;
-}
-
-void GameScene::applyStars() {
-    if (finalStars_ <= 0) return;
-    saveManager_->setLevelStar(save_.filename, levelIndex_, finalStars_);
-}
-
-void GameScene::checkAchievements() {
-    auto& am = AchievementManager::instance();
-
-    // 第一次通关
-    am.unlock("first_level");
-
-    // 单关 3 星
-    if (finalStars_ >= 3) am.unlock("three_stars");
-
-    // 单关全金币
-    if (finalTotalCoins_ > 0 && finalCoins_ == finalTotalCoins_) {
-        am.unlock("perfect_level");
-    }
-
-    // 速通
-    if (levelTime_ > 0.f && levelTime_ < 30.f) {
-        am.unlock("speedrun");
-    }
-
-    // 无伤
-    if (!tookDamageThisLevel_) {
-        am.unlock("no_damage");
-    }
-
-    // 读最新存档，检查全关 / 全星
-    SaveInfo updated;
-    if (saveManager_->loadSave(save_.filename, updated)) {
-        const auto& stars = updated.levelStars;
-        if (!stars.empty()) {
-            bool allCleared = std::all_of(stars.begin(), stars.end(),
-                                          [](int s) { return s > 0; });
-            if (allCleared) am.unlock("all_levels");
-
-            bool allThree = std::all_of(stars.begin(), stars.end(),
-                                        [](int s) { return s >= 3; });
-            if (allThree) am.unlock("all_stars");
-        }
-    }
-}
-
-void GameScene::rebuildOverlayButtons() {
-    overlayButtons_.clear();
-
-    // 现在只有 LevelComplete 需要按钮
-    if (world_->state() != GameWorld::State::LevelComplete) return;
-
-    const float winW = lastOverlayWinW_;
-    const float winH = lastOverlayWinH_;
-
-    const float bw = 180.f;
-    const float bh = 50.f;
-    const float gap = 15.f;
-    const float totalW = bw * 3.f + gap * 2.f;
-    const float x0 = (winW - totalW) * 0.5f;
-    const float y  = winH * 0.5f + 130.f;
-
-    overlayButtons_.push_back(std::make_unique<Button>(
-        Str::T(Str::BtnNextLevel), *font_,
-        sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
-    overlayButtons_.push_back(std::make_unique<Button>(
-        Str::T(Str::BtnReplay), *font_,
-        sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
-    overlayButtons_.push_back(std::make_unique<Button>(
-        Str::T(Str::Back), *font_,
-        sf::Vector2f{x0 + (bw + gap) * 2.f, y}, sf::Vector2f{bw, bh}, 22));
-}
-
-void GameScene::refreshOverlayLayout(float winW, float winH) {
-    auto state = world_->state();
-    if (winW == lastOverlayWinW_ &&
-        winH == lastOverlayWinH_ &&
-        state == lastOverlayState_) {
-        return;
-    }
-    lastOverlayWinW_ = winW;
-    lastOverlayWinH_ = winH;
-    lastOverlayState_ = state;
-
-    if (state == GameWorld::State::Playing) {
-        overlayButtons_.clear();
-        // ⭐ 暂停时不清焦点，否则会覆盖 PauseMenu 刚设好的
-        if (!paused_) {
-            FocusGroup::instance().clear();
-        }
-        return;
-    }
-
-    rebuildOverlayButtons();
-
-    overlayBg_.setSize({winW, winH});
-    overlayBg_.setFillColor(sf::Color(0, 0, 0, 180));
-
-    std::string title = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex_) +
-                        " " + Str::T(Str::LevelCompleteTitle);
-    overlayTitle_.setString(toSf(title));
-    overlayTitle_.setFillColor(sf::Color(100, 240, 120));
-    auto tb = overlayTitle_.getLocalBounds();
-    overlayTitle_.setOrigin({tb.position.x + tb.size.x / 2.f,
-                             tb.position.y + tb.size.y / 2.f});
-    overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
-
-    // 第一行：金币
-    std::string stats = Str::T(Str::OverlayCoins) + std::to_string(finalCoins_) +
-                        " / " + std::to_string(finalTotalCoins_);
-    overlayHint_.setString(toSf(stats));
-    overlayHint_.setFillColor(sf::Color(200, 200, 220));
-    auto hb = overlayHint_.getLocalBounds();
-    overlayHint_.setOrigin({hb.position.x + hb.size.x / 2.f,
-                            hb.position.y + hb.size.y / 2.f});
-    overlayHint_.setPosition({winW / 2.f, winH / 2.f - 70.f});
-
-    // 第二行：PB（只在通关时显示）
-    std::string pbLine;
-    if (newRecord_) {
-        pbLine = Str::T(Str::OverlayNewRecord);
-    } else if (prevBestTime_ > 0.f) {
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%s%.2f%s",
-                      Str::T(Str::OverlayBestTime).c_str(),
-                      prevBestTime_,
-                      Str::T(Str::OverlaySeconds).c_str());
-        pbLine = buf;
-    }
-    overlaySubHint_.setString(toSf(pbLine));
-
-    char timeBuf[128];
-    std::snprintf(timeBuf, sizeof(timeBuf),
-                  "%s%.1f%s  /  %s%d%s",
-                  Str::T(Str::OverlayTime).c_str(),
-                  levelTime_,
-                  Str::T(Str::OverlaySeconds).c_str(),
-                  Str::T(Str::OverlayTarget).c_str(),
-                  targetTime(),
-                  Str::T(Str::OverlaySeconds).c_str());
-    overlayTime_.setString(toSf(timeBuf));
-    auto tb2 = overlayTime_.getLocalBounds();
-    overlayTime_.setOrigin({tb2.position.x + tb2.size.x / 2.f,
-                            tb2.position.y + tb2.size.y / 2.f});
-    overlayTime_.setPosition({winW / 2.f, winH / 2.f - 25.f});
-
-    {
-        std::string stars;
-        for (int i = 0; i < 3; ++i) {
-            stars += (i < finalStars_) ? "\u2605" : "\u2606";
-            if (i < 2) stars += "  ";
-        }
-        overlayStars_.setString(toSf(stars));
-        auto sb = overlayStars_.getLocalBounds();
-        overlayStars_.setOrigin({sb.position.x + sb.size.x / 2.f,
-                                 sb.position.y + sb.size.y / 2.f});
-        overlayStars_.setPosition({winW / 2.f, winH / 2.f + 60.f});
-    }
-   // PB 行位置（时间下面）
-    {
-        auto sb = overlaySubHint_.getLocalBounds();
-        overlaySubHint_.setOrigin({sb.position.x + sb.size.x / 2.f,
-                                   sb.position.y + sb.size.y / 2.f});
-        overlaySubHint_.setFillColor(newRecord_
-            ? sf::Color(255, 220, 80)
-            : sf::Color(180, 180, 200));
-        overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 20.f});
-    }
-}
-
-void GameScene::handleEvent(const sf::Event& event) {
-    // ⭐ 调试快捷键：优先响应
-    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (handleDebugKey(kp->code)) return;
-    }
-
-    if (paused_) {
-        pauseMenu_->handleEvent(event);
-        return;
-    }
-
-    if (introActive_) {
-        if (event.getIf<sf::Event::KeyPressed>() ||
-            event.getIf<sf::Event::MouseButtonPressed>()) {
-            intro_->skip();
-            introActive_ = false;
-        }
-        return;
-    }
-
-    auto state = world_->state();
-
-    if (state != GameWorld::State::Playing) {
-        // ⭐ 先转发给 overlay 按钮
-        for (auto& b : overlayButtons_) b->handleEvent(event);
-
-        if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-            if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
-                nextScene_ = SceneId::Back;
-                return;
-            }
-            if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
-                world_->reset();
-                particles_.clear();
-                levelTime_ = 0.f;
-                hitstopTimer_ = 0.f;
-                screenFlashTimer_ = 0.f;
-                finalStars_ = 0;
-                finalCoins_ = 0;
-                finalTotalCoins_ = 0;
-                lastOverlayState_ = GameWorld::State::Playing;
-                return;
-            }
-            if (state == GameWorld::State::LevelComplete) {
-                if (kp->code == sf::Keyboard::Key::Enter ||
-                    kp->code == sf::Keyboard::Key::Space) {
-                    if (!advanceToNextLevel()) {
-                        NotificationSystem::instance().push(
-                    Str::T(Str::NotifAllClear),
-                    NotificationType::Success, 5.f);
-                    }
-                }
-            }
-        }
-        return;
-    }
-
-    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
-            paused_ = true;
-            pauseMenu_->reset();
-            return;
-        }
-        if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
-            world_->reset();
-            particles_.clear();
-            levelTime_ = 0.f;
-            hitstopTimer_ = 0.f;
-            screenFlashTimer_ = 0.f;
-            lastOverlayState_ = GameWorld::State::Playing;
-            NotificationSystem::instance().push(Str::T(Str::NotifRespawned),
-                                                NotificationType::Info);
-            return;
-        }
-    }
-    world_->handleEvent(event);
-}
-
-void GameScene::update(float dt) {
-    // ⭐ 帧时间（含 vsync 等待）+ update 耗时
-    perfFrameMs_ = perfFrameClock_.restart().asSeconds() * 1000.f;
-    ScopeTimer timer(perfUpdateMs_);
-
-    if (screenFlashTimer_ > 0.f) screenFlashTimer_ -= dt;
-
-    if (paused_) {
-        pauseMenu_->update(dt);
-        auto action = pauseMenu_->consumeAction();
-        if (action == PauseMenu::Action::Resume) {
-            paused_ = false;
-            syncFocus();
-        } else if (action == PauseMenu::Action::SaveAndQuit) {
-            saveManager_->updateProgress(save_.filename, world_->coins(),
-                                         levelIndex_);
-            nextScene_ = SceneId::Back;
-        } else if (action == PauseMenu::Action::OpenSettings) {
-            // ⭐ push SettingsScene。paused_ 保持 true，
-            //    返回时 onResume 会 unpause
-            nextScene_ = SceneId::Settings;
-        }
-        return;
-    }
-
-    // ⭐ 慢动作（只在游戏逻辑生效，不影响暂停菜单和计时 UI）
-    dt *= debugTimeScale_;
-
-    // ⭐ 检测世界状态变化，同步焦点（Playing ↔ LevelComplete）
-    if (world_) {
-        auto state = world_->state();
-        if (state != lastFocusState_) {
-            lastFocusState_ = state;
-            syncFocus();
-        }
-    }
-
-    if (introActive_) {
-        intro_->update(dt);
-        if (parallax_) parallax_->update(dt);
-        if (intro_->isFinished()) introActive_ = false;
-        return;
-    }
-
-    auto state = world_->state();
-    if (state != GameWorld::State::Playing) {
-        // ⭐ 处理 overlay 按钮点击
-        if (state == GameWorld::State::LevelComplete && overlayButtons_.size() >= 3) {
-            if (overlayButtons_[0]->consumeClick()) {
-                if (!advanceToNextLevel()) {
-                    NotificationSystem::instance().push(
-                    Str::T(Str::NotifAllClear),
-                    NotificationType::Success, 5.f);
-                }
-                return;
-            }
-            if (overlayButtons_[1]->consumeClick()) {
-                world_->reset();
-                particles_.clear();
-                levelTime_ = 0.f;
-                finalStars_ = 0;
-                finalCoins_ = 0;
-                finalTotalCoins_ = 0;
-                lastOverlayState_ = GameWorld::State::Playing;
-                return;
-            }
-            if (overlayButtons_[2]->consumeClick()) {
-                nextScene_ = SceneId::Back;
-                return;
-            }
-        }
-        return;
-    }
-
-    // 受击停顿：冻结游戏逻辑和计时
-    if (hitstopTimer_ > 0.f) {
-        hitstopTimer_ -= dt;
-        return;
-    }
-
-    levelTime_ += dt;
-
-    world_->update(dt);
-
-    // 粒子开关每帧同步一次。update 先于 render，所以这一处赋值对两者都生效，
-    // 不需要在 render 里再读一遍偏好。
-    particlesOn_ = preferences_->getBool(ConfigKey::kParticles, true);
-
-    // 开关关闭时直接清空，行为与旧实现一致（旧代码在 GameWorld::update 里）
-    if (particlesOn_) particles_.update(dt);
-    else              particles_.clear();
-    if (parallax_) parallax_->update(dt);
-}
-
-void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH) {
-    refreshOverlayLayout(winW, winH);
-
-    auto state = world_->state();
-    if (state == GameWorld::State::Playing) return;
-
-    rt.draw(overlayBg_);
-    rt.draw(overlayTitle_);
-    rt.draw(overlayHint_);
-    if (state == GameWorld::State::LevelComplete) {
-        rt.draw(overlayTime_);
-        rt.draw(overlayStars_);
-    }
-    rt.draw(overlaySubHint_);
-
-    for (auto& b : overlayButtons_) b->render(rt);
-}
-
-void GameScene::render(Window& window) {
-    ScopeTimer timer(perfRenderMs_);
-
-    auto& rt = window.target();
-    auto winSize = window.native().getSize();
-    float winW = static_cast<float>(winSize.x);
-    float winH = static_cast<float>(winSize.y);
-
-    sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
-
-    rt.setView(screenView);
-    rt.clear(sf::Color::Black);
-    if (background_) background_->render(rt);
-
-    if (winW != lastViewWinW_ || winH != lastViewWinH_) {
-        lastViewWinW_ = winW;
-        lastViewWinH_ = winH;
-
-        worldView_ = sf::View(sf::FloatRect({0.f, 0.f}, {kLogicalW, kLogicalH}));
-        float scale = std::min(winW / kLogicalW, winH / kLogicalH);
-        float vpW = kLogicalW * scale / winW;
-        float vpH = kLogicalH * scale / winH;
-        float vpX = (1.f - vpW) * 0.5f;
-        float vpY = (1.f - vpH) * 0.5f;
-        worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
-    }
-
-    world_->setShowColliders(
-        debugShowColliders_ || preferences_->getBool(ConfigKey::kShowColliders, false));
-    world_->setScreenShake(preferences_->getBool(ConfigKey::kScreenShake, true));
-    world_->setPseudo3D(preferences_->getBool(ConfigKey::kPseudo3d, true));
-    world_->setPlayerAnimation(preferences_->getBool(ConfigKey::kPlayerAnimation, true));
-
-    Vec2 camCenter = world_->cameraCenter();
-    worldView_.setCenter({camCenter.x, camCenter.y});
-    rt.setView(worldView_);
-    lastWorldView_ = worldView_;   // ⭐ 供调试 HUD 用
-
-    if (parallax_ && preferences_->getBool(ConfigKey::kParallax, true)) {
-        float camLeft = camCenter.x - kLogicalW * 0.5f;
-        float camTop  = camCenter.y - kLogicalH * 0.5f;
-        parallax_->render(rt, camLeft, camTop, kLogicalW, kLogicalH);
-    }
-
-    world_->render(rt);
-
-    // 粒子画在场景对象之上。
-    // 注意：调试碰撞盒是在 world_->render() 内部画的，所以粒子现在会盖住它 ——
-    // 与改造前（GameWorld 里 粒子 -> 碰撞盒 的顺序）不同，仅影响 F8 调试视图。
-    if (particlesOn_) particles_.render(rt);
-
-    rt.setView(screenView);
-
-    refreshHud();
-    hudText_.setPosition({20.f, 16.f});
-    rt.draw(hudText_);
-
-    // ⭐ 调试 HUD
-    if (debugHud_) {
-        renderDebugHud(rt, window);
-    }
-
-    // ⭐ 性能面板
-    if (perfHud_) {
-        renderPerfHud(rt, window, winW, winH);
-    }
-
-    if (introActive_) intro_->render(rt, winW, winH);
-
-    renderStateOverlay(rt, winW, winH);
-
-    if (paused_ && pauseMenu_) {
-        pauseMenu_->relayout({winW, winH});
-        pauseMenu_->render(rt);
-    }
-
-    // 屏幕闪光（最上层）
-    if (screenFlashTimer_ > 0.f) {
-        float t = screenFlashTimer_ / screenFlashDuration_;
-        t = std::clamp(t, 0.f, 1.f);
-
-        sf::RectangleShape flash({winW, winH});
-        sf::Color c = screenFlashColor_;
-        c.a = static_cast<std::uint8_t>(t * 200.f);
-        flash.setFillColor(c);
-        rt.draw(flash);
-    }
-
-    // ⭐ 截图（用 glReadPixels 抓当前帧缓冲）
-    if (pendingScreenshot_) {
-        pendingScreenshot_ = false;
-
-        GLint vp[4];
-        glGetIntegerv(GL_VIEWPORT, vp);
-        int vw = vp[2];
-        int vh = vp[3];
-
-        if (vw > 0 && vh > 0) {
-            std::vector<std::uint8_t> pixels(
-                static_cast<std::size_t>(vw) * vh * 4);
-            glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-            sf::Image img({static_cast<unsigned>(vw),
-                           static_cast<unsigned>(vh)});
-            // glReadPixels 原点在左下，sf::Image 原点在左上 → 翻转 Y
-            for (int y = 0; y < vh; ++y) {
-                int srcY = vh - 1 - y;
-                for (int x = 0; x < vw; ++x) {
-                    std::size_t si =
-                        (static_cast<std::size_t>(srcY) * vw + x) * 4;
-                    img.setPixel(
-                        {static_cast<unsigned>(x), static_cast<unsigned>(y)},
-                        sf::Color(pixels[si + 0], pixels[si + 1],
-                                  pixels[si + 2], pixels[si + 3]));
-                }
-            }
-
-            namespace fs = std::filesystem;
-            fs::path dir = fs::current_path() / "screenshots";
-            std::error_code ec;
-            fs::create_directories(dir, ec);
-
-            auto now = std::chrono::system_clock::now();
-            std::time_t tt = std::chrono::system_clock::to_time_t(now);
-            std::tm tm{};
-#ifdef _WIN32
-            localtime_s(&tm, &tt);
-#else
-            localtime_r(&tt, &tm);
-#endif
-            char buf[32];
-            std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tm);
-
-            fs::path file = dir / (std::string("shot_") + buf + ".png");
-            if (img.saveToFile(file.string())) {
-                NotificationSystem::instance().push(
-                    "截图已保存: screenshots/" + file.filename().string(),
-                    NotificationType::Success, 2.f);
-            } else {
-                NotificationSystem::instance().push(
-                    "截图保存失败", NotificationType::Error, 2.f);
-            }
-        } else {
-            NotificationSystem::instance().push(
-                "截图失败: viewport 为空", NotificationType::Error, 2.f);
-        }
-    }
 }===== ./src/scene/settings_scene.cpp =====
 #include "settings_scene.h"
 #include "utils/text_strings.h"
@@ -14256,6 +13167,1152 @@ void SettingsScene::render(Window& window) {
         // 返回按钮最后画，确保在最上层
         backButton_->setPosition({backX, y});
         backButton_->render(native);
+    }
+}===== ./src/scene/editor_tools.cpp =====
+#include "scene/editor_tools.h"
+
+#include <algorithm>
+#include <cstdlib>
+
+namespace EditorTools {
+
+std::vector<sf::Vector2i> rectCells(sf::Vector2i a, sf::Vector2i b) {
+    const int x0 = std::min(a.x, b.x);
+    const int x1 = std::max(a.x, b.x);
+    const int y0 = std::min(a.y, b.y);
+    const int y1 = std::max(a.y, b.y);
+
+    std::vector<sf::Vector2i> cells;
+    cells.reserve(static_cast<std::size_t>(x1 - x0 + 1) *
+                  static_cast<std::size_t>(y1 - y0 + 1));
+
+    // 行优先：与原来编辑器里的双重循环顺序一致
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+            cells.push_back({x, y});
+
+    return cells;
+}
+
+std::vector<sf::Vector2i> lineCells(sf::Vector2i from, sf::Vector2i to) {
+    // 这段是原 EditorScene::paintLine 里的 Bresenham，逐字搬过来。
+    // 抽取只是把"画哪几格"与"怎么画"分开，算法本身一个字没改。
+    int x0 = from.x, y0 = from.y;
+    int x1 = to.x,   y1 = to.y;
+    const int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    const int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    std::vector<sf::Vector2i> cells;
+    while (true) {
+        cells.push_back({x0, y0});
+        if (x0 == x1 && y0 == y1) break;
+
+        const int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    return cells;
+}
+
+} // namespace EditorTools
+===== ./src/scene/game_scene.cpp =====
+#include "game_scene.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+#include "notification.h"
+#include "sound_manager.h"
+#include "infrastructure/keybindings.h"
+#include "game_constants.h"
+#include "game/score_rules.h"
+#include "focus_group.h"
+#include "infrastructure/gamepad.h"
+#include "achievement.h"
+#include "config/keys.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <SFML/OpenGL.hpp>
+#include <chrono>
+#include <cstdint>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+#include <type_traits>
+#include <variant>
+
+namespace {
+// ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
+
+// ⭐ 作用域计时器（EMA 平滑写入）
+struct ScopeTimer {
+    using Clock = std::chrono::high_resolution_clock;
+    Clock::time_point t0;
+    float& out;
+    explicit ScopeTimer(float& target)
+        : t0(Clock::now()), out(target) {}
+    ~ScopeTimer() {
+        auto t1 = Clock::now();
+        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+        out = out * 0.9f + ms * 0.1f;
+    }
+};
+}
+
+GameScene::GameScene(std::shared_ptr<Background>  background,
+                     const sf::Font&              font,
+                     std::shared_ptr<Logger>      logger,
+                     std::shared_ptr<SaveManager> saveManager,
+                     std::shared_ptr<Preferences> preferences)
+    : background_(std::move(background)),
+      logger_(std::move(logger)),
+      saveManager_(std::move(saveManager)),
+      preferences_(std::move(preferences)),
+      font_(&font),
+      hudText_(font, sf::String(), 20),
+      overlayTitle_(font, sf::String(), 48),
+      overlayHint_(font, sf::String(), 24),
+      overlaySubHint_(font, sf::String(), 20),
+      overlayTime_(font, sf::String(), 22),
+      overlayStars_(font, sf::String(), 56),
+      debugText_(font, sf::String(), 14),
+      perfText_(font, sf::String(), 14) {
+    debugText_.setFillColor(sf::Color(255, 255, 130));
+    debugText_.setOutlineThickness(2.f);
+    debugText_.setOutlineColor(sf::Color(0, 0, 0, 200));
+    perfText_.setFillColor(sf::Color(160, 240, 255));
+    perfText_.setOutlineThickness(2.f);
+    perfText_.setOutlineColor(sf::Color(0, 0, 0, 200));
+
+    // ⭐ PauseMenu 常驻，避免频繁析构 sf::Text
+    pauseMenu_ = std::make_unique<PauseMenu>(
+        font, preferences_, sf::Vector2f(kLogicalW, kLogicalH));
+
+    hudText_.setFillColor(sf::Color::White);
+    overlayTitle_.setFillColor(sf::Color(255, 255, 255));
+    overlayHint_.setFillColor(sf::Color(200, 200, 220));
+    overlaySubHint_.setFillColor(sf::Color(180, 180, 200));
+    overlayTime_.setFillColor(sf::Color(220, 220, 240));
+    overlayStars_.setFillColor(sf::Color(255, 220, 80));
+}
+
+void GameScene::onEnter() {
+    nextScene_ = SceneId::None;
+    // （原有的 save_ / parallax_ / loadLevel 逻辑保持不变）
+    // ⭐ 场景常驻后，onEnter 可能被多次调用。
+    //    pending save 为空时沿用上次的 save_
+    SaveInfo pending = saveManager_->takePendingSave();
+    if (!pending.filename.empty()) {
+        save_ = pending;
+    }
+    syncFocus();
+
+    save_ = saveManager_->takePendingSave();
+    levelIndex_ = std::max(1, save_.currentLevel);
+
+    // ⭐ 读取本关之前的 PB
+    if (levelIndex_ >= 1 && levelIndex_ <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[levelIndex_ - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
+
+    parallax_ = std::make_unique<ParallaxBackground>();
+
+    if (!loadLevel(levelIndex_)) {
+        logger_->error("加载关卡 " + std::to_string(levelIndex_) + " 失败");
+        NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
+                                            NotificationType::Error, 5.f);
+    }
+
+    logger_->info("进入游戏场景，存档: " + save_.filename);
+    syncFocus();
+}
+
+void GameScene::onResume() {
+    nextScene_ = SceneId::None;
+
+    // ⭐ 从 SettingsScene 返回：保持 paused_ 不变（仍显示 PauseMenu）
+    //    但焦点被 SettingsScene 抢走了，要让 PauseMenu 重新接管
+    if (paused_ && pauseMenu_) {
+        pauseMenu_->syncFocus();
+    } else {
+        syncFocus();
+    }
+}
+
+std::string GameScene::windowTitleHint() const {
+    if (paused_) {
+        return Str::T(Str::WinTitleLevelPrefix) +
+               std::to_string(levelIndex_) +
+               Str::T(Str::WinTitlePausedSuffix);
+    }
+    return Str::T(Str::WinTitleLevelPrefix) +
+           std::to_string(levelIndex_) +
+           Str::T(Str::WinTitleLevelSuffix);
+}
+
+void GameScene::subscribeWorldEvents() {
+    if (!world_) return;
+
+    world_->bus().subscribe([this](const GameEvent& e) {
+        const bool particlesOn = preferences_->getBool(ConfigKey::kParticles, true);
+
+        std::visit([this, particlesOn](const auto& ev) {
+            using T = std::decay_t<decltype(ev)>;
+            auto& gp = Gamepad::instance();
+
+            if constexpr (std::is_same_v<T, EvJumped>) {
+                SoundManager::instance().playJump();
+                if (particlesOn) particles_.emitJump(ev.pos);
+            } else if constexpr (std::is_same_v<T, EvLanded>) {
+                SoundManager::instance().playLand();
+                if (particlesOn) particles_.emitLand(ev.pos, ev.intensity);
+                // ⭐ 重落地才振动
+                if (ev.intensity > 1.0f) {
+                    gp.vibrate(0.f, 0.20f, 0.05f);
+                }
+            } else if constexpr (std::is_same_v<T, EvCoined>) {
+                SoundManager::instance().playCoin();
+                if (particlesOn) particles_.emitCoin(ev.pos);
+                gp.vibrate(0.f, 0.15f, 0.03f);
+                AchievementManager::instance().unlock("first_coin");
+            } else if constexpr (std::is_same_v<T, EvStomped>) {
+                SoundManager::instance().playStomp();
+                if (particlesOn) particles_.emitStomp(ev.pos);
+                hitstopTimer_ = 0.06f;
+                gp.vibrate(0.f, 0.30f, 0.08f);
+            } else if constexpr (std::is_same_v<T, EvHurt>) {
+                SoundManager::instance().playHurt();
+                if (particlesOn) particles_.emitHurt(ev.pos);
+                hitstopTimer_ = 0.04f;
+                gp.vibrate(0.40f, 0.60f, 0.15f);
+                tookDamageThisLevel_ = true;
+            } else if constexpr (std::is_same_v<T, EvCheckpoint>) {
+                SoundManager::instance().playCheckpoint();
+                if (particlesOn) particles_.emitCoin(ev.pos);
+                gp.vibrate(0.f, 0.25f, 0.10f);
+            } else if constexpr (std::is_same_v<T, EvJumpPad>) {
+                SoundManager::instance().playJump();
+                if (particlesOn) particles_.emitJump(ev.pos);
+                gp.vibrate(0.30f, 0.50f, 0.10f);
+            } else if constexpr (std::is_same_v<T, EvLevelComplete>) {
+                finalCoins_      = world_->coins();
+                finalTotalCoins_ = world_->totalCoins();
+                finalStars_      = calcStars();
+                applyStars();
+                saveManager_->updateProgress(save_.filename,
+                                             world_->coins(), levelIndex_);
+
+                newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
+                if (newRecord_) {
+                    saveManager_->setLevelBestTime(save_.filename,
+                                                   levelIndex_, levelTime_);
+                }
+
+                SoundManager::instance().playLevelComplete();
+                NotificationSystem::instance().push(
+                    Str::T(Str::NotifLevelCompleteStars) +
+                        std::to_string(finalStars_) +
+                        Str::T(Str::NotifStarSuffix),
+                    NotificationType::Success, 5.f);
+
+                // ⭐ 庆祝振动
+                gp.vibrate(0.70f, 0.80f, 0.40f);
+
+                // ⭐ 检查成就
+                checkAchievements();
+
+                screenFlashTimer_    = 0.35f;
+                screenFlashDuration_ = 0.35f;
+                screenFlashColor_    = sf::Color(120, 255, 150);
+            } else if constexpr (std::is_same_v<T, EvLifeExhausted>) {
+                // 重生时清空粒子：世界不再管这件事，交给持有者
+                particles_.clear();
+
+                SoundManager::instance().playGameOver();
+                NotificationSystem::instance().push(
+                    Str::T(Str::NotifLifeExhausted),
+                    NotificationType::Error, 4.f);
+
+                // ⭐ 长振
+                gp.vibrate(0.60f, 0.70f, 0.30f);
+
+                levelTime_ = 0.f;
+                lastOverlayState_ = GameWorld::State::Playing;
+            }
+        }, e);
+    });
+}
+
+bool GameScene::loadLevel(int index) {
+    auto levelPath = preferences_->assetFile(
+        "levels/level" + std::to_string(index) + ".txt");
+    std::string path = levelPath.string();
+
+    if (!std::filesystem::exists(path)) {
+        logger_->error("关卡文件不存在: " + path);
+        return false;
+    }
+
+    auto level = std::make_unique<Level>();
+    if (!level->loadFromFile(path)) {
+        logger_->error("关卡解析失败: " + path);
+        return false;
+    }
+
+    level->setFont(font_);
+
+    logger_->info("关卡已加载: level" + std::to_string(index) + " " +
+        std::to_string(level->width()) + "x" +
+        std::to_string(level->height()) + " 瓦片");
+
+    world_ = std::make_unique<GameWorld>(
+        std::move(level), index, GameWorld::SpriteSheets::fromFactories());
+    world_->setViewSize(kLogicalW, kLogicalH);
+
+    // ⭐ 校验初始生命值，非法值回退到 1
+    int lives = preferences_->getInt(ConfigKey::kInitialLives, 1);
+    if (lives != 1 && lives != 3 && lives != 5 && lives != 10 && lives != 100) {
+        lives = 1;
+        preferences_->setInt(ConfigKey::kInitialLives, 1);
+    }
+    world_->setInitialLives(lives);
+    levelIndex_ = index;
+
+    levelTime_ = 0.f;
+    hitstopTimer_ = 0.f;
+    screenFlashTimer_ = 0.f;
+    finalStars_ = 0;
+    finalCoins_ = 0;
+    finalTotalCoins_ = 0;
+    newRecord_ = false;
+    tookDamageThisLevel_ = false;
+
+    // ⭐ 读取新关的 PB
+    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[index - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
+
+    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
+        if (!intro_) {
+            intro_ = std::make_unique<LevelIntro>(*font_);
+        }
+        intro_->restart(index, static_cast<float>(world_->totalCoins()),
+                        world_->level().name());
+        introActive_ = true;
+    } else {
+        introActive_ = false;
+    }
+
+    lastHudLives_ = -1;
+    lastOverlayState_ = GameWorld::State::Playing;
+
+    // ⭐ 调试：切关 / 重载时清除暂停
+    paused_ = false;
+
+    // ⭐ 调试：保持无敌状态
+    if (debugInvincible_) {
+        world_->player().setInvincible(true);
+    }
+
+    subscribeWorldEvents();
+    syncFocus();
+
+    return true;
+}
+
+bool GameScene::handleDebugKey(sf::Keyboard::Key k) {
+    // ⭐ 任意调试键都算
+    if (k >= sf::Keyboard::Key::F1 && k <= sf::Keyboard::Key::F10) {
+        AchievementManager::instance().unlock("debug_mode");
+    }
+
+    switch (k) {
+        case sf::Keyboard::Key::F1:
+            debugHud_ = !debugHud_;
+            NotificationSystem::instance().push(
+                debugHud_ ? "调试 HUD: 开" : "调试 HUD: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F2:
+            debugInvincible_ = !debugInvincible_;
+            if (world_) world_->player().setInvincible(debugInvincible_);
+            NotificationSystem::instance().push(
+                debugInvincible_ ? "无敌: 开" : "无敌: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F3:
+            if (world_) world_->killAllEnemies();
+            NotificationSystem::instance().push(
+                "已清空敌人", NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F4:
+            loadLevel(levelIndex_);
+            NotificationSystem::instance().push(
+                "重载关卡 " + std::to_string(levelIndex_),
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F5:
+            if (levelIndex_ > 1) {
+                loadLevel(levelIndex_ - 1);
+                NotificationSystem::instance().push(
+                    "关卡 " + std::to_string(levelIndex_),
+                    NotificationType::Info, 1.2f);
+            }
+            return true;
+
+        case sf::Keyboard::Key::F6:
+            if (levelIndex_ < kMaxLevels) {
+                loadLevel(levelIndex_ + 1);
+                NotificationSystem::instance().push(
+                    "关卡 " + std::to_string(levelIndex_),
+                    NotificationType::Info, 1.2f);
+            }
+            return true;
+
+        case sf::Keyboard::Key::F7: {
+            // 1.0 → 0.5 → 0.25 → 0.1 → 1.0
+            if (debugTimeScale_ > 0.75f)      debugTimeScale_ = 0.5f;
+            else if (debugTimeScale_ > 0.4f)  debugTimeScale_ = 0.25f;
+            else if (debugTimeScale_ > 0.15f) debugTimeScale_ = 0.1f;
+            else                              debugTimeScale_ = 1.f;
+
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "慢动作: %.2fx",
+                          static_cast<double>(debugTimeScale_));
+            NotificationSystem::instance().push(buf, NotificationType::Info, 1.2f);
+            return true;
+        }
+
+        case sf::Keyboard::Key::F8:
+            debugShowColliders_ = !debugShowColliders_;
+            NotificationSystem::instance().push(
+                debugShowColliders_ ? "碰撞盒: 开" : "碰撞盒: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        case sf::Keyboard::Key::F9:
+            pendingScreenshot_ = true;
+            return true;
+
+        case sf::Keyboard::Key::F10:
+            perfHud_ = !perfHud_;
+            NotificationSystem::instance().push(
+                perfHud_ ? "性能面板: 开" : "性能面板: 关",
+                NotificationType::Info, 1.2f);
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+void GameScene::renderDebugHud(sf::RenderTarget& rt, Window& window) {
+    if (!world_) return;
+
+    const auto& level  = world_->level();
+    const auto& player = world_->player();
+
+    Vec2 pos  = player.position();
+    Vec2 vel  = player.velocity();
+    Vec2 cam  = world_->cameraCenter();
+
+    // 鼠标世界坐标
+    sf::Vector2i mousePix = sf::Mouse::getPosition(window.native());
+    sf::Vector2f mouseWorld =
+        window.native().mapPixelToCoords(mousePix, lastWorldView_);
+    int ts = level.tileSize();
+    int tx = static_cast<int>(std::floor(mouseWorld.x / ts));
+    int ty = static_cast<int>(std::floor(mouseWorld.y / ts));
+    char tileChar = ' ';
+    if (tx >= 0 && tx < level.width() && ty >= 0 && ty < level.height()) {
+        tileChar = level.tileAt(tx, ty);
+    }
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1);
+    oss << "关卡 " << levelIndex_;
+    if (!level.name().empty()) oss << " [" << level.name() << "]";
+    oss << "  " << level.width() << "x" << level.height();
+    oss << "\n玩家 (" << pos.x << ", " << pos.y << ")";
+    oss << "  vel (" << vel.x << ", " << vel.y << ")";
+    oss << "\n" << (player.onGround() ? "地面" : "空中");
+    if (player.isInvincible()) oss << "  无敌";
+    if (player.isInvinciblePersistent()) oss << " ⚡";
+    oss << "\n相机 (" << cam.x << ", " << cam.y << ")";
+    oss << "\n金币 " << world_->coins() << "/" << world_->totalCoins()
+        << "  生命 " << world_->lives();
+    oss << "\n鼠标 tile(" << tx << ", " << ty << ") '" << tileChar << "'";
+    oss << "\n[F1]HUD [F2]无敌 [F3]杀敌 [F4]重载 [F5]上关 [F6]下关";
+    oss << " [F7]慢动作 [F8]碰撞盒 [F9]截图";
+
+    debugText_.setString(toSf(oss.str()));
+
+    // 背景
+    auto b = debugText_.getLocalBounds();
+    const float padX = 8.f, padY = 6.f;
+    sf::RectangleShape bg({
+        b.size.x + padX * 2.f,
+        b.size.y + padY * 2.f
+    });
+    bg.setPosition({12.f, 42.f});
+    bg.setFillColor(sf::Color(0, 0, 0, 160));
+    bg.setOutlineThickness(1.f);
+    bg.setOutlineColor(sf::Color(120, 120, 160, 180));
+    rt.draw(bg);
+
+    debugText_.setPosition({12.f + padX - b.position.x, 42.f + padY - b.position.y});
+    rt.draw(debugText_);
+}
+
+void GameScene::renderPerfHud(sf::RenderTarget& rt, Window& window,
+                              float winW, float /*winH*/) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2);
+
+    float fps = (perfFrameMs_ > 0.01f) ? (1000.f / perfFrameMs_) : 0.f;
+    float endFrameMs = window.upscalePostMs();
+
+    oss << "性能面板 [F10]\n";
+    oss << "帧时间      " << perfFrameMs_ << " ms";
+    oss << "  (" << std::setprecision(1) << fps << " FPS)\n";
+    oss << std::setprecision(2);
+    oss << "update      " << perfUpdateMs_ << " ms\n";
+    oss << "render      " << perfRenderMs_ << " ms\n";
+    oss << "上采样+后处理 " << endFrameMs << " ms\n";
+    oss << "渲染缩放    " << std::setprecision(0)
+        << static_cast<int>(window.getRenderScale() * 100.f) << "%\n";
+    oss << "超分模式    ";
+    switch (window.getUpscaleMode()) {
+        case 0: oss << "关";       break;
+        case 1: oss << "双三次";   break;
+        case 2: oss << "FSR1";     break;
+        default: oss << "?";       break;
+    }
+
+    perfText_.setString(toSf(oss.str()));
+
+    auto b = perfText_.getLocalBounds();
+    const float padX = 10.f, padY = 8.f;
+    float boxW = b.size.x + padX * 2.f;
+    float boxH = b.size.y + padY * 2.f;
+
+    float bx = winW - boxW - 12.f;
+    float by = 42.f;
+
+    sf::RectangleShape bg({boxW, boxH});
+    bg.setPosition({bx, by});
+    bg.setFillColor(sf::Color(0, 0, 0, 170));
+    bg.setOutlineThickness(1.f);
+    bg.setOutlineColor(sf::Color(160, 220, 255, 180));
+    rt.draw(bg);
+
+    perfText_.setPosition({bx + padX - b.position.x, by + padY - b.position.y});
+    rt.draw(perfText_);
+}
+
+
+void GameScene::syncFocus() {
+    // 暂停菜单打开时，焦点交给 PauseMenu 管理，这里不动
+    if (paused_ && pauseMenu_) return;
+
+    // 开场动画显示中，不设焦点
+    if (introActive_) {
+        FocusGroup::instance().clear();
+        return;
+    }
+
+    // LevelComplete 状态：设 overlay 按钮
+    if (world_ && world_->state() == GameWorld::State::LevelComplete
+        && !overlayButtons_.empty()) {
+        std::vector<Button*> items;
+        for (auto& b : overlayButtons_) items.push_back(b.get());
+        FocusGroup::instance().setItems(items);
+        return;
+    }
+
+    // Playing 状态：无焦点
+    FocusGroup::instance().clear();
+}
+
+
+bool GameScene::advanceToNextLevel() {
+    int next = levelIndex_ + 1;
+    if (next > kMaxLevels) return false;
+
+    // 先确认关卡文件存在，避免 loadLevel 打 error 日志
+    auto nextPath = preferences_->assetFile(
+        "levels/level" + std::to_string(next) + ".txt");
+    if (!std::filesystem::exists(nextPath)) return false;
+
+    if (!loadLevel(next)) return false;
+
+    NotificationSystem::instance().push(
+        Str::T(Str::NotifEnterLevel) + std::to_string(levelIndex_) +
+            Str::T(Str::NotifLevelSuffix),
+        NotificationType::Info);
+    saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
+    return true;
+}
+
+void GameScene::refreshHud() {
+    int lives = world_->lives();
+    int coins = world_->coins();
+
+    if (lives == lastHudLives_ &&
+        coins == lastHudCoins_ &&
+        levelIndex_ == lastHudLevel_) {
+        return;
+    }
+
+    lastHudLives_ = lives;
+    lastHudCoins_ = coins;
+    lastHudLevel_ = levelIndex_;
+
+    char timeBuf[32];
+    std::snprintf(timeBuf, sizeof(timeBuf), "%.1f", levelTime_);
+
+    std::string hud =
+        Str::T(Str::HudSave) + save_.name +
+        "   " + Str::T(Str::HudLevel) + std::to_string(levelIndex_) +
+        "   " + Str::T(Str::HudLives) + std::to_string(lives) +
+        "   " + Str::T(Str::HudCoins) + std::to_string(coins) +
+        " / " + std::to_string(world_->totalCoins()) +
+        "   " + Str::T(Str::HudTime) + timeBuf + "s";
+
+    if (world_->player().keys() > 0) {
+        hud += "   " + Str::T(Str::HudKeys) + std::to_string(world_->player().keys());
+    }
+    hud += "   " + Str::T(Str::HudHelp);
+    hudText_.setString(toSf(hud));
+}
+
+int GameScene::targetTime() const {
+    // 没世界时给个中庸值（等价于 10 枚金币的目标时间）
+    if (!world_) return 60;
+    return ScoreRules::targetTimeSeconds(world_->totalCoins());
+}
+
+int GameScene::calcStars() const {
+    if (!world_) return 1;
+    // 规则本身在 game/score_rules.h —— 纯算术，放在那里才测得到
+    return ScoreRules::starsFor(world_->coins(), world_->totalCoins(), levelTime_);
+}
+
+void GameScene::applyStars() {
+    if (finalStars_ <= 0) return;
+    saveManager_->setLevelStar(save_.filename, levelIndex_, finalStars_);
+}
+
+void GameScene::checkAchievements() {
+    auto& am = AchievementManager::instance();
+
+    // 第一次通关
+    am.unlock("first_level");
+
+    // 单关 3 星
+    if (finalStars_ >= 3) am.unlock("three_stars");
+
+    // 单关全金币
+    if (finalTotalCoins_ > 0 && finalCoins_ == finalTotalCoins_) {
+        am.unlock("perfect_level");
+    }
+
+    // 速通
+    if (levelTime_ > 0.f && levelTime_ < 30.f) {
+        am.unlock("speedrun");
+    }
+
+    // 无伤
+    if (!tookDamageThisLevel_) {
+        am.unlock("no_damage");
+    }
+
+    // 读最新存档，检查全关 / 全星
+    SaveInfo updated;
+    if (saveManager_->loadSave(save_.filename, updated)) {
+        const auto& stars = updated.levelStars;
+        if (!stars.empty()) {
+            bool allCleared = std::all_of(stars.begin(), stars.end(),
+                                          [](int s) { return s > 0; });
+            if (allCleared) am.unlock("all_levels");
+
+            bool allThree = std::all_of(stars.begin(), stars.end(),
+                                        [](int s) { return s >= 3; });
+            if (allThree) am.unlock("all_stars");
+        }
+    }
+}
+
+void GameScene::rebuildOverlayButtons() {
+    overlayButtons_.clear();
+
+    // 现在只有 LevelComplete 需要按钮
+    if (world_->state() != GameWorld::State::LevelComplete) return;
+
+    const float winW = lastOverlayWinW_;
+    const float winH = lastOverlayWinH_;
+
+    const float bw = 180.f;
+    const float bh = 50.f;
+    const float gap = 15.f;
+    const float totalW = bw * 3.f + gap * 2.f;
+    const float x0 = (winW - totalW) * 0.5f;
+    const float y  = winH * 0.5f + 130.f;
+
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::BtnNextLevel), *font_,
+        sf::Vector2f{x0, y}, sf::Vector2f{bw, bh}, 22));
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::BtnReplay), *font_,
+        sf::Vector2f{x0 + bw + gap, y}, sf::Vector2f{bw, bh}, 22));
+    overlayButtons_.push_back(std::make_unique<Button>(
+        Str::T(Str::Back), *font_,
+        sf::Vector2f{x0 + (bw + gap) * 2.f, y}, sf::Vector2f{bw, bh}, 22));
+}
+
+void GameScene::refreshOverlayLayout(float winW, float winH) {
+    auto state = world_->state();
+    if (winW == lastOverlayWinW_ &&
+        winH == lastOverlayWinH_ &&
+        state == lastOverlayState_) {
+        return;
+    }
+    lastOverlayWinW_ = winW;
+    lastOverlayWinH_ = winH;
+    lastOverlayState_ = state;
+
+    if (state == GameWorld::State::Playing) {
+        overlayButtons_.clear();
+        // ⭐ 暂停时不清焦点，否则会覆盖 PauseMenu 刚设好的
+        if (!paused_) {
+            FocusGroup::instance().clear();
+        }
+        return;
+    }
+
+    rebuildOverlayButtons();
+
+    overlayBg_.setSize({winW, winH});
+    overlayBg_.setFillColor(sf::Color(0, 0, 0, 180));
+
+    std::string title = Str::T(Str::IntroLevelPrefix) + std::to_string(levelIndex_) +
+                        " " + Str::T(Str::LevelCompleteTitle);
+    overlayTitle_.setString(toSf(title));
+    overlayTitle_.setFillColor(sf::Color(100, 240, 120));
+    auto tb = overlayTitle_.getLocalBounds();
+    overlayTitle_.setOrigin({tb.position.x + tb.size.x / 2.f,
+                             tb.position.y + tb.size.y / 2.f});
+    overlayTitle_.setPosition({winW / 2.f, winH / 2.f - 140.f});
+
+    // 第一行：金币
+    std::string stats = Str::T(Str::OverlayCoins) + std::to_string(finalCoins_) +
+                        " / " + std::to_string(finalTotalCoins_);
+    overlayHint_.setString(toSf(stats));
+    overlayHint_.setFillColor(sf::Color(200, 200, 220));
+    auto hb = overlayHint_.getLocalBounds();
+    overlayHint_.setOrigin({hb.position.x + hb.size.x / 2.f,
+                            hb.position.y + hb.size.y / 2.f});
+    overlayHint_.setPosition({winW / 2.f, winH / 2.f - 70.f});
+
+    // 第二行：PB（只在通关时显示）
+    std::string pbLine;
+    if (newRecord_) {
+        pbLine = Str::T(Str::OverlayNewRecord);
+    } else if (prevBestTime_ > 0.f) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%s%.2f%s",
+                      Str::T(Str::OverlayBestTime).c_str(),
+                      prevBestTime_,
+                      Str::T(Str::OverlaySeconds).c_str());
+        pbLine = buf;
+    }
+    overlaySubHint_.setString(toSf(pbLine));
+
+    char timeBuf[128];
+    std::snprintf(timeBuf, sizeof(timeBuf),
+                  "%s%.1f%s  /  %s%d%s",
+                  Str::T(Str::OverlayTime).c_str(),
+                  levelTime_,
+                  Str::T(Str::OverlaySeconds).c_str(),
+                  Str::T(Str::OverlayTarget).c_str(),
+                  targetTime(),
+                  Str::T(Str::OverlaySeconds).c_str());
+    overlayTime_.setString(toSf(timeBuf));
+    auto tb2 = overlayTime_.getLocalBounds();
+    overlayTime_.setOrigin({tb2.position.x + tb2.size.x / 2.f,
+                            tb2.position.y + tb2.size.y / 2.f});
+    overlayTime_.setPosition({winW / 2.f, winH / 2.f - 25.f});
+
+    {
+        std::string stars;
+        for (int i = 0; i < 3; ++i) {
+            stars += (i < finalStars_) ? "\u2605" : "\u2606";
+            if (i < 2) stars += "  ";
+        }
+        overlayStars_.setString(toSf(stars));
+        auto sb = overlayStars_.getLocalBounds();
+        overlayStars_.setOrigin({sb.position.x + sb.size.x / 2.f,
+                                 sb.position.y + sb.size.y / 2.f});
+        overlayStars_.setPosition({winW / 2.f, winH / 2.f + 60.f});
+    }
+   // PB 行位置（时间下面）
+    {
+        auto sb = overlaySubHint_.getLocalBounds();
+        overlaySubHint_.setOrigin({sb.position.x + sb.size.x / 2.f,
+                                   sb.position.y + sb.size.y / 2.f});
+        overlaySubHint_.setFillColor(newRecord_
+            ? sf::Color(255, 220, 80)
+            : sf::Color(180, 180, 200));
+        overlaySubHint_.setPosition({winW / 2.f, winH / 2.f + 20.f});
+    }
+}
+
+void GameScene::handleEvent(const sf::Event& event) {
+    // ⭐ 调试快捷键：优先响应
+    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (handleDebugKey(kp->code)) return;
+    }
+
+    if (paused_) {
+        pauseMenu_->handleEvent(event);
+        return;
+    }
+
+    if (introActive_) {
+        if (event.getIf<sf::Event::KeyPressed>() ||
+            event.getIf<sf::Event::MouseButtonPressed>()) {
+            intro_->skip();
+            introActive_ = false;
+        }
+        return;
+    }
+
+    auto state = world_->state();
+
+    if (state != GameWorld::State::Playing) {
+        // ⭐ 先转发给 overlay 按钮
+        for (auto& b : overlayButtons_) b->handleEvent(event);
+
+        if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+            if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
+                nextScene_ = SceneId::Back;
+                return;
+            }
+            if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
+                world_->reset();
+                particles_.clear();
+                levelTime_ = 0.f;
+                hitstopTimer_ = 0.f;
+                screenFlashTimer_ = 0.f;
+                finalStars_ = 0;
+                finalCoins_ = 0;
+                finalTotalCoins_ = 0;
+                lastOverlayState_ = GameWorld::State::Playing;
+                return;
+            }
+            if (state == GameWorld::State::LevelComplete) {
+                if (kp->code == sf::Keyboard::Key::Enter ||
+                    kp->code == sf::Keyboard::Key::Space) {
+                    if (!advanceToNextLevel()) {
+                        NotificationSystem::instance().push(
+                    Str::T(Str::NotifAllClear),
+                    NotificationType::Success, 5.f);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (kp->code == KeyBindings::instance().get(KeyBindings::Pause)) {
+            paused_ = true;
+            pauseMenu_->reset();
+            return;
+        }
+        if (kp->code == KeyBindings::instance().get(KeyBindings::Restart)) {
+            world_->reset();
+            particles_.clear();
+            levelTime_ = 0.f;
+            hitstopTimer_ = 0.f;
+            screenFlashTimer_ = 0.f;
+            lastOverlayState_ = GameWorld::State::Playing;
+            NotificationSystem::instance().push(Str::T(Str::NotifRespawned),
+                                                NotificationType::Info);
+            return;
+        }
+    }
+    world_->handleEvent(event);
+}
+
+void GameScene::update(float dt) {
+    // ⭐ 帧时间（含 vsync 等待）+ update 耗时
+    perfFrameMs_ = perfFrameClock_.restart().asSeconds() * 1000.f;
+    ScopeTimer timer(perfUpdateMs_);
+
+    if (screenFlashTimer_ > 0.f) screenFlashTimer_ -= dt;
+
+    if (paused_) {
+        pauseMenu_->update(dt);
+        auto action = pauseMenu_->consumeAction();
+        if (action == PauseMenu::Action::Resume) {
+            paused_ = false;
+            syncFocus();
+        } else if (action == PauseMenu::Action::SaveAndQuit) {
+            saveManager_->updateProgress(save_.filename, world_->coins(),
+                                         levelIndex_);
+            nextScene_ = SceneId::Back;
+        } else if (action == PauseMenu::Action::OpenSettings) {
+            // ⭐ push SettingsScene。paused_ 保持 true，
+            //    返回时 onResume 会 unpause
+            nextScene_ = SceneId::Settings;
+        }
+        return;
+    }
+
+    // ⭐ 慢动作（只在游戏逻辑生效，不影响暂停菜单和计时 UI）
+    dt *= debugTimeScale_;
+
+    // ⭐ 检测世界状态变化，同步焦点（Playing ↔ LevelComplete）
+    if (world_) {
+        auto state = world_->state();
+        if (state != lastFocusState_) {
+            lastFocusState_ = state;
+            syncFocus();
+        }
+    }
+
+    if (introActive_) {
+        intro_->update(dt);
+        if (parallax_) parallax_->update(dt);
+        if (intro_->isFinished()) introActive_ = false;
+        return;
+    }
+
+    auto state = world_->state();
+    if (state != GameWorld::State::Playing) {
+        // ⭐ 处理 overlay 按钮点击
+        if (state == GameWorld::State::LevelComplete && overlayButtons_.size() >= 3) {
+            if (overlayButtons_[0]->consumeClick()) {
+                if (!advanceToNextLevel()) {
+                    NotificationSystem::instance().push(
+                    Str::T(Str::NotifAllClear),
+                    NotificationType::Success, 5.f);
+                }
+                return;
+            }
+            if (overlayButtons_[1]->consumeClick()) {
+                world_->reset();
+                particles_.clear();
+                levelTime_ = 0.f;
+                finalStars_ = 0;
+                finalCoins_ = 0;
+                finalTotalCoins_ = 0;
+                lastOverlayState_ = GameWorld::State::Playing;
+                return;
+            }
+            if (overlayButtons_[2]->consumeClick()) {
+                nextScene_ = SceneId::Back;
+                return;
+            }
+        }
+        return;
+    }
+
+    // 受击停顿：冻结游戏逻辑和计时
+    if (hitstopTimer_ > 0.f) {
+        hitstopTimer_ -= dt;
+        return;
+    }
+
+    levelTime_ += dt;
+
+    world_->update(dt);
+
+    // 粒子开关每帧同步一次。update 先于 render，所以这一处赋值对两者都生效，
+    // 不需要在 render 里再读一遍偏好。
+    particlesOn_ = preferences_->getBool(ConfigKey::kParticles, true);
+
+    // 开关关闭时直接清空，行为与旧实现一致（旧代码在 GameWorld::update 里）
+    if (particlesOn_) particles_.update(dt);
+    else              particles_.clear();
+    if (parallax_) parallax_->update(dt);
+}
+
+void GameScene::renderStateOverlay(sf::RenderTarget& rt, float winW, float winH) {
+    refreshOverlayLayout(winW, winH);
+
+    auto state = world_->state();
+    if (state == GameWorld::State::Playing) return;
+
+    rt.draw(overlayBg_);
+    rt.draw(overlayTitle_);
+    rt.draw(overlayHint_);
+    if (state == GameWorld::State::LevelComplete) {
+        rt.draw(overlayTime_);
+        rt.draw(overlayStars_);
+    }
+    rt.draw(overlaySubHint_);
+
+    for (auto& b : overlayButtons_) b->render(rt);
+}
+
+void GameScene::render(Window& window) {
+    ScopeTimer timer(perfRenderMs_);
+
+    auto& rt = window.target();
+    auto winSize = window.native().getSize();
+    float winW = static_cast<float>(winSize.x);
+    float winH = static_cast<float>(winSize.y);
+
+    sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
+
+    rt.setView(screenView);
+    rt.clear(sf::Color::Black);
+    if (background_) background_->render(rt);
+
+    if (winW != lastViewWinW_ || winH != lastViewWinH_) {
+        lastViewWinW_ = winW;
+        lastViewWinH_ = winH;
+
+        worldView_ = sf::View(sf::FloatRect({0.f, 0.f}, {kLogicalW, kLogicalH}));
+        float scale = std::min(winW / kLogicalW, winH / kLogicalH);
+        float vpW = kLogicalW * scale / winW;
+        float vpH = kLogicalH * scale / winH;
+        float vpX = (1.f - vpW) * 0.5f;
+        float vpY = (1.f - vpH) * 0.5f;
+        worldView_.setViewport(sf::FloatRect({vpX, vpY}, {vpW, vpH}));
+    }
+
+    world_->setShowColliders(
+        debugShowColliders_ || preferences_->getBool(ConfigKey::kShowColliders, false));
+    world_->setScreenShake(preferences_->getBool(ConfigKey::kScreenShake, true));
+    world_->setPseudo3D(preferences_->getBool(ConfigKey::kPseudo3d, true));
+    world_->setPlayerAnimation(preferences_->getBool(ConfigKey::kPlayerAnimation, true));
+
+    Vec2 camCenter = world_->cameraCenter();
+    worldView_.setCenter({camCenter.x, camCenter.y});
+    rt.setView(worldView_);
+    lastWorldView_ = worldView_;   // ⭐ 供调试 HUD 用
+
+    if (parallax_ && preferences_->getBool(ConfigKey::kParallax, true)) {
+        float camLeft = camCenter.x - kLogicalW * 0.5f;
+        float camTop  = camCenter.y - kLogicalH * 0.5f;
+        parallax_->render(rt, camLeft, camTop, kLogicalW, kLogicalH);
+    }
+
+    world_->render(rt);
+
+    // 粒子画在场景对象之上。
+    // 注意：调试碰撞盒是在 world_->render() 内部画的，所以粒子现在会盖住它 ——
+    // 与改造前（GameWorld 里 粒子 -> 碰撞盒 的顺序）不同，仅影响 F8 调试视图。
+    if (particlesOn_) particles_.render(rt);
+
+    rt.setView(screenView);
+
+    refreshHud();
+    hudText_.setPosition({20.f, 16.f});
+    rt.draw(hudText_);
+
+    // ⭐ 调试 HUD
+    if (debugHud_) {
+        renderDebugHud(rt, window);
+    }
+
+    // ⭐ 性能面板
+    if (perfHud_) {
+        renderPerfHud(rt, window, winW, winH);
+    }
+
+    if (introActive_) intro_->render(rt, winW, winH);
+
+    renderStateOverlay(rt, winW, winH);
+
+    if (paused_ && pauseMenu_) {
+        pauseMenu_->relayout({winW, winH});
+        pauseMenu_->render(rt);
+    }
+
+    // 屏幕闪光（最上层）
+    if (screenFlashTimer_ > 0.f) {
+        float t = screenFlashTimer_ / screenFlashDuration_;
+        t = std::clamp(t, 0.f, 1.f);
+
+        sf::RectangleShape flash({winW, winH});
+        sf::Color c = screenFlashColor_;
+        c.a = static_cast<std::uint8_t>(t * 200.f);
+        flash.setFillColor(c);
+        rt.draw(flash);
+    }
+
+    // ⭐ 截图（用 glReadPixels 抓当前帧缓冲）
+    if (pendingScreenshot_) {
+        pendingScreenshot_ = false;
+
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        int vw = vp[2];
+        int vh = vp[3];
+
+        if (vw > 0 && vh > 0) {
+            std::vector<std::uint8_t> pixels(
+                static_cast<std::size_t>(vw) * vh * 4);
+            glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+            sf::Image img({static_cast<unsigned>(vw),
+                           static_cast<unsigned>(vh)});
+            // glReadPixels 原点在左下，sf::Image 原点在左上 → 翻转 Y
+            for (int y = 0; y < vh; ++y) {
+                int srcY = vh - 1 - y;
+                for (int x = 0; x < vw; ++x) {
+                    std::size_t si =
+                        (static_cast<std::size_t>(srcY) * vw + x) * 4;
+                    img.setPixel(
+                        {static_cast<unsigned>(x), static_cast<unsigned>(y)},
+                        sf::Color(pixels[si + 0], pixels[si + 1],
+                                  pixels[si + 2], pixels[si + 3]));
+                }
+            }
+
+            namespace fs = std::filesystem;
+            fs::path dir = fs::current_path() / "screenshots";
+            std::error_code ec;
+            fs::create_directories(dir, ec);
+
+            auto now = std::chrono::system_clock::now();
+            std::time_t tt = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+#ifdef _WIN32
+            localtime_s(&tm, &tt);
+#else
+            localtime_r(&tt, &tm);
+#endif
+            char buf[32];
+            std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tm);
+
+            fs::path file = dir / (std::string("shot_") + buf + ".png");
+            if (img.saveToFile(file.string())) {
+                NotificationSystem::instance().push(
+                    "截图已保存: screenshots/" + file.filename().string(),
+                    NotificationType::Success, 2.f);
+            } else {
+                NotificationSystem::instance().push(
+                    "截图保存失败", NotificationType::Error, 2.f);
+            }
+        } else {
+            NotificationSystem::instance().push(
+                "截图失败: viewport 为空", NotificationType::Error, 2.f);
+        }
     }
 }===== ./src/log/type.cpp =====
 #include "log/type.h"
@@ -15453,70 +15510,6 @@ private:
     std::map<SceneId, std::unique_ptr<Scene>> cache_;   // ⭐ 场景常驻
     Scene*  current_ = nullptr;
     SceneId currentId_ = SceneId::None;
-};===== ./include/core/paths.h =====
-#pragma once
-#include "platform.h"
-#include <filesystem>
-
-// 管理资源目录：
-//   - 开发模式（项目目录里有 assets/）：所有目录在项目里
-//   - 打包模式（可执行文件旁边有 assets/）：资源跟着可执行文件，用户数据在 XDG 目录
-class Paths {
-public:
-    Paths() {
-        namespace fs = std::filesystem;
-
-        fs::path execDir = Platform::executableDir();
-
-        // 判定模式：可执行文件旁边有没有 assets/
-        bool packaged = fs::exists(execDir / "assets");
-
-        if (packaged) {
-            assetRoot_ = execDir;
-            configDir_ = Platform::userConfigDir();
-            cacheDir_ = Platform::userCacheDir();
-            tempDir_ = Platform::userTempDir();
-            savesDir_ = Platform::userDataDir() / "saves";
-            wallpaperDir_ = execDir / "wallpaper";
-            assetsDir_ = execDir / "assets";
-            mode_ = "packaged";
-        } else {
-            // 开发模式
-            fs::path root = fs::path(PROJECT_ROOT);
-            configDir_ = root / "config";
-            cacheDir_ = root / "cache";
-            tempDir_ = root / "temp";
-            savesDir_ = root / "saves";
-            wallpaperDir_ = root / "wallpaper";
-            assetsDir_ = root / "assets";
-            mode_ = "development";
-        }
-
-        for (auto& d :
-             {configDir_, cacheDir_, tempDir_, savesDir_, wallpaperDir_, assetsDir_}) {
-            std::error_code ec;
-            fs::create_directories(d, ec);
-        }
-    }
-
-    const std::filesystem::path& configDir() const { return configDir_; }
-    const std::filesystem::path& cacheDir() const { return cacheDir_; }
-    const std::filesystem::path& tempDir() const { return tempDir_; }
-    const std::filesystem::path& savesDir() const { return savesDir_; }
-    const std::filesystem::path& wallpaperDir() const { return wallpaperDir_; }
-    const std::filesystem::path& assetsDir() const { return assetsDir_; }
-
-    const std::string& mode() const { return mode_; }
-
-private:
-    std::filesystem::path assetRoot_;
-    std::filesystem::path configDir_;
-    std::filesystem::path cacheDir_;
-    std::filesystem::path tempDir_;
-    std::filesystem::path savesDir_;
-    std::filesystem::path wallpaperDir_;
-    std::filesystem::path assetsDir_;
-    std::string mode_ = "development";
 };===== ./include/core/platform.h =====
 #pragma once
 #include <filesystem>
@@ -16133,6 +16126,94 @@ void registerCore(Container& container);
 
 /// 挂核心层的生命周期钩子。
 void wireCore(Application& app);
+===== ./include/core/paths.h =====
+#pragma once
+#include "platform.h"
+#include <filesystem>
+
+// 管理资源目录：
+//   - 开发模式（项目目录里有 assets/）：所有目录在项目里
+//   - 打包模式（可执行文件旁边有 assets/）：资源跟着可执行文件，用户数据在 XDG 目录
+//   - 测试模式（显式传根目录）：全部挂在给定根目录下
+//
+// 三种模式的区别只在于"根在哪"，所以下面把目录布局抽成 layoutUnder()，
+// 免得三份路径拼装各写一遍、各自漂移。
+class Paths {
+public:
+    Paths() {
+        namespace fs = std::filesystem;
+
+        fs::path execDir = Platform::executableDir();
+
+        // 判定模式：可执行文件旁边有没有 assets/
+        bool packaged = fs::exists(execDir / "assets");
+
+        if (packaged) {
+            assetRoot_ = execDir;
+            configDir_ = Platform::userConfigDir();
+            cacheDir_ = Platform::userCacheDir();
+            tempDir_ = Platform::userTempDir();
+            savesDir_ = Platform::userDataDir() / "saves";
+            wallpaperDir_ = execDir / "wallpaper";
+            assetsDir_ = execDir / "assets";
+            mode_ = "packaged";
+        } else {
+            // 开发模式
+            layoutUnder(fs::path(PROJECT_ROOT));
+            mode_ = "development";
+        }
+
+        createAll();
+    }
+
+    /// 测试用：把所有目录挂到给定根目录下。
+    ///
+    /// 原先不行 —— 目录一律从 PROJECT_ROOT 或可执行文件位置推导，于是任何
+    /// "写文件"的模块（SaveManager 等）都没法在临时目录里被测，只能去动真实的
+    /// 存档目录。有了这个构造函数，测试可以造一个只属于自己的沙箱。
+    explicit Paths(const std::filesystem::path& root) {
+        layoutUnder(root);
+        assetRoot_ = root;
+        mode_ = "test";
+        createAll();
+    }
+
+    const std::filesystem::path& configDir() const { return configDir_; }
+    const std::filesystem::path& cacheDir() const { return cacheDir_; }
+    const std::filesystem::path& tempDir() const { return tempDir_; }
+    const std::filesystem::path& savesDir() const { return savesDir_; }
+    const std::filesystem::path& wallpaperDir() const { return wallpaperDir_; }
+    const std::filesystem::path& assetsDir() const { return assetsDir_; }
+
+    const std::string& mode() const { return mode_; }
+
+private:
+    void layoutUnder(const std::filesystem::path& root) {
+        configDir_ = root / "config";
+        cacheDir_ = root / "cache";
+        tempDir_ = root / "temp";
+        savesDir_ = root / "saves";
+        wallpaperDir_ = root / "wallpaper";
+        assetsDir_ = root / "assets";
+    }
+
+    void createAll() {
+        for (auto& d :
+             {configDir_, cacheDir_, tempDir_, savesDir_, wallpaperDir_, assetsDir_}) {
+            std::error_code ec;
+            std::filesystem::create_directories(d, ec);
+        }
+    }
+
+    std::filesystem::path assetRoot_;
+    std::filesystem::path configDir_;
+    std::filesystem::path cacheDir_;
+    std::filesystem::path tempDir_;
+    std::filesystem::path savesDir_;
+    std::filesystem::path wallpaperDir_;
+    std::filesystem::path assetsDir_;
+    std::string mode_ = "development";
+};
 ===== ./include/config/bootstrap_config.h =====
 #pragma once
 #include "config.h"
@@ -18511,7 +18592,44 @@ constexpr float kEnemySpeed = 90.f;
 constexpr float kFixedTimeStep = 1.f / 120.f;
 constexpr float kStompTolerance = 12.f; // 踩敌人的判定容差
 
-} // namespace GameConst===== ./include/scene/save_select_scene.h =====
+} // namespace GameConst===== ./include/game/score_rules.h =====
+#pragma once
+//
+// 星级与目标时间的规则。
+//
+// 这段逻辑原先埋在 GameScene 的私有方法里。它是纯算术，却因为宿主类构造
+// 需要 sf::Font（GlResource）而完全测不到 —— 属于"改一个数字就会影响
+// 所有关卡手感、却没有任何东西守着"的那类代码。抽成纯函数之后可以脱离界面测。
+//
+namespace ScoreRules {
+
+/// 基础时间（秒）
+inline constexpr float kBaseTime = 30.f;
+
+/// 每枚金币额外给的时间（秒）—— 集齐金币本身要多绕路
+inline constexpr float kPerCoinTime = 3.f;
+
+/// 三星目标时间（秒）。
+///
+/// 注意**与金币数正相关**：金币越多，容错时间越长。
+/// 直觉上容易反着写（以为金币多应该更严格）。
+int targetTimeSeconds(int totalCoins);
+
+/// 按"集齐金币 + 时间达标"给星，取值 1~3：
+///
+///     两项都满足 -> 3 星
+///     满足任意一项 -> 2 星
+///     都不满足 -> 1 星
+///
+/// 没有金币的关卡（coins == totalCoins == 0）"集齐"天然成立，
+/// 所以只要不超时就是 3 星。
+int starsFor(int coins, int totalCoins, float levelTime);
+
+/// 是否刷新了个人最佳（0 或负数视为无记录）。
+bool isNewRecord(float previousBest, float levelTime);
+
+} // namespace ScoreRules
+===== ./include/scene/save_select_scene.h =====
 #pragma once
 #include "background.h"
 #include "button.h"
@@ -19642,7 +19760,33 @@ public:
 
 private:
     std::shared_ptr<Logger> logger_;
-};===== ./include/common/exceptions.h =====
+};===== ./include/scene/editor_tools.h =====
+#pragma once
+//
+// 编辑器里的格子几何。
+//
+// 抽出来的理由：拖拽绘制最容易出的错就是差一格（往左上拖和往右下拖
+// 结果不一致、连线补格漏掉端点）。这些是纯几何、与 sf::Font / 渲染无关，
+// 所以做成纯函数就能测 —— 编辑器场景本身构造需要字体，测不了。
+//
+#include <SFML/System/Vector2.hpp>
+#include <vector>
+
+namespace EditorTools {
+
+/// 两个角点围出的全部格子（含两端），已按行列归一化。
+///
+/// 拖拽方向任意：从左下拖到右上，和从右上拖到左下，结果必须一致。
+std::vector<sf::Vector2i> rectCells(sf::Vector2i a, sf::Vector2i b);
+
+/// 两点之间的一条线（Bresenham），含两端。
+///
+/// 用途：鼠标事件是离散采样的，快速拖动时相邻两点可能隔了好几格，
+/// 只画端点会留下断断续续的虚线。
+std::vector<sf::Vector2i> lineCells(sf::Vector2i from, sf::Vector2i to);
+
+} // namespace EditorTools
+===== ./include/common/exceptions.h =====
 #pragma once
 //
 // 领域异常基类。
@@ -32309,6 +32453,9 @@ add_executable(unit_tests
     test_entities.cpp
     test_game_world.cpp
     test_level_codec.cpp
+    test_save_manager.cpp
+    test_score_rules.cpp
+    test_editor_tools.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -32348,6 +32495,10 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
     ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
     ${CMAKE_SOURCE_DIR}/src/game/level_codec.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
+    ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
     # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
     # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
     # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
@@ -33515,6 +33666,691 @@ TEST_CASE("LevelCodec - 超长重复段不会被解码成超大字符串") {
 TEST_CASE("LevelCodec - 计数为 0 的 RLE 段不会凭空生成字符") {
     // "0#" 是合法的 RLE 语法但产出空串 —— 空结果会被 decode 当成失败
     CHECK(LevelCodec::decode("TG1:MCM").empty());
+}
+===== ./tests/test_save_manager.cpp =====
+#include "doctest.h"
+#include "config/runtime_config.h"
+#include "core/paths.h"
+#include "log/logger.h"
+#include "save_manager.h"
+#include "utils/text_strings.h"
+
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+// SaveManager 管存档的读写与进度，属于"错了会悄悄丢玩家存档"的那类代码，
+// 所以这里除了正常路径，重点钉的是几条容易写错的语义：
+//   - 金币与关卡进度只增不减（不会因为重玩低关而被改小）
+//   - 星级取最高、PB 取最小
+//   - 旧字段名 progress= 仍能读出（历史存档兼容）
+//   - 字段缺失 / 星级数组短于 9 关时怎么补
+//
+// 以前它被标成"依赖运行环境"没测，是因为 Paths 把目录钉死在 PROJECT_ROOT，
+// 测试只能去动真实存档目录。现在 Paths 支持传入根目录，于是有了沙箱。
+namespace {
+
+/// 每个用例一个独立沙箱：config/saves/... 全建在临时目录下。
+struct Sandbox {
+    fs::path root;
+    std::unique_ptr<Paths> paths;
+    std::shared_ptr<RuntimeConfig> config;
+    std::shared_ptr<Logger> logger;
+    std::unique_ptr<SaveManager> saves;
+
+    Sandbox() {
+        static int counter = 0;
+        root = fs::temp_directory_path() /
+               ("textgame_save_test_" + std::to_string(++counter));
+        std::error_code ec;
+        fs::remove_all(root, ec);
+
+        paths = std::make_unique<Paths>(root);
+        config = std::make_shared<RuntimeConfig>(*paths);
+        // Error 级别 + 不挂任何 handler = 完全静默，免得刷屏
+        logger = std::make_shared<Logger>(LogLevel::Error);
+        saves = std::make_unique<SaveManager>(config, logger);
+    }
+
+    ~Sandbox() {
+        // 析构函数体先于成员析构执行，而 RuntimeConfig 析构时会 flush 到
+        // configDir —— 所以必须先把它们收掉，再删目录。顺序不能反。
+        saves.reset();
+        config.reset();
+        logger.reset();
+        paths.reset();
+
+        std::error_code ec;
+        fs::remove_all(root, ec);
+    }
+
+    fs::path savePath(const std::string& filename) const {
+        return root / "saves" / filename;
+    }
+
+    /// 手工写一个存档文件，用来构造"历史格式"或残缺内容
+    void writeRawSave(const std::string& filename, const std::string& content) {
+        std::ofstream out(savePath(filename));
+        out << content;
+    }
+};
+
+const char* kGoodSave =
+    "name=测试存档\n"
+    "created_at=2026-01-01 00:00:00\n"
+    "last_played=2026-01-02 00:00:00\n"
+    "coins=42\n"
+    "current_level=3\n"
+    "level_stars=3,2,1,0,0,0,0,0,0\n"
+    "level_best_times=12.34,20.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00\n";
+
+} // namespace
+
+// ============================================================
+// 沙箱自检
+// ============================================================
+
+TEST_CASE("SaveManager - 沙箱不会碰到真实存档目录") {
+    Sandbox box;
+
+    // Paths(root) 之下才该有这些目录
+    CHECK(box.paths->savesDir() == box.root / "saves");
+    CHECK(box.paths->mode() == "test");
+    CHECK(fs::exists(box.paths->savesDir()));
+
+    // 真实工程目录不该被这次构造动过
+    const fs::path realSaves = fs::path(PROJECT_ROOT) / "saves";
+    CHECK(box.paths->savesDir() != realSaves);
+}
+
+// ============================================================
+// createSave / loadSave
+// ============================================================
+
+TEST_CASE("SaveManager - 创建存档后能再读回来") {
+    Sandbox box;
+
+    const SaveInfo created = box.saves->createSave("我的存档");
+
+    CHECK_FALSE(created.filename.empty());
+    CHECK(created.name == "我的存档");
+    CHECK(created.coins == 0);
+    CHECK(created.currentLevel == 1);
+    CHECK(created.levelStars.size() == 9);
+    CHECK(created.levelBestTimes.size() == 9);
+    CHECK(fs::exists(box.savePath(created.filename)));
+
+    SaveInfo loaded;
+    REQUIRE(box.saves->loadSave(created.filename, loaded));
+
+    CHECK(loaded.filename == created.filename);
+    CHECK(loaded.name == "我的存档");
+    CHECK(loaded.currentLevel == 1);
+    CHECK(loaded.levelStars == created.levelStars);
+}
+
+TEST_CASE("SaveManager - 不传名字时用前缀加时间戳") {
+    Sandbox box;
+
+    const SaveInfo created = box.saves->createSave();
+
+    CHECK_FALSE(created.name.empty());
+    CHECK(created.name.rfind(Str::SaveNamePrefix, 0) == 0);
+}
+
+TEST_CASE("SaveManager - 读不存在的存档返回 false 而不是抛异常") {
+    Sandbox box;
+
+    SaveInfo info;
+    CHECK_FALSE(box.saves->loadSave("nope.conf", info));
+}
+
+TEST_CASE("SaveManager - 读回全部字段") {
+    Sandbox box;
+    box.writeRawSave("full.conf", kGoodSave);
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("full.conf", info));
+
+    CHECK(info.name == "测试存档");
+    CHECK(info.coins == 42);
+    CHECK(info.currentLevel == 3);
+    REQUIRE(info.levelStars.size() == 9);
+    CHECK(info.levelStars[0] == 3);
+    CHECK(info.levelStars[1] == 2);
+    CHECK(info.levelStars[2] == 1);
+    REQUIRE(info.levelBestTimes.size() == 9);
+    CHECK(info.levelBestTimes[0] == doctest::Approx(12.34f));
+    CHECK(info.levelBestTimes[1] == doctest::Approx(20.f));
+    CHECK(info.levelBestTimes[2] == doctest::Approx(0.f));
+}
+
+TEST_CASE("SaveManager - 兼容旧字段名 progress（历史存档）") {
+    Sandbox box;
+    // 老版本把金币数存在 progress= 里
+    box.writeRawSave("legacy.conf",
+                     "name=老存档\n"
+                     "progress=99\n"
+                     "current_level=5\n");
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("legacy.conf", info));
+
+    CHECK(info.coins == 99);
+    CHECK(info.currentLevel == 5);
+}
+
+TEST_CASE("SaveManager - 关卡数组短于 9 关时补齐") {
+    Sandbox box;
+    box.writeRawSave("short.conf",
+                     "name=短\n"
+                     "level_stars=3,1\n"
+                     "level_best_times=5.00\n");
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("short.conf", info));
+
+    REQUIRE(info.levelStars.size() == 9);
+    CHECK(info.levelStars[0] == 3);
+    CHECK(info.levelStars[1] == 1);
+    CHECK(info.levelStars[2] == 0);
+    CHECK(info.levelStars[8] == 0);
+
+    REQUIRE(info.levelBestTimes.size() == 9);
+    CHECK(info.levelBestTimes[0] == doctest::Approx(5.f));
+    CHECK(info.levelBestTimes[8] == doctest::Approx(0.f));
+}
+
+TEST_CASE("SaveManager - 字段缺失时用默认值填充") {
+    Sandbox box;
+    box.writeRawSave("thin.conf", "name=只有名字\n");
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("thin.conf", info));
+
+    CHECK(info.name == "只有名字");
+    CHECK(info.coins == 0);
+    CHECK(info.currentLevel == 1);
+    CHECK(info.levelStars.size() == 9);
+    CHECK(info.levelBestTimes.size() == 9);
+}
+
+TEST_CASE("SaveManager - 字段值不是数字时回退默认而不是抛异常") {
+    Sandbox box;
+    box.writeRawSave("bad.conf",
+                     "name=坏的\n"
+                     "coins=abc\n"
+                     "current_level=xyz\n"
+                     "level_stars=3,abc,1\n");
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("bad.conf", info));
+
+    CHECK(info.coins == 0);
+    CHECK(info.currentLevel == 1);
+    CHECK(info.levelStars[0] == 3);
+    CHECK(info.levelStars[1] == 0);   // 解析失败的那一项当 0
+}
+
+// ============================================================
+// listSaves
+// ============================================================
+
+TEST_CASE("SaveManager - 空目录列出空列表") {
+    Sandbox box;
+
+    CHECK(box.saves->listSaves().empty());
+}
+
+TEST_CASE("SaveManager - 只列 .conf，且按最后游玩时间倒序") {
+    Sandbox box;
+    box.writeRawSave("old.conf",
+                     "name=旧的\nlast_played=2026-01-01 00:00:00\n");
+    box.writeRawSave("new.conf",
+                     "name=新的\nlast_played=2026-06-01 00:00:00\n");
+    box.writeRawSave("notes.txt", "不是存档\n");
+
+    const auto list = box.saves->listSaves();
+
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].name == "新的");   // 最近玩过的排前面
+    CHECK(list[1].name == "旧的");
+}
+
+// ============================================================
+// updateProgress
+// ============================================================
+
+TEST_CASE("SaveManager - 进度只增不减") {
+    Sandbox box;
+    box.writeRawSave("p.conf", kGoodSave);   // coins=42, level=3
+
+    CHECK(box.saves->updateProgress("p.conf", 10, 1));   // 更低的成绩
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("p.conf", info));
+    CHECK(info.coins == 42);          // 没被改小
+    CHECK(info.currentLevel == 3);
+}
+
+TEST_CASE("SaveManager - 进度提高时会被写入") {
+    Sandbox box;
+    box.writeRawSave("p.conf", kGoodSave);
+
+    CHECK(box.saves->updateProgress("p.conf", 80, 5));
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("p.conf", info));
+    CHECK(info.coins == 80);
+    CHECK(info.currentLevel == 5);
+}
+
+TEST_CASE("SaveManager - 对不存在的存档更新进度返回 false") {
+    Sandbox box;
+
+    CHECK_FALSE(box.saves->updateProgress("missing.conf", 10, 2));
+}
+
+// ============================================================
+// setLevelStar
+// ============================================================
+
+TEST_CASE("SaveManager - 星级取最高，不会被更差的成绩覆盖") {
+    Sandbox box;
+    box.writeRawSave("s.conf", kGoodSave);   // 第 1 关 3 星
+
+    CHECK(box.saves->setLevelStar("s.conf", 1, 1));   // 更差
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("s.conf", info));
+    CHECK(info.levelStars[0] == 3);
+}
+
+TEST_CASE("SaveManager - 星级提高时会被写入") {
+    Sandbox box;
+    box.writeRawSave("s.conf", kGoodSave);   // 第 4 关 0 星
+
+    CHECK(box.saves->setLevelStar("s.conf", 4, 2));
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("s.conf", info));
+    CHECK(info.levelStars[3] == 2);
+}
+
+TEST_CASE("SaveManager - 越界的关卡号被拒绝") {
+    Sandbox box;
+    box.writeRawSave("s.conf", kGoodSave);
+
+    CHECK_FALSE(box.saves->setLevelStar("s.conf", 0, 3));
+    CHECK_FALSE(box.saves->setLevelStar("s.conf", 10, 3));
+    CHECK_FALSE(box.saves->setLevelStar("s.conf", -1, 3));
+}
+
+// ============================================================
+// setLevelBestTime
+// ============================================================
+
+TEST_CASE("SaveManager - PB 取最小，更慢的成绩不算刷新") {
+    Sandbox box;
+    box.writeRawSave("t.conf", kGoodSave);   // 第 1 关 12.34 秒
+
+    // 注意：未刷新时返回 false，与 setLevelStar（未提升也返回 true）不一致，
+    // 这里把当前行为钉住 —— 改语义时至少会有一条测试提醒。
+    CHECK_FALSE(box.saves->setLevelBestTime("t.conf", 1, 30.f));
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("t.conf", info));
+    CHECK(info.levelBestTimes[0] == doctest::Approx(12.34f));
+}
+
+TEST_CASE("SaveManager - 更快的成绩会刷新 PB") {
+    Sandbox box;
+    box.writeRawSave("t.conf", kGoodSave);
+
+    CHECK(box.saves->setLevelBestTime("t.conf", 1, 8.5f));
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("t.conf", info));
+    CHECK(info.levelBestTimes[0] == doctest::Approx(8.5f));
+}
+
+TEST_CASE("SaveManager - 0 秒视为无记录，第一次通关一定写入") {
+    Sandbox box;
+    box.writeRawSave("t.conf", kGoodSave);   // 第 5 关是 0
+
+    CHECK(box.saves->setLevelBestTime("t.conf", 5, 60.f));
+
+    SaveInfo info;
+    REQUIRE(box.saves->loadSave("t.conf", info));
+    CHECK(info.levelBestTimes[4] == doctest::Approx(60.f));
+}
+
+TEST_CASE("SaveManager - 非正的时间被拒绝") {
+    Sandbox box;
+    box.writeRawSave("t.conf", kGoodSave);
+
+    CHECK_FALSE(box.saves->setLevelBestTime("t.conf", 1, 0.f));
+    CHECK_FALSE(box.saves->setLevelBestTime("t.conf", 1, -5.f));
+}
+
+TEST_CASE("SaveManager - 越界的关卡号被拒绝（时间）") {
+    Sandbox box;
+    box.writeRawSave("t.conf", kGoodSave);
+
+    CHECK_FALSE(box.saves->setLevelBestTime("t.conf", 0, 10.f));
+    CHECK_FALSE(box.saves->setLevelBestTime("t.conf", 10, 10.f));
+}
+
+// ============================================================
+// deleteSave
+// ============================================================
+
+TEST_CASE("SaveManager - 删除存档") {
+    Sandbox box;
+    box.writeRawSave("gone.conf", kGoodSave);
+    REQUIRE(fs::exists(box.savePath("gone.conf")));
+
+    CHECK(box.saves->deleteSave("gone.conf"));
+    CHECK_FALSE(fs::exists(box.savePath("gone.conf")));
+    CHECK(box.saves->listSaves().empty());
+}
+
+TEST_CASE("SaveManager - 删除不存在的存档返回 false") {
+    Sandbox box;
+
+    CHECK_FALSE(box.saves->deleteSave("never.conf"));
+}
+
+// ============================================================
+// pending save（场景之间传存档的通道）
+// ============================================================
+
+TEST_CASE("SaveManager - pending save 取走之后就没了") {
+    Sandbox box;
+
+    CHECK_FALSE(box.saves->hasPendingSave());
+
+    SaveInfo info;
+    info.filename = "x.conf";
+    info.name = "待进入的存档";
+    box.saves->setPendingSave(info);
+
+    CHECK(box.saves->hasPendingSave());
+
+    const SaveInfo taken = box.saves->takePendingSave();
+    CHECK(taken.filename == "x.conf");
+    CHECK(taken.name == "待进入的存档");
+
+    // 取走即清空，避免下一次进游戏又跳回同一个存档
+    CHECK_FALSE(box.saves->hasPendingSave());
+}
+===== ./tests/test_score_rules.cpp =====
+#include "doctest.h"
+#include "game/score_rules.h"
+
+#include <initializer_list>
+
+// 星级与目标时间规则。
+//
+// 这段逻辑原先在 GameScene 的私有方法里，而 GameScene 构造需要 sf::Font
+// （GlResource），所以一直测不到。它是纯算术，抽出来之后就能直接测了。
+//
+// 这里重点钉两条容易反着写的语义：
+//   - 目标时间与金币数**正相关**（金币多 = 给的时间多）
+//   - 没金币的关卡"集齐"天然成立，不超时就是 3 星
+
+TEST_CASE("ScoreRules - 目标时间随金币数增加") {
+    CHECK(ScoreRules::targetTimeSeconds(0) == 30);    // 基础时间
+    CHECK(ScoreRules::targetTimeSeconds(1) == 33);
+    CHECK(ScoreRules::targetTimeSeconds(10) == 60);
+
+    // 单调递增：金币越多，容错时间越长
+    for (int coins = 0; coins < 40; ++coins)
+        CHECK(ScoreRules::targetTimeSeconds(coins + 1) >
+              ScoreRules::targetTimeSeconds(coins));
+}
+
+TEST_CASE("ScoreRules - 金币数为负时按 0 处理") {
+    CHECK(ScoreRules::targetTimeSeconds(-5) == ScoreRules::targetTimeSeconds(0));
+}
+
+TEST_CASE("ScoreRules - 集齐且达标 = 3 星") {
+    // 10 枚金币 -> 目标 60 秒
+    CHECK(ScoreRules::starsFor(10, 10, 10.f) == 3);
+    CHECK(ScoreRules::starsFor(10, 10, 59.9f) == 3);
+}
+
+TEST_CASE("ScoreRules - 正好卡在目标时间算达标") {
+    const int target = ScoreRules::targetTimeSeconds(10);   // 60
+    CHECK(ScoreRules::starsFor(10, 10, static_cast<float>(target)) == 3);
+    // 超出一丁点就不算
+    CHECK(ScoreRules::starsFor(10, 10, static_cast<float>(target) + 0.01f) == 2);
+}
+
+TEST_CASE("ScoreRules - 只满足一项 = 2 星") {
+    // 集齐了但超时
+    CHECK(ScoreRules::starsFor(10, 10, 999.f) == 2);
+    // 没集齐但很快
+    CHECK(ScoreRules::starsFor(3, 10, 5.f) == 2);
+}
+
+TEST_CASE("ScoreRules - 两项都不满足 = 1 星") {
+    CHECK(ScoreRules::starsFor(3, 10, 999.f) == 1);
+    CHECK(ScoreRules::starsFor(0, 10, 999.f) == 1);
+}
+
+TEST_CASE("ScoreRules - 没有金币的关卡：不超时就是 3 星") {
+    // coins == totalCoins == 0，集齐天然成立
+    CHECK(ScoreRules::starsFor(0, 0, 1.f) == 3);
+    CHECK(ScoreRules::starsFor(0, 0, 30.f) == 3);
+    // 超时则掉到 2 星（集齐仍成立）
+    CHECK(ScoreRules::starsFor(0, 0, 31.f) == 2);
+}
+
+TEST_CASE("ScoreRules - 星级恒在 1~3 之间") {
+    for (int total = 0; total <= 12; ++total) {
+        for (int got = 0; got <= total; ++got) {
+            for (float t : {0.f, 5.f, 100.f, 10000.f}) {
+                const int s = ScoreRules::starsFor(got, total, t);
+                CHECK(s >= 1);
+                CHECK(s <= 3);
+            }
+        }
+    }
+}
+
+// ============================================================
+// PB（个人最佳）
+// ============================================================
+
+TEST_CASE("ScoreRules - 0 或负数视为无记录，一定算刷新") {
+    CHECK(ScoreRules::isNewRecord(0.f, 100.f));
+    CHECK(ScoreRules::isNewRecord(-1.f, 100.f));
+}
+
+TEST_CASE("ScoreRules - 只有更快才算刷新 PB") {
+    CHECK(ScoreRules::isNewRecord(10.f, 9.9f));       // 更快
+    CHECK_FALSE(ScoreRules::isNewRecord(10.f, 10.f)); // 一样快不算
+    CHECK_FALSE(ScoreRules::isNewRecord(10.f, 10.1f));// 更慢不算
+}
+===== ./tests/test_editor_tools.cpp =====
+#include "doctest.h"
+#include "scene/editor_tools.h"
+
+#include <algorithm>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+// 编辑器的格子几何。
+//
+// 拖拽绘制最容易出的错就是差一格：往左上拖和往右下拖结果不一致、
+// 快速拖动时连线漏掉端点、或者两个采样点之间留下断线。
+// 这些是纯几何，从 EditorScene 里抽出来之后就能测了
+// （编辑器场景构造需要字体，测不了）。
+namespace {
+
+bool contains(const std::vector<sf::Vector2i>& cells, int x, int y) {
+    return std::any_of(cells.begin(), cells.end(),
+                       [x, y](const sf::Vector2i& c) { return c.x == x && c.y == y; });
+}
+
+/// 把格子列表排序后转成可比较的字符串，用来看"画了哪些格子"
+std::string dump(std::vector<sf::Vector2i> cells) {
+    std::sort(cells.begin(), cells.end(), [](const sf::Vector2i& a, const sf::Vector2i& b) {
+        return a.y != b.y ? a.y < b.y : a.x < b.x;
+    });
+    std::string out;
+    for (const auto& c : cells)
+        out += "(" + std::to_string(c.x) + "," + std::to_string(c.y) + ")";
+    return out;
+}
+
+} // namespace
+
+// ============================================================
+// rectCells
+// ============================================================
+
+TEST_CASE("EditorTools - 矩形含两端且格子数正确") {
+    const auto cells = EditorTools::rectCells({2, 3}, {4, 5});   // 3 列 × 3 行
+
+    CHECK(cells.size() == 9);
+    CHECK(contains(cells, 2, 3));   // 左上角
+    CHECK(contains(cells, 4, 5));   // 右下角
+    CHECK(contains(cells, 3, 4));   // 中间
+    CHECK_FALSE(contains(cells, 1, 3));
+    CHECK_FALSE(contains(cells, 5, 5));
+}
+
+TEST_CASE("EditorTools - 拖拽方向不影响矩形结果") {
+    const auto a = EditorTools::rectCells({2, 3}, {4, 5});
+    const auto b = EditorTools::rectCells({4, 5}, {2, 3});
+    const auto c = EditorTools::rectCells({2, 5}, {4, 3});
+    const auto d = EditorTools::rectCells({4, 3}, {2, 5});
+
+    CHECK(dump(a) == dump(b));
+    CHECK(dump(a) == dump(c));
+    CHECK(dump(a) == dump(d));
+}
+
+TEST_CASE("EditorTools - 单格矩形就是那一格") {
+    const auto cells = EditorTools::rectCells({7, 8}, {7, 8});
+
+    CHECK(cells.size() == 1);
+    CHECK(cells[0].x == 7);
+    CHECK(cells[0].y == 8);
+}
+
+TEST_CASE("EditorTools - 一行的矩形") {
+    const auto cells = EditorTools::rectCells({0, 5}, {3, 5});
+
+    CHECK(cells.size() == 4);
+    for (int x = 0; x <= 3; ++x)
+        CHECK(contains(cells, x, 5));
+}
+
+TEST_CASE("EditorTools - 矩形是行优先顺序") {
+    // 与原来编辑器里的双重循环（外 y 内 x）一致，便于保持落笔顺序不变
+    const auto cells = EditorTools::rectCells({0, 0}, {1, 1});
+
+    REQUIRE(cells.size() == 4);
+    CHECK(cells[0].x == 0); CHECK(cells[0].y == 0);
+    CHECK(cells[1].x == 1); CHECK(cells[1].y == 0);
+    CHECK(cells[2].x == 0); CHECK(cells[2].y == 1);
+    CHECK(cells[3].x == 1); CHECK(cells[3].y == 1);
+}
+
+TEST_CASE("EditorTools - 负坐标也能正常围矩形") {
+    const auto cells = EditorTools::rectCells({-2, -1}, {0, 1});
+
+    CHECK(cells.size() == 9);
+    CHECK(contains(cells, -2, -1));
+    CHECK(contains(cells, 0, 1));
+}
+
+// ============================================================
+// lineCells
+// ============================================================
+
+TEST_CASE("EditorTools - 连线含两端") {
+    const auto cells = EditorTools::lineCells({0, 0}, {5, 0});
+
+    CHECK_FALSE(cells.empty());
+    CHECK(cells.front().x == 0);
+    CHECK(cells.front().y == 0);
+    CHECK(cells.back().x == 5);
+    CHECK(cells.back().y == 0);
+}
+
+TEST_CASE("EditorTools - 水平线与垂直线每一格都补上") {
+    const auto h = EditorTools::lineCells({0, 0}, {4, 0});
+    REQUIRE(h.size() == 5);
+    for (int x = 0; x <= 4; ++x)
+        CHECK(contains(h, x, 0));
+
+    const auto v = EditorTools::lineCells({3, 0}, {3, 4});
+    REQUIRE(v.size() == 5);
+    for (int y = 0; y <= 4; ++y)
+        CHECK(contains(v, 3, y));
+}
+
+TEST_CASE("EditorTools - 单点连线只画一格") {
+    const auto cells = EditorTools::lineCells({4, 4}, {4, 4});
+
+    REQUIRE(cells.size() == 1);
+    CHECK(cells[0].x == 4);
+    CHECK(cells[0].y == 4);
+}
+
+TEST_CASE("EditorTools - 45 度斜线一格不漏") {
+    const auto cells = EditorTools::lineCells({0, 0}, {3, 3});
+
+    REQUIRE(cells.size() == 4);
+    for (int i = 0; i <= 3; ++i)
+        CHECK(contains(cells, i, i));
+}
+
+TEST_CASE("EditorTools - 反向连线与正向格子集合相同") {
+    const auto fwd = EditorTools::lineCells({0, 0}, {7, 3});
+    const auto bwd = EditorTools::lineCells({7, 3}, {0, 0});
+
+    CHECK(dump(fwd) == dump(bwd));
+}
+
+TEST_CASE("EditorTools - 连线是连续的（相邻格子最多差一格）") {
+    // 这条是"快速拖动不留断线"的本质：每一步至多斜着走一格
+    const std::vector<std::pair<sf::Vector2i, sf::Vector2i>> cases = {
+        {{0, 0}, {17, 5}},
+        {{0, 0}, {5, 17}},
+        {{-9, 4}, {12, -30}},
+        {{3, 3}, {-3, -3}},
+    };
+
+    for (const auto& [from, to] : cases) {
+        CAPTURE(from.x); CAPTURE(from.y); CAPTURE(to.x); CAPTURE(to.y);
+        const auto cells = EditorTools::lineCells(from, to);
+        REQUIRE(cells.size() >= 2);
+
+        for (std::size_t i = 1; i < cells.size(); ++i) {
+            const int dx = std::abs(cells[i].x - cells[i - 1].x);
+            const int dy = std::abs(cells[i].y - cells[i - 1].y);
+            CHECK(dx <= 1);
+            CHECK(dy <= 1);
+            CHECK(dx + dy >= 1);   // 不允许原地踏步
+        }
+    }
+}
+
+TEST_CASE("EditorTools - 连线长度符合切比雪夫距离") {
+    // Bresenham 的步数 = max(|dx|, |dy|)，格子数 = 步数 + 1
+    const auto cells = EditorTools::lineCells({0, 0}, {10, 4});
+
+    CHECK(cells.size() == 11);   // max(10, 4) + 1
 }
 ===== ./tools/validate_levels.cpp =====
 #include "level.h"
@@ -43032,42 +43868,65 @@ TEXT-GAME/
 │       ├── postprocess.frag  # 后处理合成
 │       ├── brightpass.frag   # 泛光：亮部提取
 │       └── blur.frag         # 泛光：高斯模糊
-├── include/
-│   ├── config/               # 配置类（Bootstrap / Runtime / Preferences）
-│   ├── core/                 # 核心（Application、Game、SceneManager、Logger、Lang、text_strings）
-│   ├── game/                 # 游戏本体
+├── include/                  # 与 src/ 一一对应，共 9 层（从叶子到顶层）
+│   ├── utils/                # 零内部依赖的叶子
+│   │   ├── utf8.h            # std::string ↔ sf::String（中文必须走 toSf）
 │   │   ├── vec2.h            # 二维向量
-│   │   ├── aabb.h            # 碰撞盒
-│   │   ├── game_constants.h  # 物理常量
-│   │   ├── game_object.h     # 对象基类
-│   │   ├── event_bus.h       # 事件总线
+│   │   ├── animation.h       # 缓动函数 + 全局动画开关
+│   │   ├── animator.h        # 精灵帧动画
+│   │   ├── lang.h            # 多语言加载
+│   │   └── text_strings.h    # 所有用户可见字符串
+│   ├── common/               # 共享基元（AppError / ContainerError）
+│   ├── infrastructure/       # 设备层（不认识应用层与前端）
+│   │   ├── gamepad.h         # 手柄 + 焦点导航
+│   │   ├── gamepad_vibration.h
+│   │   └── keybindings.h     # 运行时键位重映射
+│   ├── config/               # 配置
+│   │   ├── config.h          # key=value 存储 + 延迟落盘
+│   │   ├── keys.h            # 配置键的唯一权威来源
+│   │   └── bootstrap.h       # registerConfig()
+│   ├── log/                  # 日志（门面 / 格式化 / 落点 三层）
+│   │   ├── logger.h          # 级别过滤 + 打时间戳 + 分发
+│   │   ├── protocol.h        # LogFormatter / LogHandler 抽象
+│   │   ├── formatters/       # TextFormatter / ConsoleFormatter
+│   │   ├── handlers/         # ConsoleHandler / FileHandler（含轮转）
+│   │   └── bootstrap.h       # registerLog()
+│   ├── core/                 # 应用骨架与场景契约
+│   │   ├── container.h       # 命名式 DI 容器
+│   │   ├── application.h     # 五阶段生命周期 + 四类钩子
+│   │   ├── main_loop.h       # MainLoop 抽象 + Headless 兜底
+│   │   ├── scene_registry.h  # SceneId → 工厂
+│   │   ├── scene_manager.h   # 场景常驻缓存
+│   │   ├── bootstrap.h       # registerCore() / wireCore()
+│   │   ├── game.h            # 游戏主循环（MainLoop 的实现）
+│   │   ├── paths.h           # 资源目录（支持测试沙箱）
+│   │   └── achievement.h
+│   ├── ui/                   # UI 组件与渲染
+│   │   ├── window.h          # 窗口 + 渲染缩放管线
+│   │   ├── upscaler.h        # 超分控制器
+│   │   ├── postprocess.h     # 后处理控制器
+│   │   ├── particle_system.h # 粒子（归表现层所有）
+│   │   ├── button.h / slider.h / text_input.h
+│   │   ├── theme.h / ui_scale.h / button_style.h
+│   │   ├── sound_manager.h / notification.h
+│   │   └── ...
+│   ├── game/                 # 游戏本体
+│   │   ├── game_world.h      # 世界：物理 + 碰撞 + 发事件
 │   │   ├── level.h           # ASCII 关卡
 │   │   ├── level_validator.h # 关卡可达性验证
-│   │   ├── level_codec.h     # 关卡编码（分享码）
-│   │   ├── camera.h          # 摄像机
-│   │   ├── player.h          # 玩家
-│   │   ├── enemy.h           # 敌人
-│   │   ├── coin.h            # 金币
-│   │   ├── jump_pad.h        # 弹跳板
-│   │   ├── checkpoint.h      # 存档点
-│   │   ├── moving_platform.h # 移动平台
-│   │   ├── key.h / door.h    # 钥匙 / 门
-│   │   ├── spike.h           # 尖刺
-│   │   ├── parallax.h        # 视差背景
-│   │   ├── level_intro.h     # 关卡开场文字
-│   │   └── game_world.h      # 游戏世界
-│   ├── scene/                # 7 个场景
-│   └── ui/                   # UI 组件
-│       ├── button.h
-│       ├── slider.h          # 滑条（带数字输入 + 重置按钮）
-│       ├── text_input.h
-│       ├── window.h          # 窗口 + 渲染缩放管线
-│       ├── upscaler.h        # 超分控制器
-│       ├── postprocess.h     # 后处理控制器
-│       ├── console.h
-│       ├── sound_manager.h
-│       ├── gamepad.h         # 手柄（振动接口保留）
-│       └── ...
+│   │   ├── level_codec.h     # 分享码（RLE + Base64）
+│   │   ├── score_rules.h     # 星级 / 目标时间 / PB 规则
+│   │   ├── save_manager.h    # 存档读写
+│   │   ├── player.h / enemy.h / coin.h / checkpoint.h / door.h / spike.h
+│   │   ├── key.h / jump_pad.h / moving_platform.h / parallax.h
+│   │   └── ...
+│   └── scene/                # 8 个场景 + 设置 Tab + 编辑器工具
+│       ├── main_menu_scene.h / save_select_scene.h / level_select_scene.h
+│       ├── game_scene.h / settings_scene.h / console_scene.h
+│       ├── editor_scene.h / achievement_scene.h
+│       ├── editor_tools.h    # 编辑器格子几何（纯函数，可测）
+│       ├── console/          # 控制台命令（计算器等）
+│       └── tabs/             # 6 个设置 Tab
 ├── packaging/
 │   ├── icons/                # 图标生成脚本 + 生成结果
 │   │   └── generate_icons.py
@@ -43080,12 +43939,15 @@ TEXT-GAME/
 ├── scripts/
 │   ├── check_hardcoded.py    # 中文硬编码检测
 │   ├── test.sh               # 一键跑单元测试
+│   ├── install-desktop.sh    # 装进应用菜单 / 终端命令
 │   └── gen_levels.py         # 关卡生成器
 ├── src/                      # 对应 include 的实现
-├── tests/                    # 单元测试（doctest，62 个用例）
+├── tests/                    # 单元测试（doctest，206 个用例，含分层架构测试）
 ├── tools/
 │   └── validate_levels.cpp   # 关卡验证器（命令行）
 ├── wallpaper/                # 壁纸资源
+├── s.sh                      # 一键构建 + 启动游戏
+├── dump.sh                   # 生成源码快照 project_dump.txt（喂给 AI）
 ├── .clang-format
 ├── .clang-tidy               # 静态分析配置
 ├── .editorconfig
@@ -43103,9 +43965,11 @@ TEXT-GAME/
 
 | 模块 | 职责 |
 | :--- | :--- |
-| **DI 容器** | 统一注册/解析所有依赖，自动缓存单例 |
+| **DI 容器** | 命名式注册表（`reg`/`get`/`require`/`tryGet`/`peek`/`touch`），只管注册与解析，不认识生命周期 |
+| **应用生命周期** | `Application::exec()` 五阶段 boot → setup → wire → run → teardown（RAII 保证 teardown 必达）+ 四类钩子 `onBoot`/`onLoop`/`onQuit`/`onFinal` |
+| **分层** | utils / common / infrastructure / config / log / core / ui / game / scene，共 9 层；`ui` 与 `game` 双向不许互相 include，由 `tests/test_layers.cpp` 扫描源码树守护 |
 | **事件总线** | GameWorld 发出游戏事件（跳跃/落地/金币/踩敌/受伤/...），GameScene 订阅处理音效/粒子/振动。解耦 `game` 层与 `ui` 层 |
-| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
+| **场景系统** | 主菜单 / 存档选择 / 选关 / 游戏 / 设置 / 控制台 / 编辑器 / 成就；支持场景栈返回（保留场景状态）；生命周期钩子 `onEnter/onExit/onPause/onResume` |
 | **配置分层** | Bootstrap / Runtime / Preferences，延迟落盘 |
 | **日志** | 彩色终端 + 文件 + 多级别 + 轮转 + 保留份数 |
 | **多语言** | 用中文原文作 key，运行时查表；支持中/繁中/英/日/韩 |
@@ -43157,7 +44021,7 @@ TEXT-GAME/
 - **依赖注入**：自研简易 `Container`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，62 个用例）
+- **测试**：doctest（单头文件，206 个用例 / 1665 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
 - **覆盖率**：gcov + lcov
@@ -43209,6 +44073,10 @@ ttc.fonts[2].save('assets/font.otf')
 ```bash
 git clone git@github.com:ljm-233/TEXT-GAME.git
 cd TEXT-GAME
+
+# 一键启动：增量构建 Release 后直接进游戏（日常用这个）
+./s.sh
+./s.sh --debug      # 要接调试器时
 
 cmake --list-presets
 
@@ -43289,7 +44157,7 @@ cmake --build --preset asan
 ```bash
 cmake --preset coverage
 cmake --build --preset coverage
-cmake --build build/coverage --target coverage
+cmake --build --preset coverage --target coverage
 # 报告生成在 build/coverage/coverage_html/index.html
 ```
 
@@ -43409,9 +44277,12 @@ exit              关闭控制台
 9. **渲染用世界坐标**，平移交给 `sf::View`。
 10. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
 11. **新场景加 `FocusGroup::instance().setItems({...})`** 以支持手柄。
-12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/core/text_strings.h`。
+12. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
 13. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
 14. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
+15. **配置键用 `include/config/keys.h` 的常量**，不要写字面量 —— 写错字只会静默回退默认值。
+16. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口只负责按"底层在前"的顺序调用。
+17. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。`include/utils` 与 `include/infrastructure` 刻意不在 include 路径里，平铺写法编译不过，跨层依赖因此在 include 行上直接可见。
 
 ### 代码格式化
 
@@ -61098,6 +61969,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/game/player.cpp"
   "/home/link/coding/TEXT-GAME/src/game/player_sprite_factory.cpp"
   "/home/link/coding/TEXT-GAME/src/game/save_manager.cpp"
+  "/home/link/coding/TEXT-GAME/src/game/score_rules.cpp"
   "/home/link/coding/TEXT-GAME/src/game/spike.cpp"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
@@ -61192,6 +62064,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/scene/console/calculator.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/console_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp"
+  "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/game_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/level_select_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/main_menu_scene.cpp"
@@ -61747,6 +62620,12 @@ endif()
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/release",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/game/score_rules.cpp.o -c /home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/game/score_rules.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/release",
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/game/spike.cpp.o -c /home/link/coding/TEXT-GAME/src/game/spike.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/spike.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/game/spike.cpp.o"
@@ -61858,6 +62737,12 @@ endif()
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/scene/editor_scene.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/scene/editor_scene.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/release",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -O3 -DNDEBUG -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -march=bonnell -mtune=bonnell -O2 -fno-omit-frame-pointer -fno-plt -o CMakeFiles/text_game.dir/src/scene/editor_tools.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/release/CMakeFiles/text_game.dir/src/scene/editor_tools.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/release",
@@ -66330,6 +67215,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/game/player.cpp"
   "/home/link/coding/TEXT-GAME/src/game/player_sprite_factory.cpp"
   "/home/link/coding/TEXT-GAME/src/game/save_manager.cpp"
+  "/home/link/coding/TEXT-GAME/src/game/score_rules.cpp"
   "/home/link/coding/TEXT-GAME/src/game/spike.cpp"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
@@ -66424,6 +67310,7 @@ set(OLD_GLOB
   "/home/link/coding/TEXT-GAME/src/scene/console/calculator.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/console_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp"
+  "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/game_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/level_select_scene.cpp"
   "/home/link/coding/TEXT-GAME/src/scene/main_menu_scene.cpp"
@@ -66750,7 +67637,7 @@ endif()
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
 add_test("unit_tests" "/home/link/coding/TEXT-GAME/build/tests/tests/unit_tests")
-set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;91;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
+set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;98;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
 ===== ./build/tests/cmake_install.cmake =====
 # Install script for directory: /home/link/coding/TEXT-GAME
 
@@ -67052,6 +67939,12 @@ subdirs("tests")
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/game/score_rules.cpp.o -c /home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/game/score_rules.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/game/spike.cpp.o -c /home/link/coding/TEXT-GAME/src/game/spike.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/spike.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/game/spike.cpp.o"
@@ -67163,6 +68056,12 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/scene/editor_scene.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/scene/editor_scene.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/scene/editor_scene.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DBUILD_DATE=\\\"2026-10-04\\\" -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -DPROJECT_VERSION=\\\"0.1.0\\\" -DTEXTGAME_PLATFORM_LINUX -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/common -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/include/log -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o CMakeFiles/text_game.dir/src/scene/editor_tools.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/CMakeFiles/text_game.dir/src/scene/editor_tools.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -67508,6 +68407,24 @@ subdirs("tests")
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/test_save_manager.cpp.o -c /home/link/coding/TEXT-GAME/tests/test_save_manager.cpp",
+  "file": "/home/link/coding/TEXT-GAME/tests/test_save_manager.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/test_save_manager.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/test_score_rules.cpp.o -c /home/link/coding/TEXT-GAME/tests/test_score_rules.cpp",
+  "file": "/home/link/coding/TEXT-GAME/tests/test_score_rules.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/test_score_rules.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/test_editor_tools.cpp.o -c /home/link/coding/TEXT-GAME/tests/test_editor_tools.cpp",
+  "file": "/home/link/coding/TEXT-GAME/tests/test_editor_tools.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/test_editor_tools.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o -c /home/link/coding/TEXT-GAME/src/game/level.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/level.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o"
@@ -67607,6 +68524,30 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/level_codec.cpp.o -c /home/link/coding/TEXT-GAME/src/game/level_codec.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/level_codec.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/level_codec.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/save_manager.cpp.o -c /home/link/coding/TEXT-GAME/src/game/save_manager.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/save_manager.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/save_manager.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/score_rules.cpp.o -c /home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/score_rules.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/score_rules.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/scene/editor_tools.cpp.o -c /home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/scene/editor_tools.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/scene/editor_tools.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/utils/lang.cpp.o -c /home/link/coding/TEXT-GAME/src/utils/lang.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/utils/lang.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/utils/lang.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -68425,10 +69366,22 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
 | GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |
 | LevelCodec（分享码往返 / 空白容错 / 非法输入 / RLE 边界） | ✅ |
-| Scene / 各设置 Tab | ❌（场景必须有 `sf::Font`，而它是 `GlResource`，构造即要 GL） |
-| SaveManager / UI 组件 | ❌（依赖运行环境） |
+| SaveManager（存档读写 / 只增不减 / PB 取最小 / 旧字段兼容 / 沙箱隔离） | ✅ |
+| ScoreRules（星级 / 目标时间 / PB）—— 从 GameScene 抽出的纯逻辑 | ✅ |
+| EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
+| Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
+
+**场景与 UI 组件本身测不了，就把纯逻辑抽出来测。** 场景构造必须有
+`sf::Font`，而它是 `GlResource` —— 没有 GL 上下文连构造都做不到。所以
+`ScoreRules`（星级/目标时间）与 `EditorTools`（编辑器格子几何）是从
+`GameScene` / `EditorScene` 里**搬出来**的纯逻辑，搬完就能直接测。
+以后再遇到"想测但构造不了"的逻辑，走同一条路：抽成不依赖字体与 GL 的模块。
+
+**需要写文件的模块用 `Paths(root)` 开沙箱**：`Paths` 支持显式传根目录，
+于是 `config` / `saves` / `cache` 全部落在临时目录下，测试不会碰到真实存档
+（见 `tests/test_save_manager.cpp` 的 `Sandbox`）。
 
 **无 sprite 模式**：`Player` / `Coin` / `Enemy` 的构造函数把贴图作为参数，
 传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。

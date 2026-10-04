@@ -291,10 +291,22 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
 | GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |
 | LevelCodec（分享码往返 / 空白容错 / 非法输入 / RLE 边界） | ✅ |
-| Scene / 各设置 Tab | ❌（场景必须有 `sf::Font`，而它是 `GlResource`，构造即要 GL） |
-| SaveManager / UI 组件 | ❌（依赖运行环境） |
+| SaveManager（存档读写 / 只增不减 / PB 取最小 / 旧字段兼容 / 沙箱隔离） | ✅ |
+| ScoreRules（星级 / 目标时间 / PB）—— 从 GameScene 抽出的纯逻辑 | ✅ |
+| EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
+| Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
+
+**场景与 UI 组件本身测不了，就把纯逻辑抽出来测。** 场景构造必须有
+`sf::Font`，而它是 `GlResource` —— 没有 GL 上下文连构造都做不到。所以
+`ScoreRules`（星级/目标时间）与 `EditorTools`（编辑器格子几何）是从
+`GameScene` / `EditorScene` 里**搬出来**的纯逻辑，搬完就能直接测。
+以后再遇到"想测但构造不了"的逻辑，走同一条路：抽成不依赖字体与 GL 的模块。
+
+**需要写文件的模块用 `Paths(root)` 开沙箱**：`Paths` 支持显式传根目录，
+于是 `config` / `saves` / `cache` 全部落在临时目录下，测试不会碰到真实存档
+（见 `tests/test_save_manager.cpp` 的 `Sandbox`）。
 
 **无 sprite 模式**：`Player` / `Coin` / `Enemy` 的构造函数把贴图作为参数，
 传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。

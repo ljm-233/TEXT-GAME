@@ -5,6 +5,10 @@
 // 管理资源目录：
 //   - 开发模式（项目目录里有 assets/）：所有目录在项目里
 //   - 打包模式（可执行文件旁边有 assets/）：资源跟着可执行文件，用户数据在 XDG 目录
+//   - 测试模式（显式传根目录）：全部挂在给定根目录下
+//
+// 三种模式的区别只在于"根在哪"，所以下面把目录布局抽成 layoutUnder()，
+// 免得三份路径拼装各写一遍、各自漂移。
 class Paths {
 public:
     Paths() {
@@ -26,21 +30,23 @@ public:
             mode_ = "packaged";
         } else {
             // 开发模式
-            fs::path root = fs::path(PROJECT_ROOT);
-            configDir_ = root / "config";
-            cacheDir_ = root / "cache";
-            tempDir_ = root / "temp";
-            savesDir_ = root / "saves";
-            wallpaperDir_ = root / "wallpaper";
-            assetsDir_ = root / "assets";
+            layoutUnder(fs::path(PROJECT_ROOT));
             mode_ = "development";
         }
 
-        for (auto& d :
-             {configDir_, cacheDir_, tempDir_, savesDir_, wallpaperDir_, assetsDir_}) {
-            std::error_code ec;
-            fs::create_directories(d, ec);
-        }
+        createAll();
+    }
+
+    /// 测试用：把所有目录挂到给定根目录下。
+    ///
+    /// 原先不行 —— 目录一律从 PROJECT_ROOT 或可执行文件位置推导，于是任何
+    /// "写文件"的模块（SaveManager 等）都没法在临时目录里被测，只能去动真实的
+    /// 存档目录。有了这个构造函数，测试可以造一个只属于自己的沙箱。
+    explicit Paths(const std::filesystem::path& root) {
+        layoutUnder(root);
+        assetRoot_ = root;
+        mode_ = "test";
+        createAll();
     }
 
     const std::filesystem::path& configDir() const { return configDir_; }
@@ -53,6 +59,23 @@ public:
     const std::string& mode() const { return mode_; }
 
 private:
+    void layoutUnder(const std::filesystem::path& root) {
+        configDir_ = root / "config";
+        cacheDir_ = root / "cache";
+        tempDir_ = root / "temp";
+        savesDir_ = root / "saves";
+        wallpaperDir_ = root / "wallpaper";
+        assetsDir_ = root / "assets";
+    }
+
+    void createAll() {
+        for (auto& d :
+             {configDir_, cacheDir_, tempDir_, savesDir_, wallpaperDir_, assetsDir_}) {
+            std::error_code ec;
+            std::filesystem::create_directories(d, ec);
+        }
+    }
+
     std::filesystem::path assetRoot_;
     std::filesystem::path configDir_;
     std::filesystem::path cacheDir_;

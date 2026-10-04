@@ -5,6 +5,7 @@
 #include "sound_manager.h"
 #include "infrastructure/keybindings.h"
 #include "game_constants.h"
+#include "game/score_rules.h"
 #include "focus_group.h"
 #include "infrastructure/gamepad.h"
 #include "achievement.h"
@@ -25,8 +26,6 @@
 
 namespace {
 // ⭐ 目标时间公式：基础 30 秒 + 每金币 3 秒
-constexpr float kBaseTime = 30.f;
-constexpr float kPerCoinTime = 3.f;
 
 // ⭐ 作用域计时器（EMA 平滑写入）
 struct ScopeTimer {
@@ -188,7 +187,7 @@ void GameScene::subscribeWorldEvents() {
                 saveManager_->updateProgress(save_.filename,
                                              world_->coins(), levelIndex_);
 
-                newRecord_ = (prevBestTime_ <= 0.f || levelTime_ < prevBestTime_);
+                newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
                 if (newRecord_) {
                     saveManager_->setLevelBestTime(save_.filename,
                                                    levelIndex_, levelTime_);
@@ -579,20 +578,15 @@ void GameScene::refreshHud() {
 }
 
 int GameScene::targetTime() const {
+    // 没世界时给个中庸值（等价于 10 枚金币的目标时间）
     if (!world_) return 60;
-    int totalCoins = world_->totalCoins();
-    return static_cast<int>(kBaseTime + totalCoins * kPerCoinTime);
+    return ScoreRules::targetTimeSeconds(world_->totalCoins());
 }
 
 int GameScene::calcStars() const {
     if (!world_) return 1;
-
-    bool allCoins = (world_->coins() == world_->totalCoins());
-    bool fastEnough = (levelTime_ <= static_cast<float>(targetTime()));
-
-    if (allCoins && fastEnough) return 3;
-    if (allCoins || fastEnough) return 2;
-    return 1;
+    // 规则本身在 game/score_rules.h —— 纯算术，放在那里才测得到
+    return ScoreRules::starsFor(world_->coins(), world_->totalCoins(), levelTime_);
 }
 
 void GameScene::applyStars() {

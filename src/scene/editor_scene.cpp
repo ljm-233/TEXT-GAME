@@ -1,4 +1,5 @@
 #include "editor_scene.h"
+#include "scene/editor_tools.h"
 #include "utils/text_strings.h"
 #include "level_codec.h"
 #include "level.h"
@@ -589,26 +590,14 @@ void EditorScene::paintCell(int tx, int ty, char newChar) {
 }
 
 void EditorScene::paintLine(sf::Vector2i from, sf::Vector2i to, char newChar) {
-    int x0 = from.x, y0 = from.y;
-    int x1 = to.x,   y1 = to.y;
-    int dx =  std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    while (true) {
-        paintCell(x0, y0, newChar);
-        if (x0 == x1 && y0 == y1) break;
-        int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
-    }
+    // "画哪几格"由 EditorTools 算（纯几何，可测），这里只负责落笔
+    for (const auto& c : EditorTools::lineCells(from, to))
+        paintCell(c.x, c.y, newChar);
 }
 
 void EditorScene::paintRect(sf::Vector2i a, sf::Vector2i b, char newChar) {
-    int x0 = std::min(a.x, b.x), x1 = std::max(a.x, b.x);
-    int y0 = std::min(a.y, b.y), y1 = std::max(a.y, b.y);
-    for (int y = y0; y <= y1; ++y)
-        for (int x = x0; x <= x1; ++x)
-            paintCell(x, y, newChar);
+    for (const auto& c : EditorTools::rectCells(a, b))
+        paintCell(c.x, c.y, newChar);
 }
 
 void EditorScene::enforceUniquePlayer(int keepX, int keepY) {

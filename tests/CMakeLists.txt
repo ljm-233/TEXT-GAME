@@ -18,6 +18,9 @@ add_executable(unit_tests
     test_entities.cpp
     test_game_world.cpp
     test_level_codec.cpp
+    test_save_manager.cpp
+    test_score_rules.cpp
+    test_editor_tools.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -57,6 +60,10 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
     ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
     ${CMAKE_SOURCE_DIR}/src/game/level_codec.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/save_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
+    ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
     # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
     # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
     # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
