@@ -17,7 +17,24 @@ class GameWorld {
 public:
     enum class State { Playing, LevelComplete, GameOver };
 
-    GameWorld(std::unique_ptr<Level> level, int levelIndex);
+    /// 场景里用到的贴图。
+    ///
+    /// 由调用方注入，而不是 GameWorld 自己去调全局 sprite factory —— 那些
+    /// factory 内部用 RenderTexture 程序化画贴图，没有 GL 上下文时 SFML 会
+    /// 直接 SIGABRT，于是整个类在构造阶段就依赖 GL，根本没法测。
+    ///
+    /// 全部留空 = "无 sprite 模式"：实体照常参与逻辑与碰撞，只是画不出东西。
+    struct SpriteSheets {
+        std::shared_ptr<sf::Texture> player;
+        std::shared_ptr<sf::Texture> coin;
+        std::shared_ptr<sf::Texture> enemy;
+
+        /// 从三个 sprite factory 取贴图。**需要 GL 上下文**，生产代码走这条。
+        static SpriteSheets fromFactories();
+    };
+
+    GameWorld(std::unique_ptr<Level> level, int levelIndex,
+              SpriteSheets sheets = {});
 
     void handleEvent(const sf::Event& event);
     void update(float dt);
@@ -75,13 +92,19 @@ private:
 
     std::unique_ptr<Level> level_;
     int levelIndex_ = 1;
+    SpriteSheets sheets_;
 
     std::vector<std::unique_ptr<GameObject>> objects_;
     Player* player_ = nullptr;
     Checkpoint* activeCheckpoint_ = nullptr;   // 当前激活的存档点（最多一个）
 
     Camera camera_;
-    mutable sf::Texture shadowTex_;
+    // ⚠️ 必须是 unique_ptr，不能是按值的 sf::Texture：
+    //    sf::Texture 继承自 sf::GlResource，**它的构造函数就会确保 GL 上下文存在**，
+    //    没有 DISPLAY 时 SFML 直接 abort。作为按值成员会让"构造 GameWorld"
+    //    这件事本身依赖 GL，于是 GameWorld 根本没法在任何无界面环境（测试、CI）里用。
+    //    阴影纹理本来就是懒生成的，改成指针不影响行为。
+    mutable std::unique_ptr<sf::Texture> shadowTex_;
     mutable bool shadowTexReady_ = false;
     EventBus bus_;
 

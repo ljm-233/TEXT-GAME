@@ -5308,497 +5308,6 @@ void Player::render(sf::RenderTarget& target) const {
         pos_.y + size_.y
     });
     target.draw(*sprite_);
-}===== ./src/game/game_world.cpp =====
-#include "game_world.h"
-#include "coin.h"
-#include "enemy.h"
-#include "jump_pad.h"
-#include "checkpoint.h"
-#include "moving_platform.h"
-#include "key.h"
-#include "door.h"
-#include "spike.h"
-#include "player_sprite_factory.h"
-#include "coin_sprite_factory.h"
-#include "enemy_sprite_factory.h"
-#include "game_constants.h"
-#include <algorithm>
-#include <cmath>
-
-GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
-    : level_(std::move(level)),
-      levelIndex_(levelIndex) {
-
-    camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
-                           static_cast<float>(level_->pixelHeight()));
-
-    level_->setPseudo3D(true);
-
-    spawnPlayer(level_->playerSpawn());
-    player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
-    spawnLevelObjects();
-
-    camera_.snapTo(player_->bounds().center());
-}
-
-void GameWorld::spawnPlayer(Vec2 spawn) {
-    auto p = std::make_unique<Player>(spawn, PlayerSpriteFactory::getSheet());
-    player_ = p.get();
-    objects_.push_back(std::move(p));
-}
-
-void GameWorld::spawnLevelObjects() {
-    for (const auto& pos : level_->coinSpawns())
-        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(),
-                                     CoinSpriteFactory::getSheet()));
-    totalCoins_ = static_cast<int>(level_->coinSpawns().size());
-
-    for (const auto& pos : level_->enemySpawns())
-        objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize(),
-                                      EnemySpriteFactory::getSheet()));
-
-    for (const auto& pos : level_->jumpPadSpawns())
-        objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
-
-    for (const auto& pos : level_->checkpointSpawns())
-        objects_.push_back(std::make_unique<Checkpoint>(pos, level_->tileSize()));
-
-    for (const auto& pos : level_->movingPlatformSpawns())
-        objects_.push_back(std::make_unique<MovingPlatform>(
-            pos, level_->tileSize(), 4.f * level_->tileSize(), true, 80.f));
-
-    for (const auto& pos : level_->verticalPlatformSpawns())
-        objects_.push_back(std::make_unique<MovingPlatform>(
-            pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
-
-    for (const auto& pos : level_->keySpawns())
-        objects_.push_back(std::make_unique<Key>(pos, level_->tileSize()));
-
-    doors_.clear();
-    for (const auto& pos : level_->doorSpawns()) {
-        auto d = std::make_unique<Door>(pos, level_->tileSize());
-        int tx = static_cast<int>(pos.x) / level_->tileSize();
-        int ty = static_cast<int>(pos.y) / level_->tileSize();
-
-        level_->setDynamicSolid(tx, ty, true);
-
-        doors_.push_back({d.get(), tx, ty});
-        objects_.push_back(std::move(d));
-    }
-
-    for (const auto& pos : level_->spikeSpawns())
-        objects_.push_back(std::make_unique<Spike>(pos, level_->tileSize()));
-}
-
-void GameWorld::setViewSize(float w, float h) {
-    camera_.setViewSize(w, h);
-}
-
-void GameWorld::handleEvent(const sf::Event& event) {
-    if (state_ != State::Playing) return;
-    if (player_) player_->handleEvent(event);
-}
-
-void GameWorld::update(float dt) {
-    if (state_ != State::Playing) return;
-
-    if (player_) player_->handleGamepad();
-
-    accumulator_ += dt;
-    int iterations = 0;
-    while (accumulator_ >= GameConst::kFixedTimeStep && iterations < 8) {
-        float step = GameConst::kFixedTimeStep;
-
-        // ① 移动平台先更新
-        for (auto& obj : objects_) {
-            if (obj->type() == GameObject::Type::Platform) {
-                obj->update(step, *level_);
-            }
-        }
-
-        // ② 玩家物理
-        if (player_) player_->update(step, *level_);
-
-        // ③ 玩家站台检测
-        if (player_) {
-            AABB pb = player_->bounds();
-            for (auto& obj : objects_) {
-                if (obj->type() != GameObject::Type::Platform) continue;
-                auto* mp = static_cast<MovingPlatform*>(obj.get());
-                AABB plat = mp->bounds();
-
-                bool overlapX = pb.right() > plat.left() + 1.f &&
-                                pb.left() < plat.right() - 1.f;
-                bool nearTop  = pb.bottom() >= plat.top() - 4.f &&
-                                pb.bottom() <= plat.top() + 10.f;
-
-                if (overlapX && nearTop && player_->velocity().y >= -1.f) {
-                    player_->landOnPlatform(plat.top());
-                    player_->moveBy(mp->lastDelta());
-                    break;
-                }
-            }
-        }
-
-        // ④ 其他对象（跳过平台和玩家）
-        for (auto& obj : objects_) {
-            auto t = obj->type();
-            if (t != GameObject::Type::Platform &&
-                t != GameObject::Type::Player) {
-                obj->update(step, *level_);
-            }
-        }
-
-        checkCollisionsSafe();
-        if (state_ != State::Playing) return;
-        accumulator_ -= step;
-        ++iterations;
-    }
-
-    // 跳跃 / 落地事件
-    if (player_) {
-        Vec2 pb = player_->bounds().center();
-        float footX = pb.x;
-        float footY = player_->bounds().bottom();
-
-        if (player_->consumeJustJumped()) {
-            bus_.emit(EvJumped{Vec2{footX, footY}});
-        }
-        if (player_->consumeJustLanded()) {
-            float vy = std::abs(player_->velocity().y);
-            float intensity = std::clamp(vy / 700.f, 0.5f, 1.5f);
-            bus_.emit(EvLanded{Vec2{footX, footY}, intensity});
-        }
-    }
-
-    // 掉图
-    if (player_ && player_->consumeFellOut()) {
-        --lives_;
-        bus_.emit(EvHurt{player_->bounds().center()});
-        if (screenShake_) camera_.shake(8.f, 0.3f);
-        if (lives_ <= 0) {
-            pendingRestart_ = true;
-            respawnDelayTimer_ = 0.5f;
-            return;
-        }
-    }
-
-    // 到达终点
-    if (checkGoalReached()) {
-        state_ = State::LevelComplete;
-        bus_.emit(EvLevelComplete{});
-        return;
-    }
-
-    // 生命耗尽 → 延迟 0.5 秒后从最近的存档点重生
-    if (pendingRestart_) {
-        if (respawnDelayTimer_ > 0.f) {
-            respawnDelayTimer_ -= dt;
-            // 冻结游戏逻辑，但保留摄像机的震屏效果。
-            // 粒子由 GameScene 每帧推进，不在这里管。
-            camera_.updateShake(dt);
-            if (player_) camera_.follow(player_->bounds().center(),
-                                        {0.f, 0.f}, dt);
-            return;
-        }
-        // 延迟结束，触发事件并从存档点重生
-        bus_.emit(EvLifeExhausted{});
-        respawnAtCheckpoint();
-        return;
-    }
-
-    objects_.erase(
-        std::remove_if(objects_.begin(), objects_.end(),
-            [](const std::unique_ptr<GameObject>& o) {
-                return o->isRemovable();
-            }),
-        objects_.end());
-
-    if (player_) camera_.follow(player_->bounds().center(),
-                                player_->velocity(), dt);
-    camera_.updateShake(dt);
-}
-
-void GameWorld::checkCollisionsSafe() {
-    if (!player_) return;
-    AABB pb = player_->bounds();
-
-    for (auto& obj : objects_) {
-        if (obj.get() == player_) continue;
-        if (obj->type() == GameObject::Type::Platform) continue;
-        if (!obj->bounds().intersects(pb)) continue;
-
-        switch (obj->type()) {
-            case GameObject::Type::Coin: {
-                auto* c = static_cast<Coin*>(obj.get());
-                if (!c->collected()) {
-                    c->collect();
-                    ++coins_;
-                    bus_.emit(EvCoined{c->bounds().center()});
-                }
-                break;
-            }
-            case GameObject::Type::Enemy: {
-                auto* e = static_cast<Enemy*>(obj.get());
-                if (e->killed()) break;
-
-                bool falling = player_->velocity().y > 0.f;
-                float overlap = pb.bottom() - e->bounds().top();
-                bool fromAbove = overlap < GameConst::kStompTolerance;
-
-                if (falling && fromAbove) {
-                    e->kill();
-                    player_->bounce();
-                    bus_.emit(EvStomped{e->bounds().center()});
-                    if (screenShake_) camera_.shake(4.f, 0.15f);
-                } else if (!player_->isInvincible()) {
-                    player_->takeDamage();
-                    --lives_;
-                    bus_.emit(EvHurt{pb.center()});
-                    if (screenShake_) camera_.shake(8.f, 0.3f);
-                    if (lives_ <= 0) {
-                        pendingRestart_ = true;
-                        respawnDelayTimer_ = 0.5f;
-                        return;
-                    }
-                }
-                break;
-            }
-            case GameObject::Type::JumpPad: {
-                auto* jp = static_cast<JumpPad*>(obj.get());
-                if (jp->canTrigger()) {
-                    player_->setVelocityY(JumpPad::kLaunchSpeed);
-                    jp->trigger();
-                    bus_.emit(EvJumpPad{pb.center()});
-                }
-                break;
-            }
-            case GameObject::Type::Checkpoint: {
-                auto* cp = static_cast<Checkpoint*>(obj.get());
-                if (!cp->isActive()) {
-                    // ⭐ 取消上一个激活的存档点
-                    if (activeCheckpoint_ && activeCheckpoint_ != cp) {
-                        activeCheckpoint_->deactivate();
-                    }
-                    cp->activate();
-                    activeCheckpoint_ = cp;
-                    player_->setSpawn(cp->respawnPos());
-                    bus_.emit(EvCheckpoint{cp->bounds().center()});
-                }
-                break;
-            }
-            case GameObject::Type::Key: {
-                auto* k = static_cast<Key*>(obj.get());
-                if (!k->collected()) {
-                    k->collect();
-                    player_->addKey();
-                    bus_.emit(EvCoined{k->bounds().center()});
-
-                    for (auto& entry : doors_) {
-                        entry.door->unlock();
-                        level_->setDynamicSolid(entry.tx, entry.ty, false);
-                    }
-                }
-                break;
-            }
-            case GameObject::Type::Door:
-                // 门是动态瓦片（Level::dynamicSolid_），
-                // Player 的瓦片碰撞会自动挡住，这里不需要处理
-                break;
-
-            case GameObject::Type::Spike: {
-                if (!player_->isInvincible()) {
-                    player_->takeDamage();
-                    --lives_;
-                    bus_.emit(EvHurt{pb.center()});
-                    if (screenShake_) camera_.shake(8.f, 0.3f);
-                    if (lives_ <= 0) {
-                        pendingRestart_ = true;
-                        respawnDelayTimer_ = 0.5f;
-                        return;
-                    }
-                }
-                break;
-            }
-            default:
-                break;
-        }
-    }
-}
-
-bool GameWorld::checkGoalReached() const {
-    if (!level_->hasGoal() || !player_) return false;
-    AABB goal{level_->goalPos().x, level_->goalPos().y,
-              static_cast<float>(level_->tileSize()),
-              static_cast<float>(level_->tileSize())};
-    return player_->bounds().intersects(goal);
-}
-
-void GameWorld::renderShadow(sf::RenderTarget& target,
-                             Vec2 worldPos,
-                             float width, float height) const {
-    // ⭐ 一次性生成径向渐变阴影纹理
-    if (!shadowTexReady_) {
-        constexpr unsigned kSize = 64;
-        sf::Image img({kSize, kSize}, sf::Color::Transparent);
-        const float half = kSize * 0.5f;
-        for (unsigned y = 0; y < kSize; ++y) {
-            for (unsigned x = 0; x < kSize; ++x) {
-                float dx = (x + 0.5f) - half;
-                float dy = (y + 0.5f) - half;
-                float r = std::sqrt(dx * dx + dy * dy) / half;
-                if (r >= 1.f) continue;
-                // ⭐ 内 40% 完全不透明，外部到边缘平滑衰减
-                float t = std::clamp((r - 0.4f) / 0.6f, 0.f, 1.f);
-                float a = 1.f - t;
-                a = a * a;   // 边缘再柔一点
-                auto a8 = static_cast<std::uint8_t>(a * 255.f);
-                img.setPixel({x, y}, sf::Color(0, 0, 0, a8));
-            }
-        }
-        (void)shadowTex_.loadFromImage(img);
-        shadowTex_.setSmooth(true);
-        shadowTexReady_ = true;
-    }
-
-    int ts = level_->tileSize();
-    int tx = static_cast<int>(worldPos.x / ts);
-
-    float shadowY = worldPos.y + height;
-
-    for (int ty = static_cast<int>((worldPos.y + height) / ts);
-         ty < level_->height(); ++ty) {
-        if (level_->isSolid(tx, ty)) {
-            shadowY = static_cast<float>(ty * ts);
-            break;
-        }
-    }
-
-    float distance = shadowY - (worldPos.y + height);
-
-    float alphaFactor = std::clamp(1.f - distance / 300.f, 0.2f, 1.f);
-    float scaleFactor = std::clamp(1.f - distance / 500.f, 0.5f, 1.f);
-
-    float rx = (width * 0.70f) * scaleFactor;
-    float ry = rx * 0.35f;
-
-    // ⭐ 用 sprite 绘制渐变阴影
-    sf::Sprite s(shadowTex_);
-    s.setOrigin({32.f, 32.f});   // 纹理中心
-    s.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
-    s.setScale({rx / 32.f, ry / 32.f});
-    s.setColor(sf::Color(255, 255, 255,
-        static_cast<std::uint8_t>(200 * alphaFactor)));
-    target.draw(s);
-}
-
-void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
-    sf::RectangleShape rect;
-    rect.setFillColor(sf::Color::Transparent);
-    rect.setOutlineThickness(1.f);
-
-    for (const auto& obj : objects_) {
-        AABB b = obj->bounds();
-        rect.setSize({b.w, b.h});
-        rect.setPosition({b.x, b.y});
-
-        sf::Color color;
-        switch (obj->type()) {
-            case GameObject::Type::Player:     color = sf::Color(0, 255, 0);   break;
-            case GameObject::Type::Enemy:      color = sf::Color(255, 0, 0);   break;
-            case GameObject::Type::Coin:       color = sf::Color(255, 255, 0); break;
-            case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
-            case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
-            case GameObject::Type::Platform:   color = sf::Color(160, 120, 80); break;
-            case GameObject::Type::Key:        color = sf::Color(255, 210, 60); break;
-            case GameObject::Type::Door:       color = sf::Color(140, 90, 50);  break;
-            case GameObject::Type::Spike:      color = sf::Color(200, 200, 210); break;
-            default:                            color = sf::Color(200, 200, 200); break;
-        }
-        rect.setOutlineColor(color);
-        target.draw(rect);
-    }
-}
-
-void GameWorld::render(sf::RenderTarget& target) {
-    Vec2 camTL = camera_.effectivePosition();
-
-    level_->render(target,
-                   camTL.x, camTL.y,
-                   camera_.viewWidth(), camera_.viewHeight());
-
-    if (pseudo3D_) {
-        for (const auto& obj : objects_) {
-            switch (obj->type()) {
-                case GameObject::Type::Player: {
-                    AABB b = obj->bounds();
-                    renderShadow(target, {b.x, b.y}, b.w, b.h);
-                    break;
-                }
-                case GameObject::Type::Enemy: {
-                    AABB b = obj->bounds();
-                    renderShadow(target, {b.x, b.y}, b.w, b.h);
-                    break;
-                }
-                default: break;
-            }
-        }
-    }
-
-    for (const auto& obj : objects_) {
-        obj->render(target);
-    }
-
-    if (showColliders_) renderDebugColliders(target);
-}
-
-void GameWorld::respawnAtCheckpoint() {
-    // ⭐ 从最近的存档点重生：
-    //   - 生命重置为初始值
-    //   - 金币 / 敌人 / 已激活的存档点 保持不变
-    //   - 玩家位置回到 spawn_（激活 checkpoint 时已设为 checkpoint 位置）
-    lives_ = initialLives_;
-    state_ = State::Playing;
-    pendingRestart_ = false;
-    respawnDelayTimer_ = 0.f;
-    accumulator_ = 0.f;
-
-    if (player_) {
-        player_->respawn(player_->spawn());
-        camera_.snapTo(player_->bounds().center());
-    }
-}
-
-void GameWorld::killAllEnemies() {
-    for (auto& obj : objects_) {
-        if (obj->type() == GameObject::Type::Enemy) {
-            static_cast<Enemy*>(obj.get())->kill();
-        }
-    }
-}
-
-
-void GameWorld::reset() {
-    lives_ = initialLives_;
-    coins_ = 0;
-    state_ = State::Playing;
-    accumulator_ = 0.f;
-
-    // ⭐ 对象即将销毁，先清空指针避免悬垂
-    activeCheckpoint_ = nullptr;
-    objects_.clear();
-    doors_.clear();
-    if (player_) player_->resetKeys();
-
-    for (int ty = 0; ty < level_->height(); ++ty)
-        for (int tx = 0; tx < level_->width(); ++tx)
-            level_->setDynamicSolid(tx, ty, false);
-
-    spawnPlayer(level_->playerSpawn());
-    player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
-    spawnLevelObjects();
-
-    camera_.snapTo(player_->bounds().center());
 }===== ./src/game/jump_pad.cpp =====
 #include "jump_pad.h"
 #include <algorithm>
@@ -7558,6 +7067,506 @@ void Enemy::render(sf::RenderTarget& target) const {
         pos_.y + size_.y
     });
     target.draw(*sprite_);
+}===== ./src/game/game_world.cpp =====
+#include "game_world.h"
+#include "coin.h"
+#include "enemy.h"
+#include "jump_pad.h"
+#include "checkpoint.h"
+#include "moving_platform.h"
+#include "key.h"
+#include "door.h"
+#include "spike.h"
+#include "player_sprite_factory.h"
+#include "coin_sprite_factory.h"
+#include "enemy_sprite_factory.h"
+#include "game_constants.h"
+#include <algorithm>
+#include <cmath>
+
+GameWorld::SpriteSheets GameWorld::SpriteSheets::fromFactories() {
+    return {PlayerSpriteFactory::getSheet(),
+            CoinSpriteFactory::getSheet(),
+            EnemySpriteFactory::getSheet()};
+}
+
+GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex,
+                     SpriteSheets sheets)
+    : level_(std::move(level)),
+      levelIndex_(levelIndex),
+      sheets_(std::move(sheets)) {
+
+    camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
+                           static_cast<float>(level_->pixelHeight()));
+
+    level_->setPseudo3D(true);
+
+    spawnPlayer(level_->playerSpawn());
+    player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
+    spawnLevelObjects();
+
+    camera_.snapTo(player_->bounds().center());
+}
+
+void GameWorld::spawnPlayer(Vec2 spawn) {
+    auto p = std::make_unique<Player>(spawn, sheets_.player);
+    player_ = p.get();
+    objects_.push_back(std::move(p));
+}
+
+void GameWorld::spawnLevelObjects() {
+    for (const auto& pos : level_->coinSpawns())
+        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(),
+                                     sheets_.coin));
+    totalCoins_ = static_cast<int>(level_->coinSpawns().size());
+
+    for (const auto& pos : level_->enemySpawns())
+        objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize(),
+                                      sheets_.enemy));
+
+    for (const auto& pos : level_->jumpPadSpawns())
+        objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
+
+    for (const auto& pos : level_->checkpointSpawns())
+        objects_.push_back(std::make_unique<Checkpoint>(pos, level_->tileSize()));
+
+    for (const auto& pos : level_->movingPlatformSpawns())
+        objects_.push_back(std::make_unique<MovingPlatform>(
+            pos, level_->tileSize(), 4.f * level_->tileSize(), true, 80.f));
+
+    for (const auto& pos : level_->verticalPlatformSpawns())
+        objects_.push_back(std::make_unique<MovingPlatform>(
+            pos, level_->tileSize(), 3.f * level_->tileSize(), false, 60.f));
+
+    for (const auto& pos : level_->keySpawns())
+        objects_.push_back(std::make_unique<Key>(pos, level_->tileSize()));
+
+    doors_.clear();
+    for (const auto& pos : level_->doorSpawns()) {
+        auto d = std::make_unique<Door>(pos, level_->tileSize());
+        int tx = static_cast<int>(pos.x) / level_->tileSize();
+        int ty = static_cast<int>(pos.y) / level_->tileSize();
+
+        level_->setDynamicSolid(tx, ty, true);
+
+        doors_.push_back({d.get(), tx, ty});
+        objects_.push_back(std::move(d));
+    }
+
+    for (const auto& pos : level_->spikeSpawns())
+        objects_.push_back(std::make_unique<Spike>(pos, level_->tileSize()));
+}
+
+void GameWorld::setViewSize(float w, float h) {
+    camera_.setViewSize(w, h);
+}
+
+void GameWorld::handleEvent(const sf::Event& event) {
+    if (state_ != State::Playing) return;
+    if (player_) player_->handleEvent(event);
+}
+
+void GameWorld::update(float dt) {
+    if (state_ != State::Playing) return;
+
+    if (player_) player_->handleGamepad();
+
+    accumulator_ += dt;
+    int iterations = 0;
+    while (accumulator_ >= GameConst::kFixedTimeStep && iterations < 8) {
+        float step = GameConst::kFixedTimeStep;
+
+        // ① 移动平台先更新
+        for (auto& obj : objects_) {
+            if (obj->type() == GameObject::Type::Platform) {
+                obj->update(step, *level_);
+            }
+        }
+
+        // ② 玩家物理
+        if (player_) player_->update(step, *level_);
+
+        // ③ 玩家站台检测
+        if (player_) {
+            AABB pb = player_->bounds();
+            for (auto& obj : objects_) {
+                if (obj->type() != GameObject::Type::Platform) continue;
+                auto* mp = static_cast<MovingPlatform*>(obj.get());
+                AABB plat = mp->bounds();
+
+                bool overlapX = pb.right() > plat.left() + 1.f &&
+                                pb.left() < plat.right() - 1.f;
+                bool nearTop  = pb.bottom() >= plat.top() - 4.f &&
+                                pb.bottom() <= plat.top() + 10.f;
+
+                if (overlapX && nearTop && player_->velocity().y >= -1.f) {
+                    player_->landOnPlatform(plat.top());
+                    player_->moveBy(mp->lastDelta());
+                    break;
+                }
+            }
+        }
+
+        // ④ 其他对象（跳过平台和玩家）
+        for (auto& obj : objects_) {
+            auto t = obj->type();
+            if (t != GameObject::Type::Platform &&
+                t != GameObject::Type::Player) {
+                obj->update(step, *level_);
+            }
+        }
+
+        checkCollisionsSafe();
+        if (state_ != State::Playing) return;
+        accumulator_ -= step;
+        ++iterations;
+    }
+
+    // 跳跃 / 落地事件
+    if (player_) {
+        Vec2 pb = player_->bounds().center();
+        float footX = pb.x;
+        float footY = player_->bounds().bottom();
+
+        if (player_->consumeJustJumped()) {
+            bus_.emit(EvJumped{Vec2{footX, footY}});
+        }
+        if (player_->consumeJustLanded()) {
+            float vy = std::abs(player_->velocity().y);
+            float intensity = std::clamp(vy / 700.f, 0.5f, 1.5f);
+            bus_.emit(EvLanded{Vec2{footX, footY}, intensity});
+        }
+    }
+
+    // 掉图
+    if (player_ && player_->consumeFellOut()) {
+        --lives_;
+        bus_.emit(EvHurt{player_->bounds().center()});
+        if (screenShake_) camera_.shake(8.f, 0.3f);
+        if (lives_ <= 0) {
+            pendingRestart_ = true;
+            respawnDelayTimer_ = 0.5f;
+            return;
+        }
+    }
+
+    // 到达终点
+    if (checkGoalReached()) {
+        state_ = State::LevelComplete;
+        bus_.emit(EvLevelComplete{});
+        return;
+    }
+
+    // 生命耗尽 → 延迟 0.5 秒后从最近的存档点重生
+    if (pendingRestart_) {
+        if (respawnDelayTimer_ > 0.f) {
+            respawnDelayTimer_ -= dt;
+            // 冻结游戏逻辑，但保留摄像机的震屏效果。
+            // 粒子由 GameScene 每帧推进，不在这里管。
+            camera_.updateShake(dt);
+            if (player_) camera_.follow(player_->bounds().center(),
+                                        {0.f, 0.f}, dt);
+            return;
+        }
+        // 延迟结束，触发事件并从存档点重生
+        bus_.emit(EvLifeExhausted{});
+        respawnAtCheckpoint();
+        return;
+    }
+
+    objects_.erase(
+        std::remove_if(objects_.begin(), objects_.end(),
+            [](const std::unique_ptr<GameObject>& o) {
+                return o->isRemovable();
+            }),
+        objects_.end());
+
+    if (player_) camera_.follow(player_->bounds().center(),
+                                player_->velocity(), dt);
+    camera_.updateShake(dt);
+}
+
+void GameWorld::checkCollisionsSafe() {
+    if (!player_) return;
+    AABB pb = player_->bounds();
+
+    for (auto& obj : objects_) {
+        if (obj.get() == player_) continue;
+        if (obj->type() == GameObject::Type::Platform) continue;
+        if (!obj->bounds().intersects(pb)) continue;
+
+        switch (obj->type()) {
+            case GameObject::Type::Coin: {
+                auto* c = static_cast<Coin*>(obj.get());
+                if (!c->collected()) {
+                    c->collect();
+                    ++coins_;
+                    bus_.emit(EvCoined{c->bounds().center()});
+                }
+                break;
+            }
+            case GameObject::Type::Enemy: {
+                auto* e = static_cast<Enemy*>(obj.get());
+                if (e->killed()) break;
+
+                bool falling = player_->velocity().y > 0.f;
+                float overlap = pb.bottom() - e->bounds().top();
+                bool fromAbove = overlap < GameConst::kStompTolerance;
+
+                if (falling && fromAbove) {
+                    e->kill();
+                    player_->bounce();
+                    bus_.emit(EvStomped{e->bounds().center()});
+                    if (screenShake_) camera_.shake(4.f, 0.15f);
+                } else if (!player_->isInvincible()) {
+                    player_->takeDamage();
+                    --lives_;
+                    bus_.emit(EvHurt{pb.center()});
+                    if (screenShake_) camera_.shake(8.f, 0.3f);
+                    if (lives_ <= 0) {
+                        pendingRestart_ = true;
+                        respawnDelayTimer_ = 0.5f;
+                        return;
+                    }
+                }
+                break;
+            }
+            case GameObject::Type::JumpPad: {
+                auto* jp = static_cast<JumpPad*>(obj.get());
+                if (jp->canTrigger()) {
+                    player_->setVelocityY(JumpPad::kLaunchSpeed);
+                    jp->trigger();
+                    bus_.emit(EvJumpPad{pb.center()});
+                }
+                break;
+            }
+            case GameObject::Type::Checkpoint: {
+                auto* cp = static_cast<Checkpoint*>(obj.get());
+                if (!cp->isActive()) {
+                    // ⭐ 取消上一个激活的存档点
+                    if (activeCheckpoint_ && activeCheckpoint_ != cp) {
+                        activeCheckpoint_->deactivate();
+                    }
+                    cp->activate();
+                    activeCheckpoint_ = cp;
+                    player_->setSpawn(cp->respawnPos());
+                    bus_.emit(EvCheckpoint{cp->bounds().center()});
+                }
+                break;
+            }
+            case GameObject::Type::Key: {
+                auto* k = static_cast<Key*>(obj.get());
+                if (!k->collected()) {
+                    k->collect();
+                    player_->addKey();
+                    bus_.emit(EvCoined{k->bounds().center()});
+
+                    for (auto& entry : doors_) {
+                        entry.door->unlock();
+                        level_->setDynamicSolid(entry.tx, entry.ty, false);
+                    }
+                }
+                break;
+            }
+            case GameObject::Type::Door:
+                // 门是动态瓦片（Level::dynamicSolid_），
+                // Player 的瓦片碰撞会自动挡住，这里不需要处理
+                break;
+
+            case GameObject::Type::Spike: {
+                if (!player_->isInvincible()) {
+                    player_->takeDamage();
+                    --lives_;
+                    bus_.emit(EvHurt{pb.center()});
+                    if (screenShake_) camera_.shake(8.f, 0.3f);
+                    if (lives_ <= 0) {
+                        pendingRestart_ = true;
+                        respawnDelayTimer_ = 0.5f;
+                        return;
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+bool GameWorld::checkGoalReached() const {
+    if (!level_->hasGoal() || !player_) return false;
+    AABB goal{level_->goalPos().x, level_->goalPos().y,
+              static_cast<float>(level_->tileSize()),
+              static_cast<float>(level_->tileSize())};
+    return player_->bounds().intersects(goal);
+}
+
+void GameWorld::renderShadow(sf::RenderTarget& target,
+                             Vec2 worldPos,
+                             float width, float height) const {
+    // ⭐ 一次性生成径向渐变阴影纹理
+    if (!shadowTexReady_) {
+        constexpr unsigned kSize = 64;
+        sf::Image img({kSize, kSize}, sf::Color::Transparent);
+        const float half = kSize * 0.5f;
+        for (unsigned y = 0; y < kSize; ++y) {
+            for (unsigned x = 0; x < kSize; ++x) {
+                float dx = (x + 0.5f) - half;
+                float dy = (y + 0.5f) - half;
+                float r = std::sqrt(dx * dx + dy * dy) / half;
+                if (r >= 1.f) continue;
+                // ⭐ 内 40% 完全不透明，外部到边缘平滑衰减
+                float t = std::clamp((r - 0.4f) / 0.6f, 0.f, 1.f);
+                float a = 1.f - t;
+                a = a * a;   // 边缘再柔一点
+                auto a8 = static_cast<std::uint8_t>(a * 255.f);
+                img.setPixel({x, y}, sf::Color(0, 0, 0, a8));
+            }
+        }
+        shadowTex_ = std::make_unique<sf::Texture>();
+        (void)shadowTex_->loadFromImage(img);
+        shadowTex_->setSmooth(true);
+        shadowTexReady_ = true;
+    }
+
+    int ts = level_->tileSize();
+    int tx = static_cast<int>(worldPos.x / ts);
+
+    float shadowY = worldPos.y + height;
+
+    for (int ty = static_cast<int>((worldPos.y + height) / ts);
+         ty < level_->height(); ++ty) {
+        if (level_->isSolid(tx, ty)) {
+            shadowY = static_cast<float>(ty * ts);
+            break;
+        }
+    }
+
+    float distance = shadowY - (worldPos.y + height);
+
+    float alphaFactor = std::clamp(1.f - distance / 300.f, 0.2f, 1.f);
+    float scaleFactor = std::clamp(1.f - distance / 500.f, 0.5f, 1.f);
+
+    float rx = (width * 0.70f) * scaleFactor;
+    float ry = rx * 0.35f;
+
+    // ⭐ 用 sprite 绘制渐变阴影
+    sf::Sprite s(*shadowTex_);
+    s.setOrigin({32.f, 32.f});   // 纹理中心
+    s.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
+    s.setScale({rx / 32.f, ry / 32.f});
+    s.setColor(sf::Color(255, 255, 255,
+        static_cast<std::uint8_t>(200 * alphaFactor)));
+    target.draw(s);
+}
+
+void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
+    sf::RectangleShape rect;
+    rect.setFillColor(sf::Color::Transparent);
+    rect.setOutlineThickness(1.f);
+
+    for (const auto& obj : objects_) {
+        AABB b = obj->bounds();
+        rect.setSize({b.w, b.h});
+        rect.setPosition({b.x, b.y});
+
+        sf::Color color;
+        switch (obj->type()) {
+            case GameObject::Type::Player:     color = sf::Color(0, 255, 0);   break;
+            case GameObject::Type::Enemy:      color = sf::Color(255, 0, 0);   break;
+            case GameObject::Type::Coin:       color = sf::Color(255, 255, 0); break;
+            case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
+            case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
+            case GameObject::Type::Platform:   color = sf::Color(160, 120, 80); break;
+            case GameObject::Type::Key:        color = sf::Color(255, 210, 60); break;
+            case GameObject::Type::Door:       color = sf::Color(140, 90, 50);  break;
+            case GameObject::Type::Spike:      color = sf::Color(200, 200, 210); break;
+            default:                            color = sf::Color(200, 200, 200); break;
+        }
+        rect.setOutlineColor(color);
+        target.draw(rect);
+    }
+}
+
+void GameWorld::render(sf::RenderTarget& target) {
+    Vec2 camTL = camera_.effectivePosition();
+
+    level_->render(target,
+                   camTL.x, camTL.y,
+                   camera_.viewWidth(), camera_.viewHeight());
+
+    if (pseudo3D_) {
+        for (const auto& obj : objects_) {
+            switch (obj->type()) {
+                case GameObject::Type::Player: {
+                    AABB b = obj->bounds();
+                    renderShadow(target, {b.x, b.y}, b.w, b.h);
+                    break;
+                }
+                case GameObject::Type::Enemy: {
+                    AABB b = obj->bounds();
+                    renderShadow(target, {b.x, b.y}, b.w, b.h);
+                    break;
+                }
+                default: break;
+            }
+        }
+    }
+
+    for (const auto& obj : objects_) {
+        obj->render(target);
+    }
+
+    if (showColliders_) renderDebugColliders(target);
+}
+
+void GameWorld::respawnAtCheckpoint() {
+    // ⭐ 从最近的存档点重生：
+    //   - 生命重置为初始值
+    //   - 金币 / 敌人 / 已激活的存档点 保持不变
+    //   - 玩家位置回到 spawn_（激活 checkpoint 时已设为 checkpoint 位置）
+    lives_ = initialLives_;
+    state_ = State::Playing;
+    pendingRestart_ = false;
+    respawnDelayTimer_ = 0.f;
+    accumulator_ = 0.f;
+
+    if (player_) {
+        player_->respawn(player_->spawn());
+        camera_.snapTo(player_->bounds().center());
+    }
+}
+
+void GameWorld::killAllEnemies() {
+    for (auto& obj : objects_) {
+        if (obj->type() == GameObject::Type::Enemy) {
+            static_cast<Enemy*>(obj.get())->kill();
+        }
+    }
+}
+
+
+void GameWorld::reset() {
+    lives_ = initialLives_;
+    coins_ = 0;
+    state_ = State::Playing;
+    accumulator_ = 0.f;
+
+    // ⭐ 对象即将销毁，先清空指针避免悬垂
+    activeCheckpoint_ = nullptr;
+    objects_.clear();
+    doors_.clear();
+    if (player_) player_->resetKeys();
+
+    for (int ty = 0; ty < level_->height(); ++ty)
+        for (int tx = 0; tx < level_->width(); ++tx)
+            level_->setDynamicSolid(tx, ty, false);
+
+    spawnPlayer(level_->playerSpawn());
+    player_->setKillY(static_cast<float>(level_->pixelHeight() + 64));
+    spawnLevelObjects();
+
+    camera_.snapTo(player_->bounds().center());
 }===== ./src/scene/save_select_scene.cpp =====
 #include "save_select_scene.h"
 #include "utils/text_strings.h"
@@ -12731,7 +12740,8 @@ bool GameScene::loadLevel(int index) {
         std::to_string(level->width()) + "x" +
         std::to_string(level->height()) + " 瓦片");
 
-    world_ = std::make_unique<GameWorld>(std::move(level), index);
+    world_ = std::make_unique<GameWorld>(
+        std::move(level), index, GameWorld::SpriteSheets::fromFactories());
     world_->setViewSize(kLogicalW, kLogicalH);
 
     // ⭐ 校验初始生命值，非法值回退到 1
@@ -17995,7 +18005,24 @@ class GameWorld {
 public:
     enum class State { Playing, LevelComplete, GameOver };
 
-    GameWorld(std::unique_ptr<Level> level, int levelIndex);
+    /// 场景里用到的贴图。
+    ///
+    /// 由调用方注入，而不是 GameWorld 自己去调全局 sprite factory —— 那些
+    /// factory 内部用 RenderTexture 程序化画贴图，没有 GL 上下文时 SFML 会
+    /// 直接 SIGABRT，于是整个类在构造阶段就依赖 GL，根本没法测。
+    ///
+    /// 全部留空 = "无 sprite 模式"：实体照常参与逻辑与碰撞，只是画不出东西。
+    struct SpriteSheets {
+        std::shared_ptr<sf::Texture> player;
+        std::shared_ptr<sf::Texture> coin;
+        std::shared_ptr<sf::Texture> enemy;
+
+        /// 从三个 sprite factory 取贴图。**需要 GL 上下文**，生产代码走这条。
+        static SpriteSheets fromFactories();
+    };
+
+    GameWorld(std::unique_ptr<Level> level, int levelIndex,
+              SpriteSheets sheets = {});
 
     void handleEvent(const sf::Event& event);
     void update(float dt);
@@ -18053,13 +18080,19 @@ private:
 
     std::unique_ptr<Level> level_;
     int levelIndex_ = 1;
+    SpriteSheets sheets_;
 
     std::vector<std::unique_ptr<GameObject>> objects_;
     Player* player_ = nullptr;
     Checkpoint* activeCheckpoint_ = nullptr;   // 当前激活的存档点（最多一个）
 
     Camera camera_;
-    mutable sf::Texture shadowTex_;
+    // ⚠️ 必须是 unique_ptr，不能是按值的 sf::Texture：
+    //    sf::Texture 继承自 sf::GlResource，**它的构造函数就会确保 GL 上下文存在**，
+    //    没有 DISPLAY 时 SFML 直接 abort。作为按值成员会让"构造 GameWorld"
+    //    这件事本身依赖 GL，于是 GameWorld 根本没法在任何无界面环境（测试、CI）里用。
+    //    阴影纹理本来就是懒生成的，改成指针不影响行为。
+    mutable std::unique_ptr<sf::Texture> shadowTex_;
     mutable bool shadowTexReady_ = false;
     EventBus bus_;
 
@@ -32274,6 +32307,7 @@ add_executable(unit_tests
     test_scene_registry.cpp
     test_layers.cpp
     test_entities.cpp
+    test_game_world.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -32311,6 +32345,13 @@ target_sources(unit_tests PRIVATE
     # 所以测试目标不需要链上那几个 factory 实现
     ${CMAKE_SOURCE_DIR}/src/game/coin.cpp
     ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
+    # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
+    # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
+    # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
+    ${CMAKE_SOURCE_DIR}/src/game/player_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/coin_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/enemy_sprite_factory.cpp
     # gamepad.cpp 调用了 GamepadVibration，实现必须一起链上，
     # 否则 unit_tests 会在链接期报 undefined reference。
     # 两个平台文件内部各有 #ifdef 守卫，同时列出来是安全的。
@@ -32928,6 +32969,366 @@ TEST_CASE("Enemy - killed 之后不再移动，且可被移除") {
     enemy.update(0.5f, level);
 
     CHECK(enemy.bounds().x == doctest::Approx(x0));   // 死了就不动
+}
+===== ./tests/test_game_world.cpp =====
+#include "doctest.h"
+#include "game_world.h"
+#include "event_bus.h"
+#include "level.h"
+
+#include <memory>
+#include <string>
+#include <variant>
+#include <vector>
+
+// GameWorld 串起了物理、碰撞、事件三件事，是剩下最大的测试空白。
+//
+// 它能在这里被构造，靠的是把贴图改成**注入**：
+// GameWorld 不再自己去调 sprite factory（那些 factory 内部用 RenderTexture
+// 画贴图，没有 GL 上下文时 SFML 会直接 SIGABRT）。传默认的空 SpriteSheets
+// 就进"无 sprite 模式"—— 实体照常参与逻辑与碰撞，只是画不出东西。
+//
+// 因此这个文件同样不许调 render()（RenderTarget 本身就要 GL）。
+namespace {
+
+constexpr int kTile = 32;
+
+/// 每次 update 推进两个固定步（GameConst::kFixedTimeStep = 1/120）
+constexpr float kStep = 1.f / 60.f;
+
+/// 造一个 20×5 的房间。row2 是第 2 行的中间 18 个字符（首尾的 '#' 由这里补）。
+std::unique_ptr<Level> makeRoom(const std::string& row2) {
+    REQUIRE(row2.size() == 18);
+    const std::string text = "####################\n"
+                             "#                  #\n"
+                             "#" + row2 + "#\n"
+                             "#                  #\n"
+                             "####################";
+    auto level = std::make_unique<Level>();
+    level->loadFromString(text);
+    return level;
+}
+
+/// row2 里第 nth 次出现的 ch 所在的 tile 像素坐标（对象都摆在第 2 行）。
+///
+/// 关卡行首尾各有一个 '#'，所以 tile 下标 = row2 下标 + 1 —— 手写坐标时
+/// 最容易在这里差一格，所以测试一律用这个函数取位置，不写死数字。
+/// 找不到字符时 REQUIRE 会让用例立刻失败，而不是悄悄退化成"没碰撞"。
+Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
+    int seen = 0;
+    for (std::size_t i = 0; i < row2.size(); ++i) {
+        if (row2[i] == ch && ++seen == nth) {
+            return {static_cast<float>(static_cast<int>(i) + 1) * kTile,
+                    2.f * kTile};
+        }
+    }
+    REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
+    return {-1.f, -1.f};
+}
+
+/// 记录所有经过总线的事件，便于断言"该发的发了 / 不该发的没发"。
+struct EventLog {
+    std::vector<GameEvent> events;
+
+    void attach(GameWorld& world) {
+        world.bus().subscribe([this](const GameEvent& e) { events.push_back(e); });
+    }
+
+    template <typename T>
+    int count() const {
+        int n = 0;
+        for (const auto& e : events)
+            if (std::holds_alternative<T>(e))
+                ++n;
+        return n;
+    }
+};
+
+/// 把玩家瞬移到指定位置（respawn 会清空速度，方便构造确定的状态）
+void teleport(GameWorld& world, Vec2 pos) {
+    world.player().respawn(pos);
+}
+
+} // namespace
+
+// ============================================================
+// 构造与初始状态
+// ============================================================
+
+TEST_CASE("GameWorld - 构造后生成玩家与关卡对象") {
+    const std::string row = "  P   C C     E   ";
+    GameWorld world(makeRoom(row), 1);
+
+    CHECK(world.state() == GameWorld::State::Playing);
+    CHECK(world.levelIndex() == 1);
+    CHECK_FALSE(world.level().hasGoal());
+
+    CHECK(world.totalCoins() == 2);   // 两个 C
+    CHECK(world.coins() == 0);
+
+    // 玩家出生在 P 那一格
+    const Vec2 spawn = world.player().position();
+    CHECK(spawn.x == doctest::Approx(tileOf(row, 'P').x));
+    CHECK(spawn.y == doctest::Approx(tileOf(row, 'P').y));
+}
+
+TEST_CASE("GameWorld - setInitialLives 同时重置当前生命") {
+    GameWorld world(makeRoom("  P               "), 1);
+
+    world.setInitialLives(3);
+
+    CHECK(world.lives() == 3);
+}
+
+// ============================================================
+// 金币
+// ============================================================
+
+TEST_CASE("GameWorld - 玩家碰到金币：计数增加并发事件") {
+    const std::string row = "  P   C           ";
+    GameWorld world(makeRoom(row), 1);
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, 'C'));
+    world.update(kStep);
+
+    CHECK(world.coins() == 1);
+    CHECK(log.count<EvCoined>() == 1);
+}
+
+TEST_CASE("GameWorld - 同一枚金币不会被重复计数") {
+    const std::string row = "  P   C           ";
+    GameWorld world(makeRoom(row), 1);
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, 'C'));
+    for (int i = 0; i < 30; ++i)
+        world.update(kStep);   // 站在原地蹭 30 帧
+
+    CHECK(world.coins() == 1);
+    CHECK(log.count<EvCoined>() == 1);
+}
+
+// ============================================================
+// 敌人
+// ============================================================
+
+TEST_CASE("GameWorld - 从上方踩敌人：击杀 + 弹起 + 不扣血") {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    EventLog log;
+    log.attach(world);
+
+    // 敌人 bounds 顶边在 y = 2*32 + 2 = 66；玩家 24×32，
+    // 让 bottom 落在 66 以内一点点，再给一个向下速度，
+    // 才满足"下落中 + 从上方"的踩踏判定
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, 40.f});
+    world.player().setVelocityY(400.f);
+    world.update(kStep);
+
+    CHECK(log.count<EvStomped>() == 1);
+    CHECK(log.count<EvHurt>() == 0);
+    CHECK(world.lives() == 3);                    // 没扣血
+    CHECK(world.player().velocity().y < 0.f);     // 被弹起
+}
+
+TEST_CASE("GameWorld - 侧面撞敌人：扣血 + 受伤事件") {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    EventLog log;
+    log.attach(world);
+
+    // 和敌人同一高度：重叠量远大于踩踏容差，判定为"被撞"而不是"踩"
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, enemyPos.y - 2.f});
+    world.update(kStep);
+
+    CHECK(log.count<EvHurt>() == 1);
+    CHECK(log.count<EvStomped>() == 0);
+    CHECK(world.lives() == 2);
+}
+
+TEST_CASE("GameWorld - killAllEnemies 之后撞上去不再受伤") {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+
+    world.killAllEnemies();
+
+    EventLog log;
+    log.attach(world);
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, enemyPos.y - 2.f});
+    world.update(kStep);
+
+    CHECK(log.count<EvHurt>() == 0);
+    CHECK(world.lives() == 3);
+}
+
+// ============================================================
+// 尖刺
+// ============================================================
+
+TEST_CASE("GameWorld - 碰到尖刺扣血") {
+    const std::string row = "  P     ^         ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, '^'));
+    world.update(kStep);
+
+    CHECK(log.count<EvHurt>() == 1);
+    CHECK(world.lives() == 2);
+}
+
+TEST_CASE("GameWorld - 无敌状态下踩尖刺不掉血") {
+    const std::string row = "  P     ^         ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+
+    EventLog log;
+    log.attach(world);
+    teleport(world, tileOf(row, '^'));
+    world.player().setInvincible(true);   // respawn 会清掉无敌，所以放在它后面
+    world.update(kStep);
+
+    CHECK(log.count<EvHurt>() == 0);
+    CHECK(world.lives() == 3);
+}
+
+// ============================================================
+// 存档点
+// ============================================================
+
+TEST_CASE("GameWorld - 碰到存档点：发事件并把重生点挪过去") {
+    const std::string row = "  P     S         ";
+    GameWorld world(makeRoom(row), 1);
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, 'S'));
+    world.update(kStep);
+
+    CHECK(log.count<EvCheckpoint>() == 1);
+
+    // 重生点应当落在存档点那一格内
+    const Vec2 spawn = world.player().spawn();
+    const Vec2 cp = tileOf(row, 'S');
+    CHECK(spawn.x >= cp.x);
+    CHECK(spawn.x < cp.x + kTile);
+    CHECK(spawn.y >= cp.y - kTile);
+    CHECK(spawn.y < cp.y + kTile);
+}
+
+// ============================================================
+// 钥匙与门
+// ============================================================
+
+TEST_CASE("GameWorld - 拿到钥匙：钥匙数 +1") {
+    const std::string row = "  P  K    L       ";
+    GameWorld world(makeRoom(row), 1);
+    EventLog log;
+    log.attach(world);
+
+    CHECK(world.player().keys() == 0);
+
+    teleport(world, tileOf(row, 'K'));
+    world.update(kStep);
+
+    CHECK(world.player().keys() == 1);
+    CHECK(log.count<EvCoined>() == 1);   // 钥匙复用金币的拾取事件
+    CHECK_FALSE(world.player().isInvincible());   // 开门不影响玩家状态
+}
+
+TEST_CASE("GameWorld - reset 会清空钥匙数") {
+    const std::string row = "  P  K            ";
+    GameWorld world(makeRoom(row), 1);
+
+    teleport(world, tileOf(row, 'K'));
+    world.update(kStep);
+    REQUIRE(world.player().keys() == 1);
+
+    world.reset();
+
+    CHECK(world.player().keys() == 0);
+}
+
+// ============================================================
+// 终点
+// ============================================================
+
+TEST_CASE("GameWorld - 到达终点：状态切到 LevelComplete 并发事件") {
+    const std::string row = "  P        G      ";
+    GameWorld world(makeRoom(row), 1);
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, 'G'));
+    world.update(kStep);
+
+    CHECK(world.state() == GameWorld::State::LevelComplete);
+    CHECK(log.count<EvLevelComplete>() == 1);
+}
+
+TEST_CASE("GameWorld - 没有终点标记的关卡永远不会通关") {
+    GameWorld world(makeRoom("  P               "), 1);
+
+    for (int i = 0; i < 60; ++i)
+        world.update(kStep);
+
+    CHECK(world.state() == GameWorld::State::Playing);
+}
+
+// ============================================================
+// reset / 生命耗尽
+// ============================================================
+
+TEST_CASE("GameWorld - reset 恢复生命与金币计数") {
+    const std::string row = "  P   C           ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+
+    teleport(world, tileOf(row, 'C'));
+    world.update(kStep);
+    REQUIRE(world.coins() == 1);
+
+    world.reset();
+
+    CHECK(world.coins() == 0);
+    CHECK(world.lives() == 3);
+    CHECK(world.state() == GameWorld::State::Playing);
+    CHECK(world.player().position().x == doctest::Approx(tileOf(row, 'P').x));
+}
+
+TEST_CASE("GameWorld - 生命耗尽后延迟重生，并重置生命") {
+    const std::string row = "  P     ^         ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(1);   // 一碰就死
+
+    EventLog log;
+    log.attach(world);
+
+    teleport(world, tileOf(row, '^'));
+    world.update(kStep);
+    REQUIRE(world.lives() == 0);
+
+    // 0.5 秒延迟期间不该触发重生
+    world.update(0.2f);
+    CHECK(log.count<EvLifeExhausted>() == 0);
+
+    // 延迟走完的那一帧只是把计时器减到 0 以下，真正重生发生在下一帧
+    world.update(0.4f);
+    world.update(kStep);
+
+    CHECK(log.count<EvLifeExhausted>() == 1);
+    CHECK(world.lives() == 1);   // 生命重置
 }
 ===== ./tools/validate_levels.cpp =====
 #include "level.h"
@@ -66163,7 +66564,7 @@ endif()
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
 add_test("unit_tests" "/home/link/coding/TEXT-GAME/build/tests/tests/unit_tests")
-set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;81;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
+set_tests_properties("unit_tests" PROPERTIES  _BACKTRACE_TRIPLES "/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;89;add_test;/home/link/coding/TEXT-GAME/tests/CMakeLists.txt;0;")
 ===== ./build/tests/cmake_install.cmake =====
 # Install script for directory: /home/link/coding/TEXT-GAME
 
@@ -66909,6 +67310,12 @@ subdirs("tests")
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/test_game_world.cpp.o -c /home/link/coding/TEXT-GAME/tests/test_game_world.cpp",
+  "file": "/home/link/coding/TEXT-GAME/tests/test_game_world.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/test_game_world.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o -c /home/link/coding/TEXT-GAME/src/game/level.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/level.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/level.cpp.o"
@@ -66996,6 +67403,30 @@ subdirs("tests")
   "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/enemy.cpp.o -c /home/link/coding/TEXT-GAME/src/game/enemy.cpp",
   "file": "/home/link/coding/TEXT-GAME/src/game/enemy.cpp",
   "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/enemy.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/game_world.cpp.o -c /home/link/coding/TEXT-GAME/src/game/game_world.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/game_world.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/game_world.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/player_sprite_factory.cpp.o -c /home/link/coding/TEXT-GAME/src/game/player_sprite_factory.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/player_sprite_factory.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/player_sprite_factory.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/coin_sprite_factory.cpp.o -c /home/link/coding/TEXT-GAME/src/game/coin_sprite_factory.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/coin_sprite_factory.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/coin_sprite_factory.cpp.o"
+},
+{
+  "directory": "/home/link/coding/TEXT-GAME/build/tests",
+  "command": "/usr/bin/c++ -DPROJECT_ROOT=\\\"/home/link/coding/TEXT-GAME\\\" -I/home/link/coding/TEXT-GAME/include -I/home/link/coding/TEXT-GAME/include/core -I/home/link/coding/TEXT-GAME/include/config -I/home/link/coding/TEXT-GAME/include/ui -I/home/link/coding/TEXT-GAME/include/game -I/home/link/coding/TEXT-GAME/include/scene -I/home/link/coding/TEXT-GAME/tests -g -std=c++20 -Wall -Wextra -Wpedantic -Wshadow -finput-charset=UTF-8 -fexec-charset=UTF-8 -o tests/CMakeFiles/unit_tests.dir/__/src/game/enemy_sprite_factory.cpp.o -c /home/link/coding/TEXT-GAME/src/game/enemy_sprite_factory.cpp",
+  "file": "/home/link/coding/TEXT-GAME/src/game/enemy_sprite_factory.cpp",
+  "output": "/home/link/coding/TEXT-GAME/build/tests/tests/CMakeFiles/unit_tests.dir/__/src/game/enemy_sprite_factory.cpp.o"
 },
 {
   "directory": "/home/link/coding/TEXT-GAME/build/tests",
@@ -67794,7 +68225,8 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | Container / Application 五阶段 / MainLoop / Logger / SceneRegistry | ✅ |
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
-| GameWorld / Scene | ❌ |
+| GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |
+| Scene | ❌ |
 | SaveManager / UI 组件 | ❌（依赖运行环境） |
 
 测试写法：`tests/test_*.cpp`。
@@ -67803,11 +68235,19 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。
 这既方便测试，也让贴图生成失败时自动降级而不是解引用空指针。
 
-⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）：
-sprite factory 用 `RenderTexture` 程序化画贴图，没有 GL 上下文时
-SFML 会直接 SIGABRT。所以测试**不要构造需要贴图的实体，也不要调 `render()`**
-（`RenderTarget` 本身就要求 GL）。当前测试套件在 `env -u DISPLAY` 下是绿的，
-加测试时请保持这个性质。
+⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）。
+SFML 里凡是继承 `sf::GlResource` 的类型 —— `sf::Texture` / `sf::RenderTexture` /
+`sf::Shader` / `sf::RenderTarget` —— **构造函数就会确保 GL 上下文存在**，
+没有 DISPLAY 时直接 SIGABRT（不是返回错误码，拦不住）。所以：
+
+- sprite factory 不能碰（它内部建 `RenderTexture`）→ `GameWorld::SpriteSheets`
+  和实体的 sheet 参数就是为此存在的，传空即"无 sprite 模式"
+- **这类类型不能作为按值成员**出现在要在无界面环境构造的类里。
+  `GameWorld::shadowTex_` 踩过这个坑：一个按值的 `sf::Texture` 成员让
+  "构造 GameWorld" 本身就依赖 GL，改成 `unique_ptr` 懒创建才好
+- 测试里不要调 `render()`
+
+加测试时请保持 `env -u DISPLAY ./build/tests/tests/unit_tests` 全绿。
 
 ## 关卡设计规范
 

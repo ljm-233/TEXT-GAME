@@ -16,6 +16,7 @@ add_executable(unit_tests
     test_scene_registry.cpp
     test_layers.cpp
     test_entities.cpp
+    test_game_world.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -53,6 +54,13 @@ target_sources(unit_tests PRIVATE
     # 所以测试目标不需要链上那几个 factory 实现
     ${CMAKE_SOURCE_DIR}/src/game/coin.cpp
     ${CMAKE_SOURCE_DIR}/src/game/enemy.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/game_world.cpp
+    # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
+    # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
+    # 工厂只在真正被调用时才建 RenderTexture，测试走的是默认的空 sheets。
+    ${CMAKE_SOURCE_DIR}/src/game/player_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/coin_sprite_factory.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/enemy_sprite_factory.cpp
     # gamepad.cpp 调用了 GamepadVibration，实现必须一起链上，
     # 否则 unit_tests 会在链接期报 undefined reference。
     # 两个平台文件内部各有 #ifdef 守卫，同时列出来是安全的。

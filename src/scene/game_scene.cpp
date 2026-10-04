@@ -251,7 +251,8 @@ bool GameScene::loadLevel(int index) {
         std::to_string(level->width()) + "x" +
         std::to_string(level->height()) + " 瓦片");
 
-    world_ = std::make_unique<GameWorld>(std::move(level), index);
+    world_ = std::make_unique<GameWorld>(
+        std::move(level), index, GameWorld::SpriteSheets::fromFactories());
     world_->setViewSize(kLogicalW, kLogicalH);
 
     // ⭐ 校验初始生命值，非法值回退到 1

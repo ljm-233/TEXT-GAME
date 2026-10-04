@@ -14,9 +14,17 @@
 #include <algorithm>
 #include <cmath>
 
-GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
+GameWorld::SpriteSheets GameWorld::SpriteSheets::fromFactories() {
+    return {PlayerSpriteFactory::getSheet(),
+            CoinSpriteFactory::getSheet(),
+            EnemySpriteFactory::getSheet()};
+}
+
+GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex,
+                     SpriteSheets sheets)
     : level_(std::move(level)),
-      levelIndex_(levelIndex) {
+      levelIndex_(levelIndex),
+      sheets_(std::move(sheets)) {
 
     camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
                            static_cast<float>(level_->pixelHeight()));
@@ -31,7 +39,7 @@ GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex)
 }
 
 void GameWorld::spawnPlayer(Vec2 spawn) {
-    auto p = std::make_unique<Player>(spawn, PlayerSpriteFactory::getSheet());
+    auto p = std::make_unique<Player>(spawn, sheets_.player);
     player_ = p.get();
     objects_.push_back(std::move(p));
 }
@@ -39,12 +47,12 @@ void GameWorld::spawnPlayer(Vec2 spawn) {
 void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->coinSpawns())
         objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(),
-                                     CoinSpriteFactory::getSheet()));
+                                     sheets_.coin));
     totalCoins_ = static_cast<int>(level_->coinSpawns().size());
 
     for (const auto& pos : level_->enemySpawns())
         objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize(),
-                                      EnemySpriteFactory::getSheet()));
+                                      sheets_.enemy));
 
     for (const auto& pos : level_->jumpPadSpawns())
         objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
@@ -345,8 +353,9 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
                 img.setPixel({x, y}, sf::Color(0, 0, 0, a8));
             }
         }
-        (void)shadowTex_.loadFromImage(img);
-        shadowTex_.setSmooth(true);
+        shadowTex_ = std::make_unique<sf::Texture>();
+        (void)shadowTex_->loadFromImage(img);
+        shadowTex_->setSmooth(true);
         shadowTexReady_ = true;
     }
 
@@ -372,7 +381,7 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
     float ry = rx * 0.35f;
 
     // ⭐ 用 sprite 绘制渐变阴影
-    sf::Sprite s(shadowTex_);
+    sf::Sprite s(*shadowTex_);
     s.setOrigin({32.f, 32.f});   // 纹理中心
     s.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
     s.setScale({rx / 32.f, ry / 32.f});

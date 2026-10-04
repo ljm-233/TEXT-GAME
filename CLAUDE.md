@@ -289,7 +289,8 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | Container / Application 五阶段 / MainLoop / Logger / SceneRegistry | ✅ |
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
-| GameWorld / Scene | ❌ |
+| GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |
+| Scene | ❌ |
 | SaveManager / UI 组件 | ❌（依赖运行环境） |
 
 测试写法：`tests/test_*.cpp`。
@@ -298,11 +299,19 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。
 这既方便测试，也让贴图生成失败时自动降级而不是解引用空指针。
 
-⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）：
-sprite factory 用 `RenderTexture` 程序化画贴图，没有 GL 上下文时
-SFML 会直接 SIGABRT。所以测试**不要构造需要贴图的实体，也不要调 `render()`**
-（`RenderTarget` 本身就要求 GL）。当前测试套件在 `env -u DISPLAY` 下是绿的，
-加测试时请保持这个性质。
+⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）。
+SFML 里凡是继承 `sf::GlResource` 的类型 —— `sf::Texture` / `sf::RenderTexture` /
+`sf::Shader` / `sf::RenderTarget` —— **构造函数就会确保 GL 上下文存在**，
+没有 DISPLAY 时直接 SIGABRT（不是返回错误码，拦不住）。所以：
+
+- sprite factory 不能碰（它内部建 `RenderTexture`）→ `GameWorld::SpriteSheets`
+  和实体的 sheet 参数就是为此存在的，传空即"无 sprite 模式"
+- **这类类型不能作为按值成员**出现在要在无界面环境构造的类里。
+  `GameWorld::shadowTex_` 踩过这个坑：一个按值的 `sf::Texture` 成员让
+  "构造 GameWorld" 本身就依赖 GL，改成 `unique_ptr` 懒创建才好
+- 测试里不要调 `render()`
+
+加测试时请保持 `env -u DISPLAY ./build/tests/tests/unit_tests` 全绿。
 
 ## 关卡设计规范
 
