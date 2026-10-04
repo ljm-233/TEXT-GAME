@@ -37,8 +37,24 @@ target_compile_definitions(unit_tests PRIVATE
     PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
+# GamepadVibration 的全部平台实现：用 GLOB 自动收集，不逐个列举。
+#
+# gamepad.cpp 调用了它，实现必须一起链上，否则 unit_tests 链接期就报
+# "Undefined symbols ... GamepadVibration::initPlatform()"。
+# 每个平台文件内部都有自己的 #ifdef 守卫（Linux / Windows / 其余平台兜底），
+# 同时链上是安全的；但**漏掉任何一个都会在对应平台上变成链接错误**。
+# macOS 上就是这么挂的：新增 gamepad_vibration_stub.cpp 之后，主目标靠顶层的
+# GLOB 自动带上，测试目标却因为手写列表漏了它。
+# 这里自动收集，从根上避免"加了平台文件忘了加进测试"。
+file(GLOB GAMEPAD_VIBRATION_SOURCES
+     ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration*.cpp)
+
 # 只链接测试需要的源文件（不包含窗口、渲染等）
 target_sources(unit_tests PRIVATE
+    # ⚠️ 这里是**手写列表**，不是 GLOB —— 所以顶层 CMakeLists 里新增源文件时，
+    #    如果测试也需要链它，必须在这里补一行，否则本地可能没事、
+    #    但换了平台就是链接错误（macOS 上漏掉振动兜底实现，就是这么挂的）。
+    #    唯一的例外见下面 GamepadVibration 那段，那里是自动收集的。
     ${CMAKE_SOURCE_DIR}/src/game/level.cpp
     ${CMAKE_SOURCE_DIR}/src/game/camera.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/animator.cpp
@@ -70,12 +86,8 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/player_sprite_factory.cpp
     ${CMAKE_SOURCE_DIR}/src/game/coin_sprite_factory.cpp
     ${CMAKE_SOURCE_DIR}/src/game/enemy_sprite_factory.cpp
-    # gamepad.cpp 调用了 GamepadVibration，实现必须一起链上，
-    # 否则 unit_tests 会在链接期报 undefined reference。
-    # 两个平台文件内部各有 #ifdef 守卫，同时列出来是安全的。
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration_linux.cpp
-    ${CMAKE_SOURCE_DIR}/src/infrastructure/gamepad_vibration_windows.cpp
+    # GamepadVibration 的实现（见文件上方 GLOB 的说明）
+    ${GAMEPAD_VIBRATION_SOURCES}
     # 地基：容器与日志层（不含 bootstrap —— 那层是装配胶水，依赖配置与窗口）
     ${CMAKE_SOURCE_DIR}/src/core/container.cpp
     ${CMAKE_SOURCE_DIR}/src/core/main_loop.cpp
