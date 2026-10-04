@@ -1,4 +1,4 @@
-// src/ui/gamepad_vibration.cpp
+// src/infrastructure/gamepad_vibration.cpp
 #include "infrastructure/gamepad_vibration.h"
 #include <cstdio>
 

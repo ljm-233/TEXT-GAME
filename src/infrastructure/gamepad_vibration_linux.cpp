@@ -1,4 +1,4 @@
-// src/ui/gamepad_vibration_linux.cpp
+// src/infrastructure/gamepad_vibration_linux.cpp
 #ifdef __linux__
 #include "infrastructure/gamepad_vibration.h"
 

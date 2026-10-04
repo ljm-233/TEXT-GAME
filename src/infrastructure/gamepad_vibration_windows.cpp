@@ -1,4 +1,4 @@
-// src/ui/gamepad_vibration_windows.cpp
+// src/infrastructure/gamepad_vibration_windows.cpp
 #ifdef _WIN32
 #include "infrastructure/gamepad_vibration.h"
 #include <windows.h>

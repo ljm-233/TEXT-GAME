@@ -1,4 +1,4 @@
-// include/ui/gamepad_vibration.h
+// include/infrastructure/gamepad_vibration.h
 #pragma once
 
 class GamepadVibration {
