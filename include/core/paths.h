@@ -2,19 +2,8 @@
 #include "platform.h"
 #include <filesystem>
 
-// PROJECT_ROOT 是**开发时**的兜底：万一可执行文件旁边没有 assets/，就回退到源码树。
-//
-// ⚠️ 打包构建刻意**不带**这个宏（见 CMakeLists 里的 BUNDLE_RUNTIME_DEPS 分支）：
-//    带了就等于把构建机的绝对路径编进发出去的二进制里 —— makepkg 会直接报
-//    「软件包含有对 $srcdir 的引用」，而且那个路径在用户机器上根本不存在，
-//    真回退过去只会得到一堆静默失败。
-//    所以没这个宏时不要回退到任何绝对路径，按打包模式走（用户数据进 XDG）。
-#ifndef PROJECT_ROOT
-#  define PROJECT_ROOT ""
-#endif
-
 // 管理资源目录：
-//   - 开发模式（项目目录里有 assets/）：所有目录在项目里
+//   - 开发模式（从源码树直接跑）：所有目录在源码树里
 //   - 打包模式（可执行文件旁边有 assets/）：资源跟着可执行文件，用户数据在 XDG 目录
 //   - 测试模式（显式传根目录）：全部挂在给定根目录下
 //
@@ -27,21 +16,19 @@ public:
 
         const fs::path execDir = Platform::executableDir();
         const fs::path resRoot = resourceRootFor(execDir);
-        const fs::path devRoot{PROJECT_ROOT};
 
         if (fs::exists(resRoot / "assets")) {
             // 打包模式
             layoutForPackaged(resRoot);
             mode_ = "packaged";
-        } else if (!devRoot.empty()) {
+        } else if (const fs::path devRoot = findDevRoot(execDir); !devRoot.empty()) {
             // 开发模式：从源码树直接跑
             layoutUnder(devRoot);
             mode_ = "development";
         } else {
-            // 打包构建、却没在可执行文件旁边找到资源。
-            // 这里**不能**去建一个构建机的路径：用户数据照旧进 XDG，资源仍指向
-            // 可执行文件旁边（找不到就是找不到）。mode 单列出来，
-            // 装配日志里一眼能看出是哪种情况。
+            // 既没有可执行文件旁边的 assets/，往上也找不到源码树。
+            // 用户数据照旧进 XDG，资源仍指向可执行文件旁边（找不到就是找不到），
+            // mode 单列出来，装配日志里一眼能看出是哪种情况。
             layoutForPackaged(resRoot);
             mode_ = "packaged-no-assets";
         }
@@ -77,6 +64,34 @@ public:
             return execDir.parent_path() / "Resources";
         }
         return execDir;
+    }
+
+    /// 开发模式下往上找源码树：谁同时有 `CMakeLists.txt` 和 `src/` 就算项目根。
+    ///
+    /// ⚠️ 这里刻意**不用编译期宏**。以前是 `-DPROJECT_ROOT=<构建机路径>`，
+    ///    那等于把开发者的家目录编进每一个发出去的二进制里 ——
+    ///    `makepkg` 会直接报「软件包含有对 $srcdir 的引用」，`namcap` 也会 flag，
+    ///    而那个路径在用户机器上根本不存在，真回退过去只有一堆静默失败。
+    ///    运行时往上找同样能覆盖所有构建目录（build/release、build/tests/tests、
+    ///    build/asan/tests …），而且二进制放到哪都不影响。
+    ///
+    /// 往上最多找 6 层就够（最深的 preset 也就 build/asan/tests/tests）。
+    /// 纯函数，能直接单元测试。
+    static std::filesystem::path findDevRoot(const std::filesystem::path& execDir) {
+        namespace fs = std::filesystem;
+        fs::path dir = execDir;
+        for (int i = 0; i < 6; ++i) {
+            std::error_code ec;
+            if (fs::exists(dir / "CMakeLists.txt", ec) &&
+                fs::is_directory(dir / "src", ec)) {
+                return dir;
+            }
+            const fs::path parent = dir.parent_path();
+            if (parent.empty() || parent == dir)
+                break;
+            dir = parent;
+        }
+        return {};
     }
 
     const std::filesystem::path& configDir() const { return configDir_; }

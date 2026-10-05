@@ -383,13 +383,17 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
   （`BUNDLE_RUNTIME_DEPS` 会把完整闭包放进 `lib/`），再从 staging 组装 AppDir。
   于是五种包共用同一套依赖闭包。CI 里要传 `TEXTGAME_BUILD_DIR=build`，
   因为脚本默认找 `build/release-package`（本机 preset 的目录名）。
-- **打包构建不要带 `PROJECT_ROOT`**。它只是开发时的兜底（没找到可执行文件
-  旁边的 assets/ 就回退到源码树），带进发行包就等于把构建机的绝对路径编进
-  二进制 —— `makepkg` 会直接报「软件包含有对 $srcdir 的引用」，
-  `namcap` 也会flag，而且那个路径在用户机器上根本不存在。
-  现在由 CMake 按 `BUNDLE_RUNTIME_DEPS` 决定带不带；测试需要读源码树，
-  所以 `tests/CMakeLists.txt` 自己定义一份。
-  验证方法：`strings build/release-package/text_game | grep -c "$PWD"` 应为 0。
+- **开发模式找源码树是运行时做的，不要用编译期宏**。
+  `Paths::findDevRoot()` 从可执行文件往上找「同时有 `CMakeLists.txt` 与 `src/`」
+  的那一层，最远 6 层，覆盖 `build/release`、`build/tests/tests`、
+  `build/asan/tests` 这些深度。
+  以前是 `-DPROJECT_ROOT=<构建机路径>`，那会把开发者的家目录编进**每一个**
+  发出去的二进制里 —— `makepkg` 会直接报「软件包含有对 $srcdir 的引用」，
+  `namcap` 也会 flag，而那个路径在用户机器上根本不存在。
+  验证方法：`strings <任意构建的 text_game> | grep -c "$PWD"` 应为 **0**
+  （开发构建、`release-package`、以及不开 `BUNDLE_RUNTIME_DEPS` 的发行构建都要为 0）。
+  测试自己要读源码树（分层测试扫 `src/` `include/`、关卡测试读 `assets/levels`），
+  那一份 `PROJECT_ROOT` 由 `tests/CMakeLists.txt` 单独定义 —— 测试不对外分发。
 - **`Paths::createAll()` 只建用户数据目录**（config/cache/temp/saves），
   不建 `assets/` 与 `wallpaper/` —— 判定「打包模式」看的就是 assets/ 在不在，
   凭空造一个空目录会让下次启动误判成打包模式，然后一路加载失败。

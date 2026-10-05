@@ -3,6 +3,7 @@
 #include "config/preferences.h"
 #include "core/container.h"
 #include "core/paths.h"
+#include "core/platform.h"
 
 #include <filesystem>
 #include <fstream>
@@ -160,4 +161,75 @@ TEST_CASE("Paths::resourceRootFor - macOS bundle 里指到 Contents/Resources") 
     // （"code object is not signed at all"），签名失败、包都做不出来。
     CHECK(Paths::resourceRootFor("/tmp/text_game.app/Contents/MacOS") ==
           path("/tmp/text_game.app/Contents/Resources"));
+}
+
+// ============================================================
+// 开发模式找源码树
+// ============================================================
+
+namespace {
+
+/// 造一棵 "<base>/proj/{CMakeLists.txt,src/,build/release}" 的假源码树
+struct FakeTree {
+    std::filesystem::path base;
+
+    FakeTree() {
+        namespace fs = std::filesystem;
+        static int counter = 0;
+        base = fs::temp_directory_path() /
+               ("textgame_devroot_" + std::to_string(++counter));
+        std::error_code ec;
+        fs::remove_all(base, ec);
+        fs::create_directories(base / "proj" / "src");
+        fs::create_directories(base / "proj" / "build" / "release");
+        std::ofstream(base / "proj" / "CMakeLists.txt") << "x\n";
+    }
+    ~FakeTree() {
+        std::error_code ec;
+        std::filesystem::remove_all(base, ec);
+    }
+};
+
+} // namespace
+
+TEST_CASE("Paths::findDevRoot - 往上找到同时有 CMakeLists.txt 与 src/ 的那层") {
+    FakeTree t;
+    CHECK(Paths::findDevRoot(t.base / "proj" / "build" / "release") == t.base / "proj");
+    CHECK(Paths::findDevRoot(t.base / "proj" / "build") == t.base / "proj");
+    CHECK(Paths::findDevRoot(t.base / "proj" / "src") == t.base / "proj");
+}
+
+TEST_CASE("Paths::findDevRoot - 只有 CMakeLists.txt、没有 src/ 不算源码树") {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path base = fs::temp_directory_path() / "textgame_devroot_nosrc";
+    fs::remove_all(base, ec);
+    fs::create_directories(base / "sub");
+    std::ofstream(base / "CMakeLists.txt") << "x\n";
+
+    CHECK(Paths::findDevRoot(base / "sub").empty());   // 只认 src/ + CMakeLists.txt
+    fs::remove_all(base, ec);
+}
+
+TEST_CASE("Paths::findDevRoot - 找不到就返回空（不能瞎猜一个绝对路径）") {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path base = fs::temp_directory_path() / "textgame_devroot_none";
+    fs::remove_all(base, ec);
+    fs::create_directories(base / "a" / "b" / "c" / "d" / "e" / "f" / "g");
+
+    CHECK(Paths::findDevRoot(base / "a" / "b" / "c" / "d" / "e" / "f" / "g").empty());
+    fs::remove_all(base, ec);
+}
+
+TEST_CASE("Paths::findDevRoot - 当前构建目录真能往上找到本项目的源码树") {
+    // ⭐ 这条最有用：它验证的是「开发模式下游戏真的找得到 assets/」。
+    //    单元测试跑在 build/<preset>/tests/ 下，往上应该落在仓库根。
+    //    以前这一步靠编译期宏 PROJECT_ROOT，那会把构建机路径编进二进制
+    //    （makepkg 报「软件包含有对 $srcdir 的引用」），所以改成了运行时往上找。
+    const std::filesystem::path root = Paths::findDevRoot(Platform::executableDir());
+
+    REQUIRE_FALSE(root.empty());
+    CHECK(root == std::filesystem::path(PROJECT_ROOT));
+    CHECK(std::filesystem::exists(root / "assets" / "font.ttf"));
 }

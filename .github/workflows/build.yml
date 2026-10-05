@@ -222,3 +222,59 @@ jobs:
 
       - name: Run unit tests
         run: .\build\tests\unit_tests.exe
+  # ============================================================
+  # AUR 包：PKGBUILD 能不能真的构建出来
+  #
+  # PKGBUILD 是会腐烂的 —— 上游 tag 没了、依赖改名了、补丁失效了。
+  # 这个 job 每次 push 都真跑一遍 makepkg，烂了立刻知道，
+  # 而不是等某个用户来报「你的 AUR 包装不上」。
+  # ============================================================
+  aur:
+    name: AUR package
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git
+
+      - uses: actions/checkout@v4
+
+      # makepkg 拒绝以 root 运行（它的构建过程会往系统里装东西）。
+      # 容器里默认是 root，所以建一个普通用户并把检出目录交给它。
+      - name: Build the AUR package
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          su builder -c 'cd packaging/aur && makepkg -f --noconfirm'
+
+      - name: Check the package contents
+        run: |
+          set -e
+          pkg=$(ls packaging/aur/*.pkg.tar.zst | head -1)
+          echo "产物: $pkg"
+
+          rm -rf /tmp/aurpkg && mkdir -p /tmp/aurpkg
+          bsdtar -xf "$pkg" -C /tmp/aurpkg
+
+          # 安装布局：二进制与资源同级（Paths 靠这个判定打包模式）
+          test -x /tmp/aurpkg/usr/lib/text-game/text_game
+          test -f /tmp/aurpkg/usr/lib/text-game/assets/font.ttf
+          test -x /tmp/aurpkg/usr/bin/text-game
+          test -f /tmp/aurpkg/usr/share/applications/text-game.desktop
+
+          # 依赖用系统的，不能自带 lib/
+          if [ -d /tmp/aurpkg/usr/lib/text-game/lib ]; then
+            echo "AUR 包不该带依赖库（应该依赖系统 sfml）"; exit 1
+          fi
+
+          # ⭐ 二进制里绝不能编进构建机的路径。makepkg 会报
+          #    「软件包含有对 $srcdir 的引用」，0.3.5 之前所有发行包都踩过。
+          if strings /tmp/aurpkg/usr/lib/text-game/text_game | grep -q "$PWD"; then
+            echo "二进制里编进了构建路径："
+            strings /tmp/aurpkg/usr/lib/text-game/text_game | grep "$PWD" | head -3
+            exit 1
+          fi
+          echo "全部通过"

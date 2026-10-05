@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(text_game VERSION 0.3.5 LANGUAGES CXX)
+project(text_game VERSION 0.3.6 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
@@ -157,15 +157,15 @@ target_compile_definitions(text_game_core PUBLIC
     BUILD_DATE="${BUILD_DATE}"
 )
 
-# PROJECT_ROOT 只是**开发时**的兜底（没找到可执行文件旁边的 assets/ 就回退到源码树）。
+# ⚠️ 不要再往这里加 PROJECT_ROOT 之类的构建机路径。
 #
-# ⚠️ 打包构建绝不能带它：那会把构建机的绝对路径编进发出去的二进制里。
-#    makepkg 会直接报「软件包含有对 $srcdir 的引用」，而且那个路径在用户机器上
-#    并不存在，真回退过去只有一堆静默失败。
-#    测试自己会定义它（见 tests/CMakeLists.txt），它们确实要读源码树。
-if(NOT BUNDLE_RUNTIME_DEPS)
-    target_compile_definitions(text_game_core PUBLIC PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
-endif()
+# 开发模式找源码树是**运行时**做的（Paths::findDevRoot 从可执行文件往上找），
+# 编译期宏会把开发者的家目录编进每一个发出去的二进制 ——
+# makepkg 会直接报「软件包含有对 $srcdir 的引用」，namcap 也会 flag，
+# 而那个路径在用户机器上根本不存在。
+#
+# 测试确实要读源码树（分层测试扫 src/include、关卡测试读 assets/levels），
+# 那一份 PROJECT_ROOT 定义在 tests/CMakeLists.txt 里 —— 测试不对外分发。
 
 if(WIN32)
     target_compile_definitions(text_game_core PUBLIC TEXTGAME_PLATFORM_WINDOWS)
