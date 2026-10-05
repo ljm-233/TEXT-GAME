@@ -18,6 +18,8 @@
 #include "ui/background.h"
 #include "ui/font_holder.h"
 #include "ui/window.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
 
 #include <memory>
 
@@ -52,6 +54,13 @@ struct Deps {
         return container.require<ResourceManager>("resources");
     }
     std::shared_ptr<Paths> paths() { return container.require<Paths>("paths"); }
+    // 壁纸页要：library 提供候选列表，loader 提供缩略图
+    std::shared_ptr<WallpaperLibrary> wallpaperLibrary() {
+        return container.require<WallpaperLibrary>("wallpaper_library");
+    }
+    std::shared_ptr<WallpaperLoader> wallpaperLoader() {
+        return container.require<WallpaperLoader>("wallpaper_loader");
+    }
 
     /// 字体由 FontHolder 这个容器单例持有，生命周期到进程结束，
     /// 所以这里返回引用是安全的（临时 shared_ptr 析构不影响对象本身）。
@@ -95,9 +104,9 @@ void registerScenes(Container& container) {
     // ---------------- 设置 ----------------
     registry->add(SceneId::Settings, [&container]() {
         Deps deps{container};
-        return std::make_unique<SettingsScene>(deps.background(), deps.preferences(),
-                                               deps.runtimeConfig(), deps.window(),
-                                               deps.font(), deps.logger());
+        return std::make_unique<SettingsScene>(
+            deps.background(), deps.preferences(), deps.runtimeConfig(), deps.window(),
+            deps.wallpaperLibrary(), deps.wallpaperLoader(), deps.font(), deps.logger());
     });
 
     // ---------------- 控制台 ----------------

@@ -1,7 +1,6 @@
 #pragma once
 #include "preferences.h"
 #include "window.h"
-#include "background.h"
 #include "slider.h"
 #include "toggle_row.h"
 #include "multi_row.h"
@@ -12,18 +11,16 @@
 
 class InterfaceTab {
 public:
-    InterfaceTab(const sf::Font& font,
-                 std::shared_ptr<Preferences> prefs,
-                 std::shared_ptr<Window> window,
-                 std::shared_ptr<Background> background);
+    /// 注意：壁纸已经不在这一页了（0.3.7 起独立成 WallpaperTab），
+    /// 所以这里也不再需要 Background。
+    InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                 std::shared_ptr<Window> window);
 
     void loadFromPrefs();
     void handleEvent(const sf::Event& ev);
     void update();
 
-    float render(sf::RenderTarget& target,
-                 float contentX, float ctrlX,
-                 float startY);
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
 
     void refreshLabels();
     void refreshSelection();
@@ -33,39 +30,36 @@ public:
 private:
     const sf::Font& font_;
     std::shared_ptr<Preferences> prefs_;
-    std::shared_ptr<Window>      window_;
-    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Window> window_;
 
     // ===== 状态 =====
-    bool  showFps_              = false;
-    int   fpsPosition_          = 1;
-    int   fpsFormat_            = 1;
-    float uiScale_              = 1.0f;
-    float fontScale_            = 1.0f;
-    float renderScale_          = 1.0f;
-    int   upscaleMode_          = 1;
-    int   themeId_              = 0;
-    int   languageIdx_          = 0;
-    bool  showClock_            = false;
-    int   clockPosition_        = 0;
-    int   consoleMask_          = 160;
-    int   consolePanelAlpha_    = 220;
-    int   consoleFontSize_      = 18;
-    int   consoleHistoryLines_  = 200;
-    int   consoleLineHeight_    = 26;
-    bool  consoleAutoScroll_    = true;
-    bool  consoleBlinkCursor_   = true;
-    int   consolePrompt_        = 0;
+    bool showFps_ = false;
+    int fpsPosition_ = 1;
+    int fpsFormat_ = 1;
+    float uiScale_ = 1.0f;
+    float fontScale_ = 1.0f;
+    float renderScale_ = 1.0f;
+    int upscaleMode_ = 1;
+    int themeId_ = 0;
+    int languageIdx_ = 0;
+    bool showClock_ = false;
+    int clockPosition_ = 0;
+    int consoleMask_ = 160;
+    int consolePanelAlpha_ = 220;
+    int consoleFontSize_ = 18;
+    int consoleHistoryLines_ = 200;
+    int consoleLineHeight_ = 26;
+    bool consoleAutoScroll_ = true;
+    bool consoleBlinkCursor_ = true;
+    int consolePrompt_ = 0;
 
     // ===== 控件 =====
     std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    std::vector<std::unique_ptr<MultiRow>>  multiRows_;
-    std::unique_ptr<Button> wallpaperButton_;
+    std::vector<std::unique_ptr<MultiRow>> multiRows_;
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
 
     // Slider 标签
-    sf::Text labelWallpaper_;
     sf::Text labelConsoleMask_;
     sf::Text labelConsolePanelAlpha_;
     sf::Text hintUiScale_;
@@ -90,6 +84,5 @@ private:
     void applyFpsFormat();
     void applyTheme();
     void applyLanguage();
-    void applyWallpaper();
     void applyConsolePrompt();
 };

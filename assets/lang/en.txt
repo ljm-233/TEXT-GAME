@@ -79,6 +79,7 @@ FPS 格式=FPS Format
 界面缩放=UI Scale
 语言=Language
 壁纸=Wallpaper
+点击缩略图即可切换壁纸=Click a thumbnail to switch
 时间显示=Clock
 时钟位置=Clock Position
 控制台遮罩=Console Mask

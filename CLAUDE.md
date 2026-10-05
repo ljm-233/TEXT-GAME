@@ -71,8 +71,8 @@ include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
                   LevelValidator / LevelCodec / SaveManager ...）
   scene/          8 个场景 + console/（控制台命令）
 
-  scene/tabs/     6 个设置 Tab（AudioTab / GraphicsTab / InterfaceTab /
-                  DisplayTab / OtherTab / KeysTab）
+  scene/tabs/     7 个设置 Tab（AudioTab / GraphicsTab / InterfaceTab /
+                  WallpaperTab / DisplayTab / OtherTab / KeysTab）
 tests/            doctest 单元测试（含分层架构测试）
 tools/            validate_levels 命令行工具
 assets/
@@ -196,7 +196,8 @@ code = app.exec();
 | 添加新事件 | `include/game/event_bus.h` 加 struct + 加入 variant，然后 `GameWorld` emit + `GameScene` 订阅 |
 | 添加关卡 | `assets/levels/levelN.txt`，参考已有格式；用 `validate_levels` 验证 |
 | 加/换壁纸素材 | 直接丢进 `wallpaper/`（`.jpg` / `.jpeg` / `.png`），会被自动扫到。**不用改代码**；顺手补 `wallpaper/CREDITS.md` |
-| 改壁纸行为（排序/过滤/过渡） | 扫盘与匹配在 `wallpaper/wallpaper_library.cpp`；过渡与适配在 `src/ui/background.cpp` |
+| 改壁纸行为（排序/过滤/过渡） | 扫盘与匹配在 `wallpaper/wallpaper_library.cpp`；过渡与适配在 `src/ui/background.cpp`；设置页在 `src/scene/tabs/wallpaper_tab.cpp` |
+| 改壁纸缩略图大小/画质 | `kThumbnailMaxDim`（`wallpaper_thumbnail.h`）；行内显示尺寸在 `wallpaper_tab_layout` |
 | 添加主题 | `include/ui/theme.h` 加枚举 + `src/ui/theme.cpp` 加颜色组 |
 | 添加成就 | `src/core/achievement.cpp` 的 `kAchievements` 加一行 + `include/utils/text_strings.h` 加名称/描述 |
 | 添加画面预设 | `src/scene/tabs/graphics_tab.cpp` 的 `kPresets` 加一行 + `presetRow_` 加按钮 |
@@ -222,18 +223,23 @@ code = app.exec();
 
 ### SettingsScene：Tab 架构
 
-6 个 Tab 都是**自包含类**，各自持有：
+7 个 Tab 都是**自包含类**，各自持有：
 - 状态变量
 - 控件（unique_ptr）
 - `handleEvent` / `update` / `render` / `refreshLabels` / `refreshSelection` / `registerFocus` / `anyEditing`
 
 SettingsScene 只负责：
-- Tab 切换（6 个 `tabButtons_`）
+- Tab 切换（7 个 `tabButtons_`）
 - 分发事件到当前 Tab
 - 底部按钮（返回 / 关于 / 重置）
 - 设计坐标系 View + 滚动
 
 **加设置项只需在对应 Tab 改 1~2 处**。
+
+⚠️ **加/删 Tab 要同时改三处**，顺序必须一致，否则那个 Tab 会顶着别人的名字：
+`Tab` 枚举（`settings_scene.h`）、构造里的 `tabLabels[]`、`refreshLabels()` 里的
+逐个 `setText`。第一处和文件内那个 `static_assert` 会挡住漏改的情况
+（数组少一项本身不会报错，是静默的）。
 
 ### 渲染管线
 
@@ -277,6 +283,7 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | `WallpaperLibrary` | wallpaper | 扫盘、排序、把 `current_wallpaper` 里的名字解析成下标（纯逻辑，可测） |
 | `WallpaperLoader` | wallpaper | 后台线程把图**解码成 `sf::Image`** |
 | `Background` | ui | 上传 `sf::Texture`、窗口适配、淡入淡出 |
+| `WallpaperTab` | scene | 设置里的「壁纸」页：列出全部壁纸（缩略图 + 文件名），点一下就切 |
 
 **为什么要拆**：`Background` 里有 `sf::Texture`（GlResource），无界面环境连
 构造都做不到，所以它整个没法测。把"扫盘 + 匹配"这段纯逻辑挪到 wallpaper 层
@@ -292,6 +299,20 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 
 **切图**：`next()` / `loadByName()` 把新图放到 `back_` 图层并开始 0.5s 的
 crossfade（旧图 alpha 1→0，新图 0→1），结束后 `front_ = std::move(back_)`。
+
+**设置里的「壁纸」页**（0.3.7 从 InterfaceTab 里独立出来）：一行一张，
+`[缩略图 160x90] [Button: 文件名]`。用 `Button` 当行是为了白拿点击、悬停、
+选中态与手柄焦点导航（`FocusGroup` 收的就是 `vector<Button*>`，按位置做几何导航）。
+
+⚠️ **缩略图必须先缩到 256 再上传纹理**（`wallpaper_thumbnail.h`）。壁纸原图
+最长边到 3840，一张解码就是 33MB；5 张全尺寸纹理直接吃 160MB+ 显存，而那些
+像素一个都不会真的显示出来。缩到 256 之后一张只有 147KB。缩放用**盒式平均**
+而不是最近邻 —— 15 倍降采样下最近邻的锯齿会直接影响"这张图大概什么样"的判断。
+
+`makeThumbnail()` 是纯函数、不碰 GL（`sf::Image` 不是 `GlResource`），所以
+它有正常的单元测试（`tests/test_wallpaper_thumbnail.cpp`）。缩略图由
+`WallpaperLoader` 在**解码那一刻顺带产出**（一次解码两个产物，不重复解），
+UI 在 `update()` 里逐个上传成小纹理。
 
 ⚠️ **改这段代码时踩过两个只有运行时才能发现的坑**，都记在
 `tools/wallpaper_smoke.cpp` 顶部：
@@ -549,6 +570,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
 | ResourceManager（别名寻址 / 路径穿越拒绝 / `${path:别名}` 展开） | ✅ |
 | WallpaperLibrary（扩展名过滤 / 全名与主名匹配 / 中文名 / 越界 / 空目录） | ✅ |
+| WallpaperThumbnail（等比缩放 / 盒式平均 / 不放大 / 极端宽高比 / 内存预算） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。

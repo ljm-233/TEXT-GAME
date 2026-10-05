@@ -7,7 +7,7 @@
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**263 个单元测试用例 / 4858 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**272 个单元测试用例 / 4886 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -575,7 +575,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，263 个用例 / 4858 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，272 个用例 / 4886 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov

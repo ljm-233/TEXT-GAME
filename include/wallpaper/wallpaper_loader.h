@@ -1,11 +1,13 @@
 #pragma once
 #include "wallpaper/wallpaper_info.h"
+#include "wallpaper/wallpaper_thumbnail.h"
 
 #include <SFML/Graphics/Image.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -62,6 +64,16 @@ public:
     bool take(int index, sf::Image& out,
               std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
+    /// 缩略图（最长边 <= kThumbnailMaxDim，见 wallpaper_thumbnail.h）。
+    ///
+    /// 和 `take()` 不同，这个**不消费**：缩略图只有一百多 KB，留着反复用比
+    /// 每次重新生成划算，而且设置界面每次重绘都要读它。
+    /// 返回 nullptr 表示这一张还没解码好。
+    ///
+    /// 缩略图是在**解码那一刻顺带生成**的（一次解码出两个产物），不是单独
+    /// 再解一遍 —— 否则 5 张图要白白多解 5 次。
+    std::shared_ptr<const sf::Image> thumbnail(int index);
+
     /// worker 退出前最后一次机会把队列里剩下的活儿做完。
     /// 析构里调用。再次调用是无害的（已 stop）。
     void shutdown();
@@ -74,5 +86,8 @@ private:
     std::condition_variable cv_;                   ///< pending_ 变化 / 缓存变化 复用一把
     std::unordered_map<int, std::string> pending_; ///< index -> path
     std::unordered_map<int, sf::Image> ready_;     ///< 解码完成、待 take
+    /// 缩略图常驻（不消费）。用 shared_ptr<const> 是为了让调用方拿到之后
+    /// 不再持锁也能安全用 —— 锁保护的是 map 本身，不是这张图。
+    std::unordered_map<int, std::shared_ptr<const sf::Image>> thumbs_;
     std::atomic<bool> stop_{false};
 };

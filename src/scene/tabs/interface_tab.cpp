@@ -16,20 +16,21 @@ namespace {
 constexpr float kRowH = 50.f;
 
 const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
-constexpr int kPosCount  = 4;
+constexpr int kPosCount = 4;
 
 const char* kFpsFormatLabels[] = {"纯数字", "60 FPS", "60.0 FPS"};
-constexpr int kFpsFormatCount  = 3;
+constexpr int kFpsFormatCount = 3;
 
 const float kUiScales[] = {0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 2.0f};
 constexpr int kUiScaleCount = 10;
-const char* kUiScaleLabels[] = {"0.5x", "0.6x", "0.7x", "0.8x", "0.9x",
+const char* kUiScaleLabels[] = {"0.5x", "0.6x", "0.7x",  "0.8x", "0.9x",
                                 "1.0x", "1.1x", "1.25x", "1.5x", "2.0x"};
 
-const float kRenderScales[] = {2.0f, 1.5f, 1.25f, 1.0f, 0.75f, 0.5f, 1.0f/3.0f, 0.25f, 0.10f};
+const float kRenderScales[] = {2.0f, 1.5f,        1.25f, 1.0f, 0.75f,
+                               0.5f, 1.0f / 3.0f, 0.25f, 0.10f};
 constexpr int kRenderScaleCount = 9;
 
-const int kConsoleFonts[]  = {14, 18, 22, 26};
+const int kConsoleFonts[] = {14, 18, 22, 26};
 constexpr int kConsoleFontCount = 4;
 const char* kConsoleFontLabels[] = {"小", "中", "大", "特大"};
 
@@ -41,26 +42,30 @@ constexpr int kConsoleLineHeightCount = 3;
 const char* kConsoleLineHeightLabels[] = {"紧凑", "正常", "宽松"};
 
 const char* kConsolePromptLabels[] = {">", "$", "λ", "❯"};
-constexpr int kConsolePromptCount  = 4;
+constexpr int kConsolePromptCount = 4;
 
 int indexOfUiScale(float s) {
     for (int i = 0; i < kUiScaleCount; ++i)
-        if (std::abs(kUiScales[i] - s) < 0.01f) return i;
+        if (std::abs(kUiScales[i] - s) < 0.01f)
+            return i;
     return 5;
 }
 int indexOfConsoleFont(int f) {
     for (int i = 0; i < kConsoleFontCount; ++i)
-        if (kConsoleFonts[i] == f) return i;
+        if (kConsoleFonts[i] == f)
+            return i;
     return 1;
 }
 int indexOfConsoleHistory(int n) {
     for (int i = 0; i < kConsoleHistoryCount; ++i)
-        if (kConsoleHistory[i] == n) return i;
+        if (kConsoleHistory[i] == n)
+            return i;
     return 2;
 }
 int indexOfConsoleLineHeight(int h) {
     for (int i = 0; i < kConsoleLineHeightCount; ++i)
-        if (kConsoleLineHeights[i] == h) return i;
+        if (kConsoleLineHeights[i] == h)
+            return i;
     return 1;
 }
 int indexOfPos(int idx) {
@@ -74,46 +79,40 @@ int indexOfConsolePrompt(int idx) {
 }
 int indexOfRenderScale(float s) {
     for (int i = 0; i < kRenderScaleCount; ++i)
-        if (std::abs(kRenderScales[i] - s) < 0.01f) return i;
+        if (std::abs(kRenderScales[i] - s) < 0.01f)
+            return i;
     return 3;
 }
 
 } // namespace
 
-InterfaceTab::InterfaceTab(const sf::Font& font,
-                           std::shared_ptr<Preferences> prefs,
-                           std::shared_ptr<Window> window,
-                           std::shared_ptr<Background> background)
+InterfaceTab::InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                           std::shared_ptr<Window> window)
       : font_(font),
         prefs_(std::move(prefs)),
         window_(std::move(window)),
-        background_(std::move(background)),
-        labelWallpaper_      (font, sf::String(), scaledFontSize(20)),
-        labelConsoleMask_    (font, sf::String(), scaledFontSize(20)),
+        labelConsoleMask_(font, sf::String(), scaledFontSize(20)),
         labelConsolePanelAlpha_(font, sf::String(), scaledFontSize(20)),
-        hintUiScale_         (font, sf::String(), scaledFontSize(14)) {
-
+        hintUiScale_(font, sf::String(), scaledFontSize(14)) {
     loadFromPrefs();
 
     auto labelColor = sf::Color(230, 230, 230);
-    for (auto* t : {&labelWallpaper_, &labelConsoleMask_,
-                    &labelConsolePanelAlpha_}) {
+    for (auto* t : {&labelConsoleMask_, &labelConsolePanelAlpha_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
-    auto makeToggle = [&](const std::string& onText,
-                          const std::string& offText) {
-        auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
+    auto makeToggle = [&](const std::string& onText, const std::string& offText) {
+        auto on = std::make_unique<Button>(onText, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(offText, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
     auto addToggle = [&](const char* key, std::function<void(bool)> cb) {
         auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
         auto [on, off] = makeToggle(Str::On, Str::Off);
-        row->onButton  = std::move(on);
+        row->onButton = std::move(on);
         row->offButton = std::move(off);
         toggles_.push_back(std::move(row));
     };
@@ -126,24 +125,28 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     // [0] FpsPos
     {
         auto* row = addMulti(Str::LabelFpsPos, [this](int i) {
-            fpsPosition_ = i; refreshSelection(); applyFpsPosition();
+            fpsPosition_ = i;
+            refreshSelection();
+            applyFpsPosition();
         });
         row->stepX = 86.f;
         for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{76.f, 40.f}, 16));
     }
     // [1] FpsFormat
     {
         auto* row = addMulti(Str::LabelFpsFormat, [this](int i) {
-            fpsFormat_ = i; refreshSelection(); applyFpsFormat();
+            fpsFormat_ = i;
+            refreshSelection();
+            applyFpsFormat();
         });
         row->stepX = 114.f;
         for (int i = 0; i < kFpsFormatCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kFpsFormatLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{110.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kFpsFormatLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{110.f, 40.f}, 16));
     }
     // [2] UiScale
     {
@@ -154,9 +157,9 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kUiScale, uiScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kUiScaleLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [3] FontScale
     {
@@ -167,9 +170,9 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kFontScale, fontScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kUiScaleLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [4] RenderScale
     {
@@ -180,24 +183,33 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kRenderScale, renderScale_);
         });
         row->stepX = 96.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale150),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale125),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale100),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale75),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale50),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale33),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale25),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale10),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale150), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale125), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale100), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale75), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale50), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale33), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale25), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale10), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
     }
     // [5] UpscaleMode
     {
@@ -208,132 +220,147 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setInt(ConfigKey::kUpscaleMode, upscaleMode_);
         });
         row->stepX = 100.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleBicubic),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleFsr1),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleBicubic), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleFsr1), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
     }
     // [6] Theme
     {
         auto* row = addMulti(Str::LabelTheme, [this](int i) {
             themeId_ = i;
-            refreshSelection(); applyTheme();
+            refreshSelection();
+            applyTheme();
         });
         row->stepX = 110.f;
         for (int i = 0; i < kThemeCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                themeName(static_cast<ThemeId>(i)), font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(themeName(static_cast<ThemeId>(i)),
+                                                    font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{100.f, 40.f}, 18));
     }
     // [7] Language
     {
         auto* row = addMulti(Str::LabelLanguage, [this](int i) {
-            languageIdx_ = i; refreshSelection(); applyLanguage();
+            languageIdx_ = i;
+            refreshSelection();
+            applyLanguage();
         });
         row->stepX = 110.f;
         for (const auto& code : Lang::instance().available()) {
             std::string label = code;
-            if (code == "zh")         label = "中文";
-            else if (code == "zh-TW") label = "繁體中文";
-            else if (code == "en")    label = "English";
-            else if (code == "ja")    label = "日本語";
-            else if (code == "ko")    label = "한국어";
-            row->addButton(std::make_unique<Button>(
-                label, font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{100.f, 40.f}, 18));
+            if (code == "zh")
+                label = "中文";
+            else if (code == "zh-TW")
+                label = "繁體中文";
+            else if (code == "en")
+                label = "English";
+            else if (code == "ja")
+                label = "日本語";
+            else if (code == "ko")
+                label = "한국어";
+            row->addButton(std::make_unique<Button>(label, font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{100.f, 40.f}, 18));
         }
     }
     // [8] ClockPos
     {
         auto* row = addMulti(Str::LabelClockPos, [this](int i) {
-            clockPosition_ = i; refreshSelection();
+            clockPosition_ = i;
+            refreshSelection();
             prefs_->setInt(ConfigKey::kClockPosition, clockPosition_);
         });
         row->stepX = 86.f;
         for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{76.f, 40.f}, 16));
     }
     // [9] ConsoleFont
     {
         auto* row = addMulti(Str::LabelConsoleFont, [this](int i) {
-            consoleFontSize_ = kConsoleFonts[i]; refreshSelection();
+            consoleFontSize_ = kConsoleFonts[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleFontSize, consoleFontSize_);
         });
         for (int i = 0; i < kConsoleFontCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsoleFontLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsoleFontLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [10] ConsoleHistory
     {
         auto* row = addMulti(Str::LabelConsoleHistory, [this](int i) {
-            consoleHistoryLines_ = kConsoleHistory[i]; refreshSelection();
+            consoleHistoryLines_ = kConsoleHistory[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleHistoryLines, consoleHistoryLines_);
         });
         for (int i = 0; i < kConsoleHistoryCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                std::to_string(kConsoleHistory[i]), font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(std::to_string(kConsoleHistory[i]),
+                                                    font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [11] ConsoleLineHeight
     {
         auto* row = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
-            consoleLineHeight_ = kConsoleLineHeights[i]; refreshSelection();
+            consoleLineHeight_ = kConsoleLineHeights[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleLineHeight, consoleLineHeight_);
         });
         for (int i = 0; i < kConsoleLineHeightCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsoleLineHeightLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsoleLineHeightLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [12] ConsolePrompt
     {
         auto* row = addMulti(Str::LabelConsolePrompt, [this](int i) {
-            consolePrompt_ = i; refreshSelection(); applyConsolePrompt();
+            consolePrompt_ = i;
+            refreshSelection();
+            applyConsolePrompt();
         });
         row->stepX = 70.f;
         for (int i = 0; i < kConsolePromptCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsolePromptLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsolePromptLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{60.f, 40.f}, 18));
     }
 
     // Toggles
     addToggle(Str::LabelFps, [this](bool v) {
-        showFps_ = v; refreshSelection();
+        showFps_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kShowFps, v);
     });
     addToggle(Str::LabelClock, [this](bool v) {
-        showClock_ = v; refreshSelection();
+        showClock_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kShowClock, v);
     });
     addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
-        consoleAutoScroll_ = v; refreshSelection();
+        consoleAutoScroll_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
     });
     addToggle(Str::LabelConsoleBlink, [this](bool v) {
-        consoleBlinkCursor_ = v; refreshSelection();
+        consoleBlinkCursor_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
     });
 
-    // Wallpaper button
-    wallpaperButton_ = std::make_unique<Button>(
-        Str::NextWallpaper, font_,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
-
     // Console sliders
-    consoleMaskSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(consoleMask_),
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    consoleMaskSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(consoleMask_),
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     consoleMaskSlider_->setDefaultValue(160.f);
 
     consolePanelAlphaSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_),
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_), sf::Vector2f{0.f, 0.f},
+        sf::Vector2f{240.f, 22.f});
     consolePanelAlphaSlider_->setDefaultValue(220.f);
 
     refreshLabels();
@@ -341,31 +368,35 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
 }
 
 void InterfaceTab::loadFromPrefs() {
-    showFps_             = prefs_->getBool(ConfigKey::kShowFps, false);
-    fpsPosition_         = prefs_->getInt(ConfigKey::kFpsPosition, 1);
-    fpsFormat_           = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
-    uiScale_             = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
-    fontScale_           = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
-    renderScale_         = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
-    upscaleMode_         = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
-    themeId_             = prefs_->getInt(ConfigKey::kTheme, 0);
-    showClock_           = prefs_->getBool(ConfigKey::kShowClock, false);
-    clockPosition_       = prefs_->getInt(ConfigKey::kClockPosition, 0);
-    consoleMask_         = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
-    consolePanelAlpha_   = std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
-    consoleFontSize_     = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
+    showFps_ = prefs_->getBool(ConfigKey::kShowFps, false);
+    fpsPosition_ = prefs_->getInt(ConfigKey::kFpsPosition, 1);
+    fpsFormat_ = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
+    uiScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
+    fontScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
+    renderScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
+    upscaleMode_ = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
+    themeId_ = prefs_->getInt(ConfigKey::kTheme, 0);
+    showClock_ = prefs_->getBool(ConfigKey::kShowClock, false);
+    clockPosition_ = prefs_->getInt(ConfigKey::kClockPosition, 0);
+    consoleMask_ = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
+    consolePanelAlpha_ =
+        std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
+    consoleFontSize_ = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
     consoleHistoryLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
-    consoleLineHeight_   = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
-    consoleAutoScroll_   = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
-    consoleBlinkCursor_  = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
-    consolePrompt_       = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
+    consoleLineHeight_ = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
+    consoleAutoScroll_ = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
+    consoleBlinkCursor_ = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
+    consolePrompt_ = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
 
     {
         std::string langCode = prefs_->get(ConfigKey::kLanguage, "zh");
         const auto& avail = Lang::instance().available();
         languageIdx_ = 0;
         for (std::size_t i = 0; i < avail.size(); ++i) {
-            if (avail[i] == langCode) { languageIdx_ = static_cast<int>(i); break; }
+            if (avail[i] == langCode) {
+                languageIdx_ = static_cast<int>(i);
+                break;
+            }
         }
     }
 }
@@ -382,17 +413,12 @@ void InterfaceTab::applyTheme() {
 }
 void InterfaceTab::applyLanguage() {
     const auto& avail = Lang::instance().available();
-    if (languageIdx_ < 0 || languageIdx_ >= static_cast<int>(avail.size())) return;
+    if (languageIdx_ < 0 || languageIdx_ >= static_cast<int>(avail.size()))
+        return;
 
     const std::string& code = avail[languageIdx_];
     Lang::instance().load(code);
     prefs_->set(ConfigKey::kLanguage, code);
-}
-void InterfaceTab::applyWallpaper() {
-    if (!background_) return;
-    if (background_->next()) {
-        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
-    }
 }
 void InterfaceTab::applyConsolePrompt() {
     prefs_->setInt(ConfigKey::kConsolePrompt, consolePrompt_);
@@ -404,29 +430,22 @@ void InterfaceTab::refreshLabels() {
         row->onButton->setText(Str::T(Str::On));
         row->offButton->setText(Str::T(Str::Off));
     }
-    for (auto& row : multiRows_) row->refreshLabel();
-    if (wallpaperButton_) wallpaperButton_->setText(Str::T(Str::NextWallpaper));
+    for (auto& row : multiRows_)
+        row->refreshLabel();
 
-    labelConsoleMask_      .setString(toSf(Str::T(Str::LabelConsoleMask)));
+    labelConsoleMask_.setString(toSf(Str::T(Str::LabelConsoleMask)));
     labelConsolePanelAlpha_.setString(toSf(Str::T(Str::LabelConsolePanelAlpha)));
-    hintUiScale_           .setString(toSf(Str::T(Str::HintUiScale)));
+    hintUiScale_.setString(toSf(Str::T(Str::HintUiScale)));
 
     // 主题按钮文字（英文/日文等需要刷新）
     if (multiRows_.size() > 6) {
         auto& themeRow = *multiRows_[6];
-        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size()); ++i) {
+        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size());
+             ++i) {
             themeRow.buttons[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
         }
     }
     // 壁纸标签显示当前进度
-    if (background_) {
-        labelWallpaper_.setString(toSf(
-            std::string(Str::T(Str::LabelWallpaper)) + "  ("
-            + std::to_string(background_->currentIndex() + 1) + "/"
-            + std::to_string(background_->totalWallpapers()) + ")"));
-    } else {
-        labelWallpaper_.setString(toSf(Str::T(Str::LabelWallpaper)));
-    }
 }
 
 void InterfaceTab::refreshSelection() {
@@ -464,8 +483,8 @@ void InterfaceTab::handleEvent(const sf::Event& ev) {
         row->offButton->handleEvent(ev);
     }
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) btn->handleEvent(ev);
-    wallpaperButton_->handleEvent(ev);
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
     consoleMaskSlider_->handleEvent(ev);
     consolePanelAlphaSlider_->handleEvent(ev);
 }
@@ -473,11 +492,13 @@ void InterfaceTab::handleEvent(const sf::Event& ev) {
 void InterfaceTab::update() {
     for (auto& row : toggles_) {
         if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged) row->onChanged(true);
+            if (row->onChanged)
+                row->onChanged(true);
             return;
         }
         if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged) row->onChanged(false);
+            if (row->onChanged)
+                row->onChanged(false);
             return;
         }
     }
@@ -489,11 +510,6 @@ void InterfaceTab::update() {
                 return;
             }
         }
-    }
-    if (wallpaperButton_->consumeClick()) {
-        applyWallpaper();
-        refreshLabels();
-        return;
     }
     if (consoleMaskSlider_->consumeChanged()) {
         consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
@@ -511,18 +527,19 @@ void InterfaceTab::registerFocus(std::vector<Button*>& out) {
         out.push_back(row->offButton.get());
     }
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) out.push_back(btn.get());
-    out.push_back(wallpaperButton_.get());
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
 }
 
 bool InterfaceTab::anyEditing() const {
-    if (consoleMaskSlider_       && consoleMaskSlider_->isEditing())       return true;
-    if (consolePanelAlphaSlider_ && consolePanelAlphaSlider_->isEditing()) return true;
+    if (consoleMaskSlider_ && consoleMaskSlider_->isEditing())
+        return true;
+    if (consolePanelAlphaSlider_ && consolePanelAlphaSlider_->isEditing())
+        return true;
     return false;
 }
 
-float InterfaceTab::render(sf::RenderTarget& target,
-                           float contentX, float ctrlX,
+float InterfaceTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
                            float startY) {
     float y = startY;
 
@@ -539,8 +556,7 @@ float InterfaceTab::render(sf::RenderTarget& target,
         row.label.setPosition({contentX, y + 8.f});
         target.draw(row.label);
         for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition(
-                {ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
             row.buttons[i]->render(target);
         }
         y += kRowH;
@@ -555,39 +571,31 @@ float InterfaceTab::render(sf::RenderTarget& target,
 
     // FPS
     drawToggle(*toggles_[0]);
-    drawMulti(*multiRows_[0]);   // FpsPos
-    drawMulti(*multiRows_[1]);   // FpsFormat
+    drawMulti(*multiRows_[0]); // FpsPos
+    drawMulti(*multiRows_[1]); // FpsFormat
     // UI 缩放
-    drawMulti(*multiRows_[2]);   // UiScale
-    drawMulti(*multiRows_[3]);   // FontScale
+    drawMulti(*multiRows_[2]); // UiScale
+    drawMulti(*multiRows_[3]); // FontScale
     hintUiScale_.setPosition({contentX, y - 26.f});
     target.draw(hintUiScale_);
     // 渲染缩放
-    drawMulti(*multiRows_[4]);   // RenderScale
-    drawMulti(*multiRows_[5]);   // UpscaleMode
+    drawMulti(*multiRows_[4]); // RenderScale
+    drawMulti(*multiRows_[5]); // UpscaleMode
     // 主题 / 语言
-    drawMulti(*multiRows_[6]);   // Theme
-    drawMulti(*multiRows_[7]);   // Language
-    // 壁纸
-    {
-        labelWallpaper_.setPosition({contentX, y + 8.f});
-        target.draw(labelWallpaper_);
-        wallpaperButton_->setPosition({ctrlX, y});
-        wallpaperButton_->render(target);
-        y += kRowH;
-    }
+    drawMulti(*multiRows_[6]); // Theme
+    drawMulti(*multiRows_[7]); // Language
     // 时钟
     drawToggle(*toggles_[1]);
-    drawMulti(*multiRows_[8]);   // ClockPos
+    drawMulti(*multiRows_[8]); // ClockPos
     // 控制台
-    drawSlider(labelConsoleMask_,       *consoleMaskSlider_);
+    drawSlider(labelConsoleMask_, *consoleMaskSlider_);
     drawSlider(labelConsolePanelAlpha_, *consolePanelAlphaSlider_);
-    drawMulti(*multiRows_[9]);   // ConsoleFont
-    drawMulti(*multiRows_[10]);  // ConsoleHistory
-    drawMulti(*multiRows_[11]);  // ConsoleLineHeight
-    drawToggle(*toggles_[2]);    // AutoScroll
-    drawToggle(*toggles_[3]);    // Blink
-    drawMulti(*multiRows_[12]);  // ConsolePrompt
+    drawMulti(*multiRows_[9]);  // ConsoleFont
+    drawMulti(*multiRows_[10]); // ConsoleHistory
+    drawMulti(*multiRows_[11]); // ConsoleLineHeight
+    drawToggle(*toggles_[2]);   // AutoScroll
+    drawToggle(*toggles_[3]);   // Blink
+    drawMulti(*multiRows_[12]); // ConsolePrompt
 
     return y;
 }

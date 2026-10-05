@@ -1,4 +1,552 @@
 
+===== ./include/scene/tabs/wallpaper_tab.h =====
+#pragma once
+#include "background.h"
+#include "button.h"
+#include "preferences.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+namespace wallpaper_tab_layout {
+
+inline constexpr float kThumbW = 160.f;
+inline constexpr float kThumbH = 90.f;
+inline constexpr float kRowH = 106.f;
+inline constexpr float kGap = 20.f;
+inline constexpr float kBtnW = 420.f;
+inline constexpr float kBtnH = 46.f;
+inline constexpr float kHintH = 34.f;
+
+/// 第 index 行那个按钮的左上角。
+///
+/// 放在头里是**故意的**：冒烟测试要按同样的坐标模拟鼠标点击，而
+/// "点击落在哪个按钮上"这件事只能有一个来源 —— 布局改了而测试还按老坐标点，
+/// 断言会变成"点空了所以什么也没发生"，看着像通过、其实什么都没验。
+inline sf::Vector2f rowButtonPos(float contentX, float startY, int index) {
+    return {contentX + kThumbW + kGap,
+            startY + kHintH + static_cast<float>(index) * kRowH + (kRowH - kBtnH) * 0.5f};
+}
+
+/// 第 index 行缩略图框的左上角
+inline sf::Vector2f rowThumbPos(float contentX, float startY, int index) {
+    return {contentX, startY + kHintH + static_cast<float>(index) * kRowH};
+}
+
+} // namespace wallpaper_tab_layout
+
+/// 设置里的「壁纸」页：把目录里所有壁纸列出来（缩略图 + 文件名），点一下就切。
+///
+/// 一行一张：
+///     [ 缩略图 160x90 ]  [ Button: 文件名 ]
+///
+/// **为什么用 Button 当行**：点击、悬停、选中态、以及手柄焦点导航全都白拿 ——
+/// `FocusGroup` 收的就是 `std::vector<Button*>`，再按按钮位置做几何导航。
+/// 缩略图由本类自己画在按钮左边，不参与焦点。
+///
+/// ⚠️ 缩略图**必须先缩到 256** 再上传纹理（见 wallpaper_thumbnail.h）。
+///    直接给全尺寸纹理套 `setScale` 显示小图的话，5 张壁纸要吃 160MB+ 显存，
+///    而那些像素一个都不会真的被显示出来。
+class WallpaperTab {
+public:
+    WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                 std::shared_ptr<Background> background,
+                 std::shared_ptr<WallpaperLibrary> library,
+                 std::shared_ptr<WallpaperLoader> loader);
+
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const { return false; } // 本页没有文本输入
+
+private:
+    /// 把已经解码好的缩略图上传成小纹理。缩略图是后台线程逐个产出的，
+    /// 所以这一步要**反复调**，直到全部就位。
+    void ensureThumbnails();
+
+    /// 按当前选中项更新按钮的选中态（每帧调，成本就是几次 setSelected）
+    void syncSelection();
+
+    /// 统一算行位置。render 与 registerFocus 都要调 —— 焦点导航是按
+    /// 按钮位置做几何计算的，而切 Tab 时的 syncFocus 发生在本页第一次
+    /// render **之前**，只靠 render 布局会让首次的手柄导航落在错误位置。
+    void layoutRows();
+
+    void applySelection(int index);
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<WallpaperLibrary> library_;
+    std::shared_ptr<WallpaperLoader> loader_;
+
+    /// 与 library_ 的下标一一对应
+    std::vector<std::unique_ptr<Button>> rowButtons_;
+
+    /// 每张壁纸的缩略图纹理。
+    ///
+    /// ⚠️ 纹理必须用 `unique_ptr` 持有：sprite 内部存的是纹理**地址**，
+    ///    而这个 vector 会随着 push_back 重新分配、把元素搬走 ——
+    ///    按值持有的话 sprite 立刻指向已搬走的旧地址（Background 里踩过同样的坑）。
+    struct Thumb {
+        std::unique_ptr<sf::Texture> tex;
+        std::unique_ptr<sf::Sprite> sprite;
+    };
+    std::vector<Thumb> thumbs_;
+
+    /// 最近一次布局用的原点（render 传入并保存，registerFocus 复用）
+    float originX_ = 0.f;
+    float originY_ = 0.f;
+    bool laidOut_ = false;
+
+    // 提示行（含 "当前/总数"）。sf::Text 没有默认构造函数，必须在初始化
+    // 列表里用字体构造 —— 而且不能每帧新建（HarfBuzz 析构那条坑）。
+    sf::Text hint_;
+};
+
+===== ./include/wallpaper/wallpaper_thumbnail.h =====
+#pragma once
+#include <SFML/Graphics/Image.hpp>
+
+/// 壁纸缩略图：把原图等比缩到"最长边不超过 maxDim"。
+///
+/// 为什么要自己缩而不是让 sprite 去缩放显示：壁纸原图最长边到 3840，
+/// 一张解码后就是 33MB。设置里一次性列出 5 张，如果各自上传一张全尺寸
+/// 纹理再靠 setScale 显示小图，显存会直接吃掉 160MB+ —— 而这些像素
+/// 一个都不会真的显示出来。先在 CPU 上缩到 256，一张只剩 147KB。
+///
+/// 用**盒式平均**（每个目标像素取源图对应矩形块的平均值）而不是最近邻：
+/// 3840 → 256 是 15 倍降采样，最近邻会明显出现锯齿与摩尔纹，
+/// 而壁纸缩略图恰恰是看"这张图大概什么样"，锯齿会直接影响判断。
+///
+/// `sf::Image` **不是 `sf::GlResource`** —— 不需要 GL 上下文，所以这个函数
+/// 能在无 DISPLAY 环境里直接单元测试（见 tests/test_wallpaper_thumbnail.cpp）。
+///
+/// - 源图为空 / maxDim 为 0 → 返回空图
+/// - 原图本来就小于 maxDim → 原样返回（**不放大**）
+/// - 宽高比保持不变，且至少 1x1
+sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim);
+
+/// 壁纸缩略图的最长边。256 足够在设置里显示成 ~160x90 的行内预览，
+/// 单张内存 256*256*4 = 256KB（实际按宽高比更小）。
+inline constexpr unsigned kThumbnailMaxDim = 256;
+
+===== ./src/scene/tabs/wallpaper_tab.cpp =====
+#include "scene/tabs/wallpaper_tab.h"
+
+#include "config/keys.h"
+#include "theme.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <algorithm>
+#include <string>
+
+// 行布局常量统一放在 wallpaper_tab.h 的 wallpaper_tab_layout 里 ——
+// 冒烟测试要按同样的坐标模拟点击，不能各写一份。
+using namespace wallpaper_tab_layout;
+
+WallpaperTab::WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                           std::shared_ptr<Background> background,
+                           std::shared_ptr<WallpaperLibrary> library,
+                           std::shared_ptr<WallpaperLoader> loader)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        background_(std::move(background)),
+        library_(std::move(library)),
+        loader_(std::move(loader)),
+        hint_(font, sf::String(), scaledFontSize(18)) {
+    hint_.setFillColor(sf::Color(180, 180, 200));
+
+    if (!library_)
+        return;
+
+    // 每张壁纸一个行按钮。名字用文件名 —— 壁纸没有别的元数据可显示，
+    // 而文件名正是 current_wallpaper 里存的那个东西，对得上号最重要。
+    const int n = library_->size();
+    rowButtons_.reserve(n);
+    thumbs_.resize(n);
+    for (int i = 0; i < n; ++i) {
+        rowButtons_.push_back(std::make_unique<Button>(library_->at(i).filename, font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{kBtnW, kBtnH}, 18));
+    }
+
+    refreshLabels();
+}
+
+void WallpaperTab::refreshLabels() {
+    if (!library_) {
+        hint_.setString(toSf(std::string(Str::T(Str::WallpaperHint))));
+        return;
+    }
+
+    // 把"共几张、当前第几张"和操作提示放一行，省一行空间
+    std::string text = Str::T(Str::WallpaperHint);
+    if (!library_->empty()) {
+        const int cur = background_ ? background_->currentIndex() : -1;
+        text += "    (" + std::to_string(cur >= 0 ? cur + 1 : 0) + "/" +
+                std::to_string(library_->size()) + ")";
+    }
+    hint_.setString(toSf(text));
+}
+
+void WallpaperTab::ensureThumbnails() {
+    if (!loader_ || !library_)
+        return;
+
+    for (int i = 0; i < library_->size(); ++i) {
+        Thumb& t = thumbs_[static_cast<std::size_t>(i)];
+        if (t.tex)
+            continue; // 已经就位
+
+        // 后台线程逐个产出缩略图，没好的下一次再来问
+        auto img = loader_->thumbnail(i);
+        if (!img || img->getSize().x == 0)
+            continue;
+
+        t.tex = std::make_unique<sf::Texture>();
+        if (!t.tex->loadFromImage(*img)) {
+            t.tex.reset();
+            continue; // 这次没成功，下次重试
+        }
+        t.tex->setSmooth(true);
+        // sprite 建在纹理之后，且纹理由 unique_ptr 持有（地址稳定）
+        t.sprite = std::make_unique<sf::Sprite>(*t.tex);
+    }
+}
+
+void WallpaperTab::syncSelection() {
+    const int cur = background_ ? background_->currentIndex() : -1;
+    for (std::size_t i = 0; i < rowButtons_.size(); ++i)
+        rowButtons_[i]->setSelected(static_cast<int>(i) == cur);
+}
+
+void WallpaperTab::layoutRows() {
+    if (!laidOut_)
+        return;
+
+    float y = originY_;
+    for (auto& b : rowButtons_) {
+        b->setPosition({originX_ + kThumbW + kGap, y + (kRowH - kBtnH) * 0.5f});
+        y += kRowH;
+    }
+}
+
+void WallpaperTab::handleEvent(const sf::Event& ev) {
+    for (auto& b : rowButtons_)
+        b->handleEvent(ev);
+}
+
+void WallpaperTab::applySelection(int index) {
+    if (!library_ || !background_)
+        return;
+    const WallpaperInfo info = library_->at(index);
+    if (!info.valid())
+        return;
+
+    // loadByName 内部会做淡入；成功之后 currentFile() **立刻**就是新名字
+    // （选中项与显示项是分开的，见 background.h），所以这里存的就是用户
+    // 刚点的那张，不会存到旧名字上。
+    if (!background_->loadByName(info.filename))
+        return; // 加载失败就别动配置，免得重启后指向一张打不开的图
+
+    if (prefs_)
+        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
+    refreshLabels();
+}
+
+void WallpaperTab::update() {
+    ensureThumbnails();
+    syncSelection();
+
+    for (std::size_t i = 0; i < rowButtons_.size(); ++i) {
+        if (rowButtons_[i]->consumeClick())
+            applySelection(static_cast<int>(i));
+    }
+}
+
+void WallpaperTab::registerFocus(std::vector<Button*>& out) {
+    // 焦点导航按按钮位置算，所以这里必须先把位置落好 ——
+    // 切 Tab 时的 syncFocus 发生在本页第一次 render **之前**。
+    layoutRows();
+    for (auto& b : rowButtons_)
+        out.push_back(b.get());
+}
+
+void WallpaperTab::refreshSelection() {
+    syncSelection();
+}
+
+float WallpaperTab::render(sf::RenderTarget& target, float contentX, float startY) {
+    originX_ = contentX;
+    originY_ = startY + 34.f; // 提示行占掉一行
+    laidOut_ = true;
+    layoutRows();
+
+    hint_.setPosition({contentX, startY});
+    target.draw(hint_);
+
+    if (!library_ || library_->empty()) {
+        return originY_ + 40.f;
+    }
+
+    const Theme& th = getTheme();
+    const int cur = background_ ? background_->currentIndex() : -1;
+
+    float y = originY_;
+    for (int i = 0; i < library_->size(); ++i) {
+        const float rowY = y;
+        const Thumb& t = thumbs_[static_cast<std::size_t>(i)];
+
+        // ---- 缩略图（等比 contain 放进 kThumbW x kThumbH 的框里）----
+        if (t.sprite && t.tex) {
+            const auto ts = t.tex->getSize();
+            if (ts.x > 0 && ts.y > 0) {
+                const float scale = std::min(kThumbW / static_cast<float>(ts.x),
+                                             kThumbH / static_cast<float>(ts.y));
+                t.sprite->setScale({scale, scale});
+                t.sprite->setPosition(
+                    {contentX + (kThumbW - static_cast<float>(ts.x) * scale) * 0.5f,
+                     rowY + (kThumbH - static_cast<float>(ts.y) * scale) * 0.5f});
+                target.draw(*t.sprite);
+            }
+        } else {
+            // 还没解码好：画个占位块。注意别在这儿建 sf::Text（会触发
+            // HarfBuzz 析构那条坑），纯矩形就够了。
+            sf::RectangleShape ph({kThumbW, kThumbH});
+            ph.setFillColor(th.panelBg);
+            ph.setOutlineThickness(1.f);
+            ph.setOutlineColor(th.outline);
+            ph.setPosition({contentX, rowY});
+            target.draw(ph);
+        }
+
+        // ---- 选中项加一圈高亮，和右边按钮的选中态呼应 ----
+        if (i == cur) {
+            sf::RectangleShape hl({kThumbW, kThumbH});
+            hl.setFillColor(sf::Color::Transparent);
+            hl.setOutlineThickness(3.f);
+            hl.setOutlineColor(th.buttonSelected);
+            hl.setPosition({contentX, rowY});
+            target.draw(hl);
+        }
+
+        y += kRowH;
+    }
+
+    // 按钮位置已经在 layoutRows() 里落好，这里只画
+    for (auto& b : rowButtons_)
+        b->render(target);
+
+    return y + 20.f;
+}
+
+===== ./src/wallpaper/wallpaper_thumbnail.cpp =====
+#include "wallpaper/wallpaper_thumbnail.h"
+
+#include <algorithm>
+#include <cstdint>
+
+sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim) {
+    const sf::Vector2u srcSize = src.getSize();
+    if (srcSize.x == 0 || srcSize.y == 0 || maxDim == 0)
+        return {};
+
+    // 本来就够小就原样返回 —— 不放大。放大只会浪费内存，还会更糊。
+    if (srcSize.x <= maxDim && srcSize.y <= maxDim)
+        return src;
+
+    const float scale =
+        static_cast<float>(maxDim) / static_cast<float>(std::max(srcSize.x, srcSize.y));
+
+    const unsigned dstW = std::max(1u, static_cast<unsigned>(srcSize.x * scale));
+    const unsigned dstH = std::max(1u, static_cast<unsigned>(srcSize.y * scale));
+
+    // ⚠️ 必须写成 sf::Vector2u{...}，不能写 ({dstW, dstH}) ——
+    //    单参数花括号在 clang/MSVC 上会与其它重载歧义（见 CLAUDE.md 跨平台那节）
+    sf::Image dst(sf::Vector2u{dstW, dstH}, sf::Color::Black);
+
+    // 读走原始字节：getPixel() 每个像素都有边界检查，这里要读 800 万个像素，
+    // 用裸指针快得多。RGBA 四字节连续排列，逐行从上到下。
+    const std::uint8_t* pixels = src.getPixelsPtr();
+
+    for (unsigned y = 0; y < dstH; ++y) {
+        // 源图上这一段矩形由哪些行组成（整数边界，保证恰好铺满、不重不漏）
+        const unsigned sy0 = y * srcSize.y / dstH;
+        const unsigned sy1 = std::max(sy0 + 1, (y + 1) * srcSize.y / dstH);
+
+        for (unsigned x = 0; x < dstW; ++x) {
+            const unsigned sx0 = x * srcSize.x / dstW;
+            const unsigned sx1 = std::max(sx0 + 1, (x + 1) * srcSize.x / dstW);
+
+            std::uint64_t r = 0, g = 0, b = 0, a = 0;
+            unsigned count = 0;
+            for (unsigned sy = sy0; sy < sy1; ++sy) {
+                const std::uint8_t* row =
+                    pixels + (static_cast<std::size_t>(sy) * srcSize.x + sx0) * 4;
+                for (unsigned sx = sx0; sx < sx1; ++sx) {
+                    r += row[0];
+                    g += row[1];
+                    b += row[2];
+                    a += row[3];
+                    row += 4;
+                    ++count;
+                }
+            }
+            if (count == 0)
+                count = 1;
+
+            dst.setPixel({x, y}, sf::Color(static_cast<std::uint8_t>(r / count),
+                                           static_cast<std::uint8_t>(g / count),
+                                           static_cast<std::uint8_t>(b / count),
+                                           static_cast<std::uint8_t>(a / count)));
+        }
+    }
+
+    return dst;
+}
+
+===== ./tests/test_wallpaper_thumbnail.cpp =====
+#include "doctest.h"
+#include "wallpaper/wallpaper_thumbnail.h"
+
+#include <SFML/Graphics/Image.hpp>
+
+// 壁纸缩略图的降采样。
+//
+// `sf::Image` 不是 `sf::GlResource`，所以这一整套能在**无 DISPLAY** 的环境里跑
+// （CLAUDE.md 里"测试必须能在没有 DISPLAY 的环境下全绿"那条）。
+// Background 那边要 sf::Texture，就没这个待遇了，只能靠 wallpaper_smoke。
+
+namespace {
+
+sf::Image solid(unsigned w, unsigned h, sf::Color c) {
+    // ⚠️ 必须写成 sf::Vector2u{...}：单参数花括号在 clang/MSVC 上与其它重载歧义
+    sf::Image img(sf::Vector2u{w, h}, c);
+    return img;
+}
+
+/// 4x4：左上 2x2 红，其余蓝 —— 降一半之后每个目标像素正好对应一个 2x2 块
+sf::Image quadrants() {
+    sf::Image img(sf::Vector2u{4, 4}, sf::Color::Blue);
+    for (unsigned y = 0; y < 2; ++y)
+        for (unsigned x = 0; x < 2; ++x)
+            img.setPixel({x, y}, sf::Color::Red);
+    return img;
+}
+
+bool sameColor(sf::Color a, sf::Color b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+} // namespace
+
+TEST_CASE("缩略图 - 等比缩到最长边不超过 maxDim") {
+    // 100x50 → 最长边 100 缩到 20，宽高比 2:1 必须保持
+    const sf::Image src = solid(100, 50, sf::Color::White);
+    const sf::Image dst = makeThumbnail(src, 20);
+    CHECK(dst.getSize().x == 20);
+    CHECK(dst.getSize().y == 10);
+}
+
+TEST_CASE("缩略图 - 竖图按高度那一边缩") {
+    const sf::Image src = solid(50, 100, sf::Color::White);
+    const sf::Image dst = makeThumbnail(src, 20);
+    CHECK(dst.getSize().x == 10);
+    CHECK(dst.getSize().y == 20);
+}
+
+TEST_CASE("缩略图 - 盒式平均：每个目标像素是源图对应块的平均值") {
+    const sf::Image dst = makeThumbnail(quadrants(), 2);
+    REQUIRE(dst.getSize().x == 2);
+    REQUIRE(dst.getSize().y == 2);
+
+    // 每块都是纯色，平均之后应当原样保留
+    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color::Red));
+    CHECK(sameColor(dst.getPixel({1, 0}), sf::Color::Blue));
+    CHECK(sameColor(dst.getPixel({0, 1}), sf::Color::Blue));
+    CHECK(sameColor(dst.getPixel({1, 1}), sf::Color::Blue));
+}
+
+TEST_CASE("缩略图 - 会真的做平均，不是取其中一个像素") {
+    // 2x1：左边黑、右边白。缩到 1x1 应当是两者的平均（127 左右），
+    // 而不是"取左边"（0）或"取右边"（255）—— 这条专门挡"退化成最近邻"。
+    sf::Image src(sf::Vector2u{2, 1}, sf::Color::Black);
+    src.setPixel({1, 0}, sf::Color::White);
+
+    const sf::Image dst = makeThumbnail(src, 1);
+    REQUIRE(dst.getSize().x == 1);
+    const sf::Color c = dst.getPixel({0, 0});
+    const bool inRange = (c.r >= 120) && (c.r <= 135);
+    CHECK_MESSAGE(inRange, "期望约 127，实得 " << static_cast<int>(c.r));
+}
+
+TEST_CASE("缩略图 - 纯色图缩小后还是那个颜色") {
+    const sf::Image src = solid(64, 64, sf::Color(10, 200, 30, 255));
+    const sf::Image dst = makeThumbnail(src, 8);
+    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color(10, 200, 30, 255)));
+    CHECK(sameColor(dst.getPixel({7, 7}), sf::Color(10, 200, 30, 255)));
+}
+
+TEST_CASE("缩略图 - 本来就小于 maxDim 就原样返回，不放大") {
+    const sf::Image src = solid(10, 10, sf::Color::Green);
+    const sf::Image dst = makeThumbnail(src, 32);
+    CHECK(dst.getSize().x == 10);
+    CHECK(dst.getSize().y == 10);
+    CHECK(sameColor(dst.getPixel({5, 5}), sf::Color::Green));
+}
+
+TEST_CASE("缩略图 - 空图 / maxDim 为 0 返回空图，不崩") {
+    const sf::Image empty;
+    CHECK(makeThumbnail(empty, 32).getSize().x == 0);
+
+    const sf::Image src = solid(8, 8, sf::Color::White);
+    CHECK(makeThumbnail(src, 0).getSize().x == 0);
+}
+
+TEST_CASE("缩略图 - 极端宽高比也不会缩成 0 宽或 0 高") {
+    // 1000x1 缩到 8 → 高会算成 0.008，必须被夹到至少 1 像素
+    const sf::Image wide = solid(1000, 1, sf::Color::White);
+    const sf::Image d1 = makeThumbnail(wide, 8);
+    CHECK(d1.getSize().x == 8);
+    CHECK(d1.getSize().y >= 1);
+
+    const sf::Image tall = solid(1, 1000, sf::Color::White);
+    const sf::Image d2 = makeThumbnail(tall, 8);
+    CHECK(d2.getSize().x >= 1);
+    CHECK(d2.getSize().y == 8);
+}
+
+TEST_CASE("缩略图 - 实际尺寸的壁纸能缩到 256 且形状对") {
+    // 3840x2160（4K，最长边的墙壁纸就是这么大）→ 256x144
+    const sf::Image src = solid(3840, 2160, sf::Color(70, 57, 40, 255));
+    const sf::Image dst = makeThumbnail(src, kThumbnailMaxDim);
+    CHECK(dst.getSize().x == 256);
+    CHECK(dst.getSize().y == 144);
+    // 单张缩略图的内存占用 —— 这里顺便钉住"不是全尺寸纹理"这件事。
+    // 注意先算成变量再比：doctest 不拆解三连乘的表达式，会直接静态断言报
+    // "Expression Too Complex Please Rewrite As Binary Comparison"。
+    const unsigned thumbBytes = dst.getSize().x * dst.getSize().y * 4;
+    constexpr unsigned kThumbBudget = 256u * 256u * 4;
+    constexpr unsigned kFullHdBytes = 1920u * 1080u * 4;
+    constexpr unsigned kFiftieth = kFullHdBytes / 50;
+    CHECK(thumbBytes <= kThumbBudget);
+    // 实测 256x144x4 = 147KB，而一张 1080p 全尺寸纹理是 8.3MB —— 小约 56 倍。
+    // 这里只要求"至少小 50 倍"，别把具体倍率写死。
+    CHECK(thumbBytes < kFiftieth);
+    CHECK(sameColor(dst.getPixel({100, 100}), sf::Color(70, 57, 40, 255)));
+}
+
 ===== ./.github/workflows/build.yml =====
 name: Build & Test
 
@@ -671,6 +1219,34 @@ jobs:
       contents: write
 
     steps:
+      # 要用 tag 自带的说明当发布正文，所以得把 tag 一起拉下来
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 从 tag 说明生成发布正文
+        run: |
+          # ⚠️ 两个坑，0.3.7 发版时都踩到了：
+          #
+          #   1. `action-gh-release` **不会**自动拿 tag 说明当正文。
+          #      只设 generate_release_notes 的话，正文就只剩一行自动生成的
+          #      "**Full Changelog**: ..."，手写的发版说明根本不出现。
+          #      必须显式给 body / body_path。
+          #      （0.3.6 的正文看着是对的 —— 那是发布之后手工编辑的，
+          #        不是这个 workflow 写进去的，害我以为它会自动用 tag 说明。）
+          #
+          #   2. 打 tag 时要用 `git tag -a --cleanup=verbatim -F <文件>`。
+          #      默认的 cleanup=strip 会把 '#' 开头的行当**注释吃掉** ——
+          #      说明里的 "## 0.3.7 xxx" 标题就是这么没的。
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "tag 没有说明，写个占位正文，别发出空正文"
+            printf '本次发布没有写 tag 说明，改动见提交记录。\n' > release_notes.md
+          fi
+          echo "---- 发布正文预览 ----"
+          head -20 release_notes.md
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -685,7 +1261,8 @@ jobs:
             artifacts/TEXT-GAME-Linux/*
             artifacts/TEXT-GAME-macOS/*
             artifacts/TEXT-GAME-Windows/*
-          generate_release_notes: true
+          body_path: release_notes.md
+          generate_release_notes: false
           draft: false
           prerelease: false
         env:
@@ -862,8 +1439,8 @@ include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
                   LevelValidator / LevelCodec / SaveManager ...）
   scene/          8 个场景 + console/（控制台命令）
 
-  scene/tabs/     6 个设置 Tab（AudioTab / GraphicsTab / InterfaceTab /
-                  DisplayTab / OtherTab / KeysTab）
+  scene/tabs/     7 个设置 Tab（AudioTab / GraphicsTab / InterfaceTab /
+                  WallpaperTab / DisplayTab / OtherTab / KeysTab）
 tests/            doctest 单元测试（含分层架构测试）
 tools/            validate_levels 命令行工具
 assets/
@@ -987,7 +1564,8 @@ code = app.exec();
 | 添加新事件 | `include/game/event_bus.h` 加 struct + 加入 variant，然后 `GameWorld` emit + `GameScene` 订阅 |
 | 添加关卡 | `assets/levels/levelN.txt`，参考已有格式；用 `validate_levels` 验证 |
 | 加/换壁纸素材 | 直接丢进 `wallpaper/`（`.jpg` / `.jpeg` / `.png`），会被自动扫到。**不用改代码**；顺手补 `wallpaper/CREDITS.md` |
-| 改壁纸行为（排序/过滤/过渡） | 扫盘与匹配在 `wallpaper/wallpaper_library.cpp`；过渡与适配在 `src/ui/background.cpp` |
+| 改壁纸行为（排序/过滤/过渡） | 扫盘与匹配在 `wallpaper/wallpaper_library.cpp`；过渡与适配在 `src/ui/background.cpp`；设置页在 `src/scene/tabs/wallpaper_tab.cpp` |
+| 改壁纸缩略图大小/画质 | `kThumbnailMaxDim`（`wallpaper_thumbnail.h`）；行内显示尺寸在 `wallpaper_tab_layout` |
 | 添加主题 | `include/ui/theme.h` 加枚举 + `src/ui/theme.cpp` 加颜色组 |
 | 添加成就 | `src/core/achievement.cpp` 的 `kAchievements` 加一行 + `include/utils/text_strings.h` 加名称/描述 |
 | 添加画面预设 | `src/scene/tabs/graphics_tab.cpp` 的 `kPresets` 加一行 + `presetRow_` 加按钮 |
@@ -1013,18 +1591,23 @@ code = app.exec();
 
 ### SettingsScene：Tab 架构
 
-6 个 Tab 都是**自包含类**，各自持有：
+7 个 Tab 都是**自包含类**，各自持有：
 - 状态变量
 - 控件（unique_ptr）
 - `handleEvent` / `update` / `render` / `refreshLabels` / `refreshSelection` / `registerFocus` / `anyEditing`
 
 SettingsScene 只负责：
-- Tab 切换（6 个 `tabButtons_`）
+- Tab 切换（7 个 `tabButtons_`）
 - 分发事件到当前 Tab
 - 底部按钮（返回 / 关于 / 重置）
 - 设计坐标系 View + 滚动
 
 **加设置项只需在对应 Tab 改 1~2 处**。
+
+⚠️ **加/删 Tab 要同时改三处**，顺序必须一致，否则那个 Tab 会顶着别人的名字：
+`Tab` 枚举（`settings_scene.h`）、构造里的 `tabLabels[]`、`refreshLabels()` 里的
+逐个 `setText`。第一处和文件内那个 `static_assert` 会挡住漏改的情况
+（数组少一项本身不会报错，是静默的）。
 
 ### 渲染管线
 
@@ -1068,6 +1651,7 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 | `WallpaperLibrary` | wallpaper | 扫盘、排序、把 `current_wallpaper` 里的名字解析成下标（纯逻辑，可测） |
 | `WallpaperLoader` | wallpaper | 后台线程把图**解码成 `sf::Image`** |
 | `Background` | ui | 上传 `sf::Texture`、窗口适配、淡入淡出 |
+| `WallpaperTab` | scene | 设置里的「壁纸」页：列出全部壁纸（缩略图 + 文件名），点一下就切 |
 
 **为什么要拆**：`Background` 里有 `sf::Texture`（GlResource），无界面环境连
 构造都做不到，所以它整个没法测。把"扫盘 + 匹配"这段纯逻辑挪到 wallpaper 层
@@ -1083,6 +1667,20 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 
 **切图**：`next()` / `loadByName()` 把新图放到 `back_` 图层并开始 0.5s 的
 crossfade（旧图 alpha 1→0，新图 0→1），结束后 `front_ = std::move(back_)`。
+
+**设置里的「壁纸」页**（0.3.7 从 InterfaceTab 里独立出来）：一行一张，
+`[缩略图 160x90] [Button: 文件名]`。用 `Button` 当行是为了白拿点击、悬停、
+选中态与手柄焦点导航（`FocusGroup` 收的就是 `vector<Button*>`，按位置做几何导航）。
+
+⚠️ **缩略图必须先缩到 256 再上传纹理**（`wallpaper_thumbnail.h`）。壁纸原图
+最长边到 3840，一张解码就是 33MB；5 张全尺寸纹理直接吃 160MB+ 显存，而那些
+像素一个都不会真的显示出来。缩到 256 之后一张只有 147KB。缩放用**盒式平均**
+而不是最近邻 —— 15 倍降采样下最近邻的锯齿会直接影响"这张图大概什么样"的判断。
+
+`makeThumbnail()` 是纯函数、不碰 GL（`sf::Image` 不是 `GlResource`），所以
+它有正常的单元测试（`tests/test_wallpaper_thumbnail.cpp`）。缩略图由
+`WallpaperLoader` 在**解码那一刻顺带产出**（一次解码两个产物，不重复解），
+UI 在 `update()` 里逐个上传成小纹理。
 
 ⚠️ **改这段代码时踩过两个只有运行时才能发现的坑**，都记在
 `tools/wallpaper_smoke.cpp` 顶部：
@@ -1236,6 +1834,23 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
   Windows（NSIS 安装包）。`create-release` 把三个 artifact 目录全挂上去。
 - 想在不发版的前提下验证打包：`gh workflow run release.yml`。
   `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，手动触发只当演练。
+- **发版说明走附注 tag，但有两个坑**（0.3.7 时全踩了，正文只剩一行自动 changelog）：
+
+  1. **打 tag 必须加 `--cleanup=verbatim`**：
+     ```bash
+     git tag -a --cleanup=verbatim -F /tmp/notes.md v0.3.7
+     ```
+     默认的 `cleanup=strip` 会把 **`#` 开头的行当注释吃掉** ——
+     说明里的 `## 0.3.7 xxx` 标题就这么没了，而且 git 不会给任何提示。
+  2. **`action-gh-release` 不会自动拿 tag 说明当正文**。只设
+     `generate_release_notes: true` 的话，正文是一行自动生成的
+     `**Full Changelog**: ...`，手写的说明根本不出现。
+     现在 `release.yml` 里加了一步 `git tag -l --format='%(contents)'`，
+     用 `body_path` 显式喂进去 —— 改的是 workflow，不用每次手工编辑 release。
+
+  ⚠️ 别被历史发布迷惑：v0.3.6 的正文看着是手写说明，**那是发布后手工编辑的**，
+  不代表 workflow 会写进去。要看正文对不对，发完用
+  `gh release view v0.3.7 --json body --jq .body` 核一遍。
 - **每个 job 都有自检步骤，不达标就红**：
   - Linux：`lib/` 库数量 + 带 `LD_LIBRARY_PATH` 的 `ldd` 无 `not found`、
     zip 有内容、deb 的 `Architecture` 非空且不是 i386、rpm 的 `ARCH=x86_64`、
@@ -1340,6 +1955,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
 | ResourceManager（别名寻址 / 路径穿越拒绝 / `${path:别名}` 展开） | ✅ |
 | WallpaperLibrary（扩展名过滤 / 全名与主名匹配 / 中文名 / 越界 / 空目录） | ✅ |
+| WallpaperThumbnail（等比缩放 / 盒式平均 / 不放大 / 极端宽高比 / 内存预算） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
@@ -2315,7 +2931,7 @@ message(STATUS "=== 构建配置完成 ===")
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**263 个单元测试用例 / 4858 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**272 个单元测试用例 / 4886 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -2883,7 +3499,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，263 个用例 / 4858 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，272 个用例 / 4886 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
@@ -8198,6 +8814,8 @@ private:
 #include "text_input.h"
 #include "preferences.h"
 #include "runtime_config.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
 #include "window.h"
 #include "ui/resolution.h"
 #include "confirm_dialog.h"
@@ -8207,6 +8825,7 @@ private:
 #include "tabs/audio_tab.h"
 #include "tabs/graphics_tab.h"
 #include "tabs/interface_tab.h"
+#include "tabs/wallpaper_tab.h"
 #include "tabs/display_tab.h"
 #include "tabs/other_tab.h"
 #include "tabs/keys_tab.h"
@@ -8215,12 +8834,13 @@ private:
 
 class SettingsScene : public Scene {
 public:
-    SettingsScene(std::shared_ptr<Background>    background,
-                  std::shared_ptr<Preferences>   preferences,
+    SettingsScene(std::shared_ptr<Background> background,
+                  std::shared_ptr<Preferences> preferences,
                   std::shared_ptr<RuntimeConfig> runtimeConfig,
-                  std::shared_ptr<Window>        window,
-                  const sf::Font&                font,
-                  std::shared_ptr<Logger>        logger);
+                  std::shared_ptr<Window> window,
+                  std::shared_ptr<WallpaperLibrary> wallpaperLibrary,
+                  std::shared_ptr<WallpaperLoader> wallpaperLoader, const sf::Font& font,
+                  std::shared_ptr<Logger> logger);
 
     void onEnter() override;
     void onResume() override;
@@ -8231,8 +8851,17 @@ public:
     SceneId nextScene() const override { return nextScene_; }
 
 private:
-    enum class Tab { Display = 0, Interface = 1, Graphics = 2, Audio = 3, Keys = 4, Other = 5 };
-    static constexpr int kTabCount = 6;
+    // ⚠️ 这个顺序要和 tabLabels[] 以及 renderLabels 里的逐个 setText 保持一致
+    enum class Tab {
+        Display = 0,
+        Interface = 1,
+        Wallpaper = 2, // ← 壁纸页，插在"界面"之后
+        Graphics = 3,
+        Audio = 4,
+        Keys = 5,
+        Other = 6
+    };
+    static constexpr int kTabCount = 7;
 
     // ===== 应用状态 =====
     void refreshLabels();
@@ -8242,11 +8871,16 @@ private:
     void applyPreset(int idx);
 
     bool anySliderEditing() const {
-        if (audioTab_ && audioTab_->anyEditing()) return true;
-        if (graphicsTab_ && graphicsTab_->anyEditing()) return true;
-        if (interfaceTab_ && interfaceTab_->anyEditing()) return true;
-        if (otherTab_ && otherTab_->anyEditing()) return true;
-        if (keysTab_ && keysTab_->anyEditing()) return true;
+        if (audioTab_ && audioTab_->anyEditing())
+            return true;
+        if (graphicsTab_ && graphicsTab_->anyEditing())
+            return true;
+        if (interfaceTab_ && interfaceTab_->anyEditing())
+            return true;
+        if (otherTab_ && otherTab_->anyEditing())
+            return true;
+        if (keysTab_ && keysTab_->anyEditing())
+            return true;
         return false;
     }
     void applyButtonStyle();
@@ -8263,24 +8897,28 @@ private:
     void resetAllPreferences();
 
     // ===== 渲染子函数 =====
-    void renderTabs         (Window& window);
-    float renderDisplayTab   (Window& window, float contentX, float ctrlX, float y);
-    float renderInterfaceTab (Window& window, float contentX, float ctrlX, float y);
-    float renderGraphicsTab  (Window& window, float contentX, float ctrlX, float y);
-    float renderAudioTab     (Window& window, float contentX, float ctrlX, float y);
-    float renderKeysTab      (Window& window, float contentX, float ctrlX, float y);
-    float renderOtherTab     (Window& window, float contentX, float ctrlX, float y);
+    void renderTabs(Window& window);
+    float renderDisplayTab(Window& window, float contentX, float ctrlX, float y);
+    float renderInterfaceTab(Window& window, float contentX, float ctrlX, float y);
+    float renderWallpaperTab(Window& window, float contentX, float ctrlX, float y);
+    float renderGraphicsTab(Window& window, float contentX, float ctrlX, float y);
+    float renderAudioTab(Window& window, float contentX, float ctrlX, float y);
+    float renderKeysTab(Window& window, float contentX, float ctrlX, float y);
+    float renderOtherTab(Window& window, float contentX, float ctrlX, float y);
 
     // ⭐ 设计坐标系 View（UI 整体缩放）
     void updateDesignView();
 
     // ===== 依赖 =====
-    std::shared_ptr<Background>    background_;
-    std::shared_ptr<Preferences>   preferences_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<Preferences> preferences_;
     std::shared_ptr<RuntimeConfig> runtimeConfig_;
-    std::shared_ptr<Window>        window_;
-    std::shared_ptr<Logger>        logger_;
-    const sf::Font&                font_;
+    std::shared_ptr<Window> window_;
+    // 壁纸页要用：library 提供候选列表，loader 提供缩略图
+    std::shared_ptr<WallpaperLibrary> wallpaperLibrary_;
+    std::shared_ptr<WallpaperLoader> wallpaperLoader_;
+    std::shared_ptr<Logger> logger_;
+    const sf::Font& font_;
 
     Tab currentTab_ = Tab::Display;
     std::vector<std::unique_ptr<Button>> tabButtons_;
@@ -8292,6 +8930,10 @@ private:
     // ================= Interface =================
     // ⭐ 独立 Tab
     std::unique_ptr<InterfaceTab> interfaceTab_;
+
+    // ================= Wallpaper =================
+    // ⭐ 独立 Tab（0.3.7 从 InterfaceTab 里独立出来）
+    std::unique_ptr<WallpaperTab> wallpaperTab_;
 
     // ================= Graphics =================
     // ⭐ 独立 Tab
@@ -8322,7 +8964,7 @@ private:
     std::unique_ptr<ConfirmDialog> aboutDialog_;
 
     // ================= 标题 / 标签 =================
-    sf::Text headingDisplay_, headingInterface_, headingGraphics_;
+    sf::Text headingDisplay_, headingInterface_, headingWallpaper_, headingGraphics_;
     sf::Text headingAudio_, headingKeys_, headingOther_;
 
     // ⭐ 已移入 AudioTab
@@ -8339,7 +8981,7 @@ private:
     static constexpr float kDesignH = 720.f;
     // ⭐ uiScale > 1.0 时内容溢出，滚轮可上下平移
     float contentScroll_ = 0.f;
-    float contentTotalH_ = 0.f;   // 上一帧内容底部 y
+    float contentTotalH_ = 0.f; // 上一帧内容底部 y
 };
 ===== ./include/scene/tabs/audio_tab.h =====
 #pragma once
@@ -8599,7 +9241,6 @@ private:
 #pragma once
 #include "preferences.h"
 #include "window.h"
-#include "background.h"
 #include "slider.h"
 #include "toggle_row.h"
 #include "multi_row.h"
@@ -8610,18 +9251,16 @@ private:
 
 class InterfaceTab {
 public:
-    InterfaceTab(const sf::Font& font,
-                 std::shared_ptr<Preferences> prefs,
-                 std::shared_ptr<Window> window,
-                 std::shared_ptr<Background> background);
+    /// 注意：壁纸已经不在这一页了（0.3.7 起独立成 WallpaperTab），
+    /// 所以这里也不再需要 Background。
+    InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                 std::shared_ptr<Window> window);
 
     void loadFromPrefs();
     void handleEvent(const sf::Event& ev);
     void update();
 
-    float render(sf::RenderTarget& target,
-                 float contentX, float ctrlX,
-                 float startY);
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
 
     void refreshLabels();
     void refreshSelection();
@@ -8631,39 +9270,36 @@ public:
 private:
     const sf::Font& font_;
     std::shared_ptr<Preferences> prefs_;
-    std::shared_ptr<Window>      window_;
-    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Window> window_;
 
     // ===== 状态 =====
-    bool  showFps_              = false;
-    int   fpsPosition_          = 1;
-    int   fpsFormat_            = 1;
-    float uiScale_              = 1.0f;
-    float fontScale_            = 1.0f;
-    float renderScale_          = 1.0f;
-    int   upscaleMode_          = 1;
-    int   themeId_              = 0;
-    int   languageIdx_          = 0;
-    bool  showClock_            = false;
-    int   clockPosition_        = 0;
-    int   consoleMask_          = 160;
-    int   consolePanelAlpha_    = 220;
-    int   consoleFontSize_      = 18;
-    int   consoleHistoryLines_  = 200;
-    int   consoleLineHeight_    = 26;
-    bool  consoleAutoScroll_    = true;
-    bool  consoleBlinkCursor_   = true;
-    int   consolePrompt_        = 0;
+    bool showFps_ = false;
+    int fpsPosition_ = 1;
+    int fpsFormat_ = 1;
+    float uiScale_ = 1.0f;
+    float fontScale_ = 1.0f;
+    float renderScale_ = 1.0f;
+    int upscaleMode_ = 1;
+    int themeId_ = 0;
+    int languageIdx_ = 0;
+    bool showClock_ = false;
+    int clockPosition_ = 0;
+    int consoleMask_ = 160;
+    int consolePanelAlpha_ = 220;
+    int consoleFontSize_ = 18;
+    int consoleHistoryLines_ = 200;
+    int consoleLineHeight_ = 26;
+    bool consoleAutoScroll_ = true;
+    bool consoleBlinkCursor_ = true;
+    int consolePrompt_ = 0;
 
     // ===== 控件 =====
     std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    std::vector<std::unique_ptr<MultiRow>>  multiRows_;
-    std::unique_ptr<Button> wallpaperButton_;
+    std::vector<std::unique_ptr<MultiRow>> multiRows_;
     std::unique_ptr<Slider> consoleMaskSlider_;
     std::unique_ptr<Slider> consolePanelAlphaSlider_;
 
     // Slider 标签
-    sf::Text labelWallpaper_;
     sf::Text labelConsoleMask_;
     sf::Text labelConsolePanelAlpha_;
     sf::Text hintUiScale_;
@@ -8688,7 +9324,6 @@ private:
     void applyFpsFormat();
     void applyTheme();
     void applyLanguage();
-    void applyWallpaper();
     void applyConsolePrompt();
 };
 ===== ./include/scene/tabs/keys_tab.h =====
@@ -10107,25 +10742,27 @@ constexpr const char* LabelUiScale = "界面缩放";
 constexpr const char* LabelFontScale = "字体缩放";
 constexpr const char* LabelRenderScale = "渲染缩放";
 constexpr const char* LabelUpscaleMode = "超分辨率";
-constexpr const char* UpscaleOff      = "关";
-constexpr const char* UpscaleBicubic  = "双三次";
-constexpr const char* UpscaleFsr1     = "FSR1";
-constexpr const char* RenderScale100   = "100%";
-constexpr const char* RenderScale75    = "75%";
-constexpr const char* RenderScale50    = "50%";
-constexpr const char* RenderScale33    = "33%";
-constexpr const char* RenderScale25    = "25%";
-constexpr const char* RenderScale10    = "10%";
+constexpr const char* UpscaleOff = "关";
+constexpr const char* UpscaleBicubic = "双三次";
+constexpr const char* UpscaleFsr1 = "FSR1";
+constexpr const char* RenderScale100 = "100%";
+constexpr const char* RenderScale75 = "75%";
+constexpr const char* RenderScale50 = "50%";
+constexpr const char* RenderScale33 = "33%";
+constexpr const char* RenderScale25 = "25%";
+constexpr const char* RenderScale10 = "10%";
 // ⭐ 超采样
-constexpr const char* RenderScale200   = "200%";
-constexpr const char* RenderScale150   = "150%";
-constexpr const char* RenderScale125   = "125%";
+constexpr const char* RenderScale200 = "200%";
+constexpr const char* RenderScale150 = "150%";
+constexpr const char* RenderScale125 = "125%";
 constexpr const char* LabelConsoleMask = "控制台遮罩";
 constexpr const char* LabelConsoleFont = "控制台字号";
 constexpr const char* LabelConsoleHistory = "控制台历史";
 constexpr const char* LabelTheme = "主题";
 constexpr const char* LabelLanguage = "语言";
 constexpr const char* LabelWallpaper = "壁纸";
+// 壁纸页的操作提示。后面会拼上 "(当前/总数)"，所以这里不要带句号
+constexpr const char* WallpaperHint = "点击缩略图即可切换壁纸";
 constexpr const char* LabelRememberSize = "记住窗口大小";
 constexpr const char* LabelFpsPos = "FPS 位置";
 constexpr const char* LabelFpsLimit = "帧率上限";
@@ -10223,7 +10860,7 @@ constexpr const char* SaveLabel = "当前存档: ";
 constexpr const char* LockedHint = "未解锁";
 
 // ===== 手柄 =====
-constexpr const char* LabelGamepad        = "手柄支持";
+constexpr const char* LabelGamepad = "手柄支持";
 constexpr const char* LabelGamepadDeadzone = "摇杆死区";
 constexpr const char* LabelGamepadVibration = "手柄振动";
 constexpr const char* LabelVibrationIntensity = "振动强度";
@@ -10234,113 +10871,113 @@ constexpr const char* AchvTitle = "成就";
 constexpr const char* AchvProgressPrefix = "已解锁 ";
 constexpr const char* AchvProgressSeparator = " / ";
 
-constexpr const char* AchvFirstCoin     = "初次收获";
+constexpr const char* AchvFirstCoin = "初次收获";
 constexpr const char* AchvFirstCoinDesc = "收集第一个金币";
-constexpr const char* AchvFirstLevel     = "初出茅庐";
+constexpr const char* AchvFirstLevel = "初出茅庐";
 constexpr const char* AchvFirstLevelDesc = "通关第一个关卡";
-constexpr const char* AchvAllLevels     = "通关大师";
+constexpr const char* AchvAllLevels = "通关大师";
 constexpr const char* AchvAllLevelsDesc = "通关全部关卡";
-constexpr const char* AchvPerfectLevel     = "完美主义";
+constexpr const char* AchvPerfectLevel = "完美主义";
 constexpr const char* AchvPerfectLevelDesc = "单关收集全部金币并通关";
-constexpr const char* AchvNoDamage     = "毫发无伤";
+constexpr const char* AchvNoDamage = "毫发无伤";
 constexpr const char* AchvNoDamageDesc = "无伤通关一个关卡";
-constexpr const char* AchvSpeedrun     = "疾风步";
+constexpr const char* AchvSpeedrun = "疾风步";
 constexpr const char* AchvSpeedrunDesc = "30 秒内通关一个关卡";
-constexpr const char* AchvThreeStars     = "三星大师";
+constexpr const char* AchvThreeStars = "三星大师";
 constexpr const char* AchvThreeStarsDesc = "在一个关卡拿到 3 星";
-constexpr const char* AchvAllStars     = "全星达成";
+constexpr const char* AchvAllStars = "全星达成";
 constexpr const char* AchvAllStarsDesc = "全部关卡都拿到 3 星";
-constexpr const char* AchvEditorUsed     = "关卡设计师";
+constexpr const char* AchvEditorUsed = "关卡设计师";
 constexpr const char* AchvEditorUsedDesc = "在编辑器里保存一次关卡";
-constexpr const char* AchvEditorExport     = "分享达人";
+constexpr const char* AchvEditorExport = "分享达人";
 constexpr const char* AchvEditorExportDesc = "导出一次关卡分享码";
-constexpr const char* AchvConsoleUsed     = "命令行勇士";
+constexpr const char* AchvConsoleUsed = "命令行勇士";
 constexpr const char* AchvConsoleUsedDesc = "进入控制台场景";
-constexpr const char* AchvDebugMode     = "内部人士";
+constexpr const char* AchvDebugMode = "内部人士";
 constexpr const char* AchvDebugModeDesc = "使用任意调试快捷键";
 
 // ===== 生命值 =====
 constexpr const char* LabelInitialLives = "初始生命";
 
 // ===== 游戏场景 HUD =====
-constexpr const char* HudSave   = "存档: ";
-constexpr const char* HudLevel  = "关卡: ";
-constexpr const char* HudLives  = "生命: ";
-constexpr const char* HudCoins  = "金币: ";
-constexpr const char* HudTime   = "时间: ";
-constexpr const char* HudKeys   = "钥匙: ";
-constexpr const char* HudHelp   = "WASD 移动，Space 跳跃，ESC 暂停";
+constexpr const char* HudSave = "存档: ";
+constexpr const char* HudLevel = "关卡: ";
+constexpr const char* HudLives = "生命: ";
+constexpr const char* HudCoins = "金币: ";
+constexpr const char* HudTime = "时间: ";
+constexpr const char* HudKeys = "钥匙: ";
+constexpr const char* HudHelp = "WASD 移动，Space 跳跃，ESC 暂停";
 
 // ===== 关卡完成 / 游戏失败 =====
 constexpr const char* LevelCompleteTitle = "完成！";
-constexpr const char* GameOverTitle      = "游戏失败";
-constexpr const char* OverlayCoins       = "金币: ";
-constexpr const char* OverlayTime        = "时间: ";
-constexpr const char* OverlayTarget      = "目标: ";
-constexpr const char* OverlaySeconds     = " 秒";
+constexpr const char* GameOverTitle = "游戏失败";
+constexpr const char* OverlayCoins = "金币: ";
+constexpr const char* OverlayTime = "时间: ";
+constexpr const char* OverlayTarget = "目标: ";
+constexpr const char* OverlaySeconds = " 秒";
 constexpr const char* OverlayHintComplete = "Enter 继续    R 重玩本关    ESC 返回";
-constexpr const char* OverlayHintFailed   = "R 重试    ESC 返回";
-constexpr const char* OverlayBestTime     = "最佳: ";
-constexpr const char* OverlayNewRecord    = "★ 新纪录！";
+constexpr const char* OverlayHintFailed = "R 重试    ESC 返回";
+constexpr const char* OverlayBestTime = "最佳: ";
+constexpr const char* OverlayNewRecord = "★ 新纪录！";
 
 // ===== 通知 =====
-constexpr const char* NotifLevelLoadFailed    = "关卡加载失败";
+constexpr const char* NotifLevelLoadFailed = "关卡加载失败";
 constexpr const char* NotifLevelCompleteStars = "关卡完成！获得 ";
-constexpr const char* NotifStarSuffix         = " 星";
-constexpr const char* NotifGameOverRetry      = "游戏失败，按 R 重试";
-constexpr const char* NotifEnterLevel         = "进入第 ";
-constexpr const char* NotifLevelSuffix        = " 关";
-constexpr const char* NotifAllClear           = "全部通关！";
-constexpr const char* NotifRespawned          = "已重生";
-constexpr const char* NotifLifeExhausted      = "生命耗尽，重新开始";
+constexpr const char* NotifStarSuffix = " 星";
+constexpr const char* NotifGameOverRetry = "游戏失败，按 R 重试";
+constexpr const char* NotifEnterLevel = "进入第 ";
+constexpr const char* NotifLevelSuffix = " 关";
+constexpr const char* NotifAllClear = "全部通关！";
+constexpr const char* NotifRespawned = "已重生";
+constexpr const char* NotifLifeExhausted = "生命耗尽，重新开始";
 
 // ===== 关卡开场 =====
 constexpr const char* IntroLevelPrefix = "关卡 ";
-constexpr const char* IntroCollect     = "收集 ";
+constexpr const char* IntroCollect = "收集 ";
 constexpr const char* IntroCollectTail = " 个金币，到达终点";
 
 // ===== 关卡编辑器 =====
-constexpr const char* EditorHudFile  = "文件: ";
+constexpr const char* EditorHudFile = "文件: ";
 constexpr const char* EditorHudBrush = "笔刷: ";
-constexpr const char* EditorHudSize  = "尺寸: ";
-constexpr const char* EditorHudZoom  = "缩放: ";
-constexpr const char* EditorHudGrid  = "网格: ";
-constexpr const char* EditorHudUndo  = "撤销: ";
+constexpr const char* EditorHudSize = "尺寸: ";
+constexpr const char* EditorHudZoom = "缩放: ";
+constexpr const char* EditorHudGrid = "网格: ";
+constexpr const char* EditorHudUndo = "撤销: ";
 
 constexpr const char* EditorHint =
     "左键画/拖动连画  Shift+拖动=矩形  右键擦  T可达性  G网格  Ctrl+滚轮缩放  WASD移动  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+E导出  Ctrl+I导入  Ctrl+0重置缩放";
 
-constexpr const char* EditorSaved      = "✓ 已保存";
+constexpr const char* EditorSaved = "✓ 已保存";
 constexpr const char* EditorSaveFailed = "保存失败！";
-constexpr const char* EditorUndone     = "已撤销";
-constexpr const char* EditorNoUndo     = "无可撤销";
-constexpr const char* EditorGridOn     = "网格: 开";
-constexpr const char* EditorGridOff    = "网格: 关";
-constexpr const char* EditorZoomReset  = "缩放: 100%";
-constexpr const char* EditorSwitchTo   = "切换到 ";
-constexpr const char* EditorReachOn    = "可达性: 开";
-constexpr const char* EditorReachOff   = "可达性: 关";
+constexpr const char* EditorUndone = "已撤销";
+constexpr const char* EditorNoUndo = "无可撤销";
+constexpr const char* EditorGridOn = "网格: 开";
+constexpr const char* EditorGridOff = "网格: 关";
+constexpr const char* EditorZoomReset = "缩放: 100%";
+constexpr const char* EditorSwitchTo = "切换到 ";
+constexpr const char* EditorReachOn = "可达性: 开";
+constexpr const char* EditorReachOff = "可达性: 关";
 
 // ===== 编辑器笔刷名 =====
-constexpr const char* BrushWall     = "墙";
-constexpr const char* BrushErase    = "橡皮";
-constexpr const char* BrushPlayer   = "玩家";
-constexpr const char* BrushEnemy    = "敌人";
-constexpr const char* BrushCoin     = "金币";
-constexpr const char* BrushGoal     = "终点";
-constexpr const char* BrushSpike    = "尖刺";
-constexpr const char* BrushJumpPad  = "跳台";
+constexpr const char* BrushWall = "墙";
+constexpr const char* BrushErase = "橡皮";
+constexpr const char* BrushPlayer = "玩家";
+constexpr const char* BrushEnemy = "敌人";
+constexpr const char* BrushCoin = "金币";
+constexpr const char* BrushGoal = "终点";
+constexpr const char* BrushSpike = "尖刺";
+constexpr const char* BrushJumpPad = "跳台";
 constexpr const char* BrushCheckpoint = "存档";
-constexpr const char* BrushKey      = "钥匙";
-constexpr const char* BrushDoor     = "门";
+constexpr const char* BrushKey = "钥匙";
+constexpr const char* BrushDoor = "门";
 constexpr const char* BrushPlatformH = "横台";
 constexpr const char* BrushPlatformV = "竖台";
 // ===== 编辑器元素统计 =====
-constexpr const char* StatPlatform   = "移动平台";
+constexpr const char* StatPlatform = "移动平台";
 
 // ===== 控制台 =====
 constexpr const char* ConsoleWelcomeTitle = "TEXT-GAME 控制台";
-constexpr const char* ConsoleWelcomeHint  = "输入 help 查看可用命令";
+constexpr const char* ConsoleWelcomeHint = "输入 help 查看可用命令";
 
 constexpr const char* ConsoleHelpText =
     "可用命令:\n"
@@ -10355,57 +10992,57 @@ constexpr const char* ConsoleHelpText =
     "  save list         列出所有存档\n"
     "  exit              关闭控制台\n";
 
-constexpr const char* ConsoleUsageScene       = "用法: scene <main|save|settings|quit>";
-constexpr const char* ConsoleUnknownScene     = "未知场景: ";
-constexpr const char* ConsoleUsageLog         = "用法: log <trace|debug|info|warn|error>";
-constexpr const char* ConsoleUnknownLevel     = "未知级别: ";
-constexpr const char* ConsoleLogLevelChanged  = "日志级别已切换: ";
-constexpr const char* ConsoleUsageTheme       = "用法: theme <dark|blue|light>";
-constexpr const char* ConsoleUnknownTheme     = "未知主题: ";
-constexpr const char* ConsoleThemeChanged     = "主题已切换。返回主菜单再进入生效。";
-constexpr const char* ConsoleNoSaves          = "没有存档。";
-constexpr const char* ConsoleSavesPrefix      = "共 ";
-constexpr const char* ConsoleSavesSuffix      = " 个存档:";
-constexpr const char* ConsoleUsageSave        = "用法: save list";
-constexpr const char* ConsoleUnknownCmd1      = "未知命令: ";
-constexpr const char* ConsoleUnknownCmd2      = "。输入 help 查看帮助。";
-constexpr const char* ConsoleCalcStart        = "[启动计算器...]";
-constexpr const char* ConsoleCalcEnd          = "[计算器已退出]";
+constexpr const char* ConsoleUsageScene = "用法: scene <main|save|settings|quit>";
+constexpr const char* ConsoleUnknownScene = "未知场景: ";
+constexpr const char* ConsoleUsageLog = "用法: log <trace|debug|info|warn|error>";
+constexpr const char* ConsoleUnknownLevel = "未知级别: ";
+constexpr const char* ConsoleLogLevelChanged = "日志级别已切换: ";
+constexpr const char* ConsoleUsageTheme = "用法: theme <dark|blue|light>";
+constexpr const char* ConsoleUnknownTheme = "未知主题: ";
+constexpr const char* ConsoleThemeChanged = "主题已切换。返回主菜单再进入生效。";
+constexpr const char* ConsoleNoSaves = "没有存档。";
+constexpr const char* ConsoleSavesPrefix = "共 ";
+constexpr const char* ConsoleSavesSuffix = " 个存档:";
+constexpr const char* ConsoleUsageSave = "用法: save list";
+constexpr const char* ConsoleUnknownCmd1 = "未知命令: ";
+constexpr const char* ConsoleUnknownCmd2 = "。输入 help 查看帮助。";
+constexpr const char* ConsoleCalcStart = "[启动计算器...]";
+constexpr const char* ConsoleCalcEnd = "[计算器已退出]";
 
 // ===== 设置页下拉选项 =====
-constexpr const char* OptOff       = "关";
-constexpr const char* OptNone      = "无";
-constexpr const char* OptSlow      = "慢";
-constexpr const char* OptNormal    = "正常";
-constexpr const char* OptFast      = "快";
-constexpr const char* OptTL        = "左上";
-constexpr const char* OptTR        = "右上";
-constexpr const char* OptBL        = "左下";
-constexpr const char* OptBR        = "右下";
-constexpr const char* OptNumber    = "纯数字";
-constexpr const char* OptSmall     = "小";
-constexpr const char* OptMedium    = "中";
-constexpr const char* OptLarge     = "大";
-constexpr const char* OptXLarge    = "特大";
-constexpr const char* OptTight     = "紧凑";
-constexpr const char* OptLoose     = "宽松";
-constexpr const char* OptSharp     = "直角";
+constexpr const char* OptOff = "关";
+constexpr const char* OptNone = "无";
+constexpr const char* OptSlow = "慢";
+constexpr const char* OptNormal = "正常";
+constexpr const char* OptFast = "快";
+constexpr const char* OptTL = "左上";
+constexpr const char* OptTR = "右上";
+constexpr const char* OptBL = "左下";
+constexpr const char* OptBR = "右下";
+constexpr const char* OptNumber = "纯数字";
+constexpr const char* OptSmall = "小";
+constexpr const char* OptMedium = "中";
+constexpr const char* OptLarge = "大";
+constexpr const char* OptXLarge = "特大";
+constexpr const char* OptTight = "紧凑";
+constexpr const char* OptLoose = "宽松";
+constexpr const char* OptSharp = "直角";
 constexpr const char* OptSmallRound = "小圆";
 constexpr const char* OptLargeRound = "大圆";
-constexpr const char* OptThin      = "细";
-constexpr const char* OptThick     = "粗";
-constexpr const char* OptInfinite  = "无限";
+constexpr const char* OptThin = "细";
+constexpr const char* OptThick = "粗";
+constexpr const char* OptInfinite = "无限";
 
 // ===== 设置页对话框 =====
 constexpr const char* NotifLanguageChanged = "语言已切换，返回主菜单后生效";
 constexpr const char* AboutVersion = "版本: ";
-constexpr const char* AboutBuild   = "构建: ";
-constexpr const char* AboutAuthor  = "作者: ";
+constexpr const char* AboutBuild = "构建: ";
+constexpr const char* AboutAuthor = "作者: ";
 
 // ===== 关卡完成 / 失败按钮 =====
 constexpr const char* BtnNextLevel = "下一关";
-constexpr const char* BtnReplay    = "重玩";
-constexpr const char* BtnRetry     = "重试";
+constexpr const char* BtnReplay = "重玩";
+constexpr const char* BtnRetry = "重试";
 
 // ============================================================
 // 多语言辅助函数
@@ -10417,24 +11054,24 @@ inline std::string T(const char* key) {
 }
 
 // ===== 窗口标题 =====
-constexpr const char* WinTitleSaveSelect  = "存档选择";
+constexpr const char* WinTitleSaveSelect = "存档选择";
 constexpr const char* WinTitleLevelSelect = "选关";
-constexpr const char* WinTitleSettings    = "设置";
-constexpr const char* WinTitleConsole     = "控制台";
-constexpr const char* WinTitleEditor      = "关卡编辑器";
+constexpr const char* WinTitleSettings = "设置";
+constexpr const char* WinTitleConsole = "控制台";
+constexpr const char* WinTitleEditor = "关卡编辑器";
 constexpr const char* WinTitleAchievements = "成就";
 constexpr const char* WinTitleLevelPrefix = "第 ";
 constexpr const char* WinTitleLevelSuffix = " 关";
 constexpr const char* WinTitlePausedSuffix = " 关 (已暂停)";
 
 // ===== 按键绑定 =====
-constexpr const char* KeyActionLeft    = "左移";
-constexpr const char* KeyActionRight   = "右移";
-constexpr const char* KeyActionJump    = "跳跃";
-constexpr const char* KeyActionPause   = "暂停";
+constexpr const char* KeyActionLeft = "左移";
+constexpr const char* KeyActionRight = "右移";
+constexpr const char* KeyActionJump = "跳跃";
+constexpr const char* KeyActionPause = "暂停";
 constexpr const char* KeyActionRestart = "重开";
-constexpr const char* KeyPressNew      = "按下新键...";
-constexpr const char* KeyBindHint      = "点击按钮后按新键绑定，Esc 取消";
+constexpr const char* KeyPressNew = "按下新键...";
+constexpr const char* KeyBindHint = "点击按钮后按新键绑定，Esc 取消";
 
 constexpr const char* LabelWindowMode = "窗口模式";
 constexpr const char* WinModeWindowed = "窗口";
@@ -10442,25 +11079,25 @@ constexpr const char* WinModeMaximized = "最大化";
 constexpr const char* WinModeFullscreen = "全屏";
 // ===== 后处理 =====
 constexpr const char* LabelPostSaturation = "饱和度";
-constexpr const char* LabelPostContrast   = "对比度";
+constexpr const char* LabelPostContrast = "对比度";
 constexpr const char* LabelPostBrightness = "亮度";
-constexpr const char* LabelPostGamma      = "伽马";
-constexpr const char* LabelPostVignette   = "暗角";
-constexpr const char* LabelPostBloomStrength  = "泛光强度";
+constexpr const char* LabelPostGamma = "伽马";
+constexpr const char* LabelPostVignette = "暗角";
+constexpr const char* LabelPostBloomStrength = "泛光强度";
 constexpr const char* LabelPostBloomThreshold = "泛光阈值";
-constexpr const char* LabelPostChromatic      = "色差";
-constexpr const char* LabelPostGrain          = "胶片颗粒";
-constexpr const char* LabelPostScanline       = "扫描线";
-constexpr const char* LabelPostDither         = "抖动";
-constexpr const char* ResetGraphics           = "重置画面";
+constexpr const char* LabelPostChromatic = "色差";
+constexpr const char* LabelPostGrain = "胶片颗粒";
+constexpr const char* LabelPostScanline = "扫描线";
+constexpr const char* LabelPostDither = "抖动";
+constexpr const char* ResetGraphics = "重置画面";
 
 // ===== 画面预设 =====
-constexpr const char* LabelPreset       = "预设";
-constexpr const char* PresetDefault     = "原版";
-constexpr const char* PresetCRT         = "复古 CRT";
-constexpr const char* PresetCinematic   = "电影感";
-constexpr const char* PresetPixel8      = "像素 8-bit";
-constexpr const char* PresetNight       = "夜晚";
+constexpr const char* LabelPreset = "预设";
+constexpr const char* PresetDefault = "原版";
+constexpr const char* PresetCRT = "复古 CRT";
+constexpr const char* PresetCinematic = "电影感";
+constexpr const char* PresetPixel8 = "像素 8-bit";
+constexpr const char* PresetNight = "夜晚";
 
 } // namespace Str
 ===== ./include/utils/utf8.h =====
@@ -10614,12 +11251,14 @@ private:
 ===== ./include/wallpaper/wallpaper_loader.h =====
 #pragma once
 #include "wallpaper/wallpaper_info.h"
+#include "wallpaper/wallpaper_thumbnail.h"
 
 #include <SFML/Graphics/Image.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -10676,6 +11315,16 @@ public:
     bool take(int index, sf::Image& out,
               std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
+    /// 缩略图（最长边 <= kThumbnailMaxDim，见 wallpaper_thumbnail.h）。
+    ///
+    /// 和 `take()` 不同，这个**不消费**：缩略图只有一百多 KB，留着反复用比
+    /// 每次重新生成划算，而且设置界面每次重绘都要读它。
+    /// 返回 nullptr 表示这一张还没解码好。
+    ///
+    /// 缩略图是在**解码那一刻顺带生成**的（一次解码出两个产物），不是单独
+    /// 再解一遍 —— 否则 5 张图要白白多解 5 次。
+    std::shared_ptr<const sf::Image> thumbnail(int index);
+
     /// worker 退出前最后一次机会把队列里剩下的活儿做完。
     /// 析构里调用。再次调用是无害的（已 stop）。
     void shutdown();
@@ -10688,6 +11337,9 @@ private:
     std::condition_variable cv_;                   ///< pending_ 变化 / 缓存变化 复用一把
     std::unordered_map<int, std::string> pending_; ///< index -> path
     std::unordered_map<int, sf::Image> ready_;     ///< 解码完成、待 take
+    /// 缩略图常驻（不消费）。用 shared_ptr<const> 是为了让调用方拿到之后
+    /// 不再持锁也能安全用 —— 锁保护的是 map 本身，不是这张图。
+    std::unordered_map<int, std::shared_ptr<const sf::Image>> thumbs_;
     std::atomic<bool> stop_{false};
 };
 
@@ -16849,6 +17501,8 @@ void AchievementScene::render(Window& window) {
 #include "ui/background.h"
 #include "ui/font_holder.h"
 #include "ui/window.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
 
 #include <memory>
 
@@ -16883,6 +17537,13 @@ struct Deps {
         return container.require<ResourceManager>("resources");
     }
     std::shared_ptr<Paths> paths() { return container.require<Paths>("paths"); }
+    // 壁纸页要：library 提供候选列表，loader 提供缩略图
+    std::shared_ptr<WallpaperLibrary> wallpaperLibrary() {
+        return container.require<WallpaperLibrary>("wallpaper_library");
+    }
+    std::shared_ptr<WallpaperLoader> wallpaperLoader() {
+        return container.require<WallpaperLoader>("wallpaper_loader");
+    }
 
     /// 字体由 FontHolder 这个容器单例持有，生命周期到进程结束，
     /// 所以这里返回引用是安全的（临时 shared_ptr 析构不影响对象本身）。
@@ -16926,9 +17587,9 @@ void registerScenes(Container& container) {
     // ---------------- 设置 ----------------
     registry->add(SceneId::Settings, [&container]() {
         Deps deps{container};
-        return std::make_unique<SettingsScene>(deps.background(), deps.preferences(),
-                                               deps.runtimeConfig(), deps.window(),
-                                               deps.font(), deps.logger());
+        return std::make_unique<SettingsScene>(
+            deps.background(), deps.preferences(), deps.runtimeConfig(), deps.window(),
+            deps.wallpaperLibrary(), deps.wallpaperLoader(), deps.font(), deps.logger());
     });
 
     // ---------------- 控制台 ----------------
@@ -20554,21 +21215,20 @@ namespace {
 //
 // 这里抹掉 const 是安全的：下面改的是**我们自己拷贝出来的** ev，对象本身非 const，
 // 也没碰别人的数据。3.1 上走的本来就是非 const 重载，这个转换是空操作。
-template <typename T>
-T* eventIfMutable(sf::Event& e) {
+template <typename T> T* eventIfMutable(sf::Event& e) {
     return const_cast<T*>(e.getIf<T>());
 }
 
 // ===== 布局（设计坐标系 1280×720）=====
-constexpr float kTabX     = 40.f;
-constexpr float kTabY     = 90.f;
-constexpr float kTabGap   = 62.f;
+constexpr float kTabX = 40.f;
+constexpr float kTabY = 90.f;
+constexpr float kTabGap = 62.f;
 constexpr float kContentX = kTabX + 200.f;
-constexpr float kCtrlX    = kContentX + 240.f;
-constexpr float kBtnW     = 280.f;
-constexpr float kBtnH     = 46.f;
-constexpr float kGapX     = 16.f;
-constexpr float kGapY     = 10.f;
+constexpr float kCtrlX = kContentX + 240.f;
+constexpr float kBtnW = 280.f;
+constexpr float kBtnH = 46.f;
+constexpr float kGapX = 16.f;
+constexpr float kGapY = 10.f;
 
 // ===== 画面预设 =====
 struct PostPreset {
@@ -20584,53 +21244,65 @@ struct PostPreset {
 // 构造
 // ============================================================
 
-SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
-                             std::shared_ptr<Preferences>   preferences,
+SettingsScene::SettingsScene(std::shared_ptr<Background> background,
+                             std::shared_ptr<Preferences> preferences,
                              std::shared_ptr<RuntimeConfig> runtimeConfig,
-                             std::shared_ptr<Window>        window,
-                             const sf::Font&                font,
-                             std::shared_ptr<Logger>        logger)
-    : background_(std::move(background)),
-      preferences_(std::move(preferences)),
-      runtimeConfig_(std::move(runtimeConfig)),
-      window_(std::move(window)),
-      logger_(std::move(logger)),
-      font_(font),
-      headingDisplay_  (font, toSf(Str::TabDisplay),   fontSizeInView(24)),
-      headingInterface_(font, toSf(Str::TabInterface), fontSizeInView(24)),
-      headingGraphics_ (font, toSf(Str::TabGraphics),  fontSizeInView(24)),
-      headingAudio_    (font, toSf(Str::TabAudioLog),  fontSizeInView(24)),
-      headingKeys_     (font, toSf(Str::TabKeys),      fontSizeInView(24)),
-      headingOther_    (font, toSf(Str::TabOther),     fontSizeInView(24)){
-
+                             std::shared_ptr<Window> window,
+                             std::shared_ptr<WallpaperLibrary> wallpaperLibrary,
+                             std::shared_ptr<WallpaperLoader> wallpaperLoader,
+                             const sf::Font& font, std::shared_ptr<Logger> logger)
+      : background_(std::move(background)),
+        preferences_(std::move(preferences)),
+        runtimeConfig_(std::move(runtimeConfig)),
+        window_(std::move(window)),
+        wallpaperLibrary_(std::move(wallpaperLibrary)),
+        wallpaperLoader_(std::move(wallpaperLoader)),
+        logger_(std::move(logger)),
+        font_(font),
+        headingDisplay_(font, toSf(Str::TabDisplay), fontSizeInView(24)),
+        headingInterface_(font, toSf(Str::TabInterface), fontSizeInView(24)),
+        headingWallpaper_(font, toSf(Str::LabelWallpaper), fontSizeInView(24)),
+        headingGraphics_(font, toSf(Str::TabGraphics), fontSizeInView(24)),
+        headingAudio_(font, toSf(Str::TabAudioLog), fontSizeInView(24)),
+        headingKeys_(font, toSf(Str::TabKeys), fontSizeInView(24)),
+        headingOther_(font, toSf(Str::TabOther), fontSizeInView(24)) {
     // 标题颜色
     auto headingColor = sf::Color(160, 200, 240);
     headingDisplay_.setFillColor(headingColor);
     headingInterface_.setFillColor(headingColor);
+    headingWallpaper_.setFillColor(headingColor);
     headingGraphics_.setFillColor(headingColor);
     headingAudio_.setFillColor(headingColor);
     headingKeys_.setFillColor(headingColor);
     headingOther_.setFillColor(headingColor);
 
-    const char* tabLabels[] = {
-        Str::TabDisplay, Str::TabInterface, Str::TabGraphics,
-        Str::TabAudioLog, Str::TabKeys, Str::TabOther
-    };
+    // ⚠️ 顺序必须与 Tab 枚举一致（壁纸在"界面"之后）
+    const char* tabLabels[] = {Str::TabDisplay,  Str::TabInterface, Str::LabelWallpaper,
+                               Str::TabGraphics, Str::TabAudioLog,  Str::TabKeys,
+                               Str::TabOther};
+    // 加了 Tab 却忘了补这里的一行，那个 Tab 就会顶着别人的名字显示 ——
+    // 而且是静默的（数组少一项也不会报错）
+    static_assert(sizeof(tabLabels) / sizeof(tabLabels[0]) == kTabCount,
+                  "tabLabels 的项数必须等于 kTabCount");
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
-            tabLabels[i], font_,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22));
+            tabLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22));
     }
 
     // ───────────── Display ─────────────
     // ⭐ 独立 Tab
-    displayTab_ = std::make_unique<DisplayTab>(
-        font_, preferences_, runtimeConfig_, window_, logger_);
+    displayTab_ = std::make_unique<DisplayTab>(font_, preferences_, runtimeConfig_,
+                                               window_, logger_);
 
     // ───────────── Interface ─────────────
     // ⭐ 独立 Tab
-    interfaceTab_ = std::make_unique<InterfaceTab>(
-        font_, preferences_, window_, background_);
+    interfaceTab_ = std::make_unique<InterfaceTab>(font_, preferences_, window_);
+
+    // ───────────── Wallpaper ─────────────
+    // ⭐ 独立 Tab（0.3.7 从 InterfaceTab 里独立出来）
+    // 要 library（有哪些壁纸）与 loader（缩略图）才能把候选列全
+    wallpaperTab_ = std::make_unique<WallpaperTab>(font_, preferences_, background_,
+                                                   wallpaperLibrary_, wallpaperLoader_);
 
     // ───────────── Graphics ─────────────
     // ⭐ 独立 Tab
@@ -20647,14 +21319,14 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
     // ⭐ 独立 Tab
     keysTab_ = std::make_unique<KeysTab>(font_, preferences_);
 
-    aboutButton_ = std::make_unique<Button>(Str::ButtonAbout, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 46.f}, 20);
-    resetButton_ = std::make_unique<Button>(Str::ResetDefault, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{220.f, 46.f}, 20);
-    backButton_ = std::make_unique<Button>(Str::Back, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22);
-    resetGraphicsButton_ = std::make_unique<Button>(Str::ResetGraphics, font_,
-                        sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22);
+    aboutButton_ = std::make_unique<Button>(
+        Str::ButtonAbout, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 46.f}, 20);
+    resetButton_ = std::make_unique<Button>(
+        Str::ResetDefault, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{220.f, 46.f}, 20);
+    backButton_ = std::make_unique<Button>(Str::Back, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{180.f, 50.f}, 22);
+    resetGraphicsButton_ = std::make_unique<Button>(
+        Str::ResetGraphics, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22);
 
     refreshSelection();
     updateDesignView();
@@ -20667,35 +21339,38 @@ SettingsScene::SettingsScene(std::shared_ptr<Background>    background,
 void SettingsScene::refreshLabels() {
     // 只在语言变化时刷新
     int v = Lang::instance().version();
-    if (v == lastLangVersion_) return;
+    if (v == lastLangVersion_)
+        return;
     lastLangVersion_ = v;
 
-    auto setLabel = [](sf::Text& t, const char* key) {
-        t.setString(toSf(Str::T(key)));
-    };
+    auto setLabel = [](sf::Text& t, const char* key) { t.setString(toSf(Str::T(key))); };
 
     // ===== Heading =====
-    setLabel(headingDisplay_,   Str::TabDisplay);
+    setLabel(headingDisplay_, Str::TabDisplay);
     setLabel(headingInterface_, Str::TabInterface);
-    setLabel(headingGraphics_,  Str::TabGraphics);
-    setLabel(headingAudio_,     Str::TabAudioLog);
-    setLabel(headingKeys_,      Str::TabKeys);
-    setLabel(headingOther_,     Str::TabOther);
+    setLabel(headingGraphics_, Str::TabGraphics);
+    setLabel(headingAudio_, Str::TabAudioLog);
+    setLabel(headingKeys_, Str::TabKeys);
+    setLabel(headingOther_, Str::TabOther);
 
     // ===== Tab 按钮 =====
-    if (tabButtons_.size() >= 6) {
+    if (tabButtons_.size() >= 7) {
         tabButtons_[0]->setText(Str::T(Str::TabDisplay));
         tabButtons_[1]->setText(Str::T(Str::TabInterface));
-        tabButtons_[2]->setText(Str::T(Str::TabGraphics));
-        tabButtons_[3]->setText(Str::T(Str::TabAudioLog));
-        tabButtons_[4]->setText(Str::T(Str::TabKeys));
-        tabButtons_[5]->setText(Str::T(Str::TabOther));
+        tabButtons_[2]->setText(Str::T(Str::LabelWallpaper));
+        tabButtons_[3]->setText(Str::T(Str::TabGraphics));
+        tabButtons_[4]->setText(Str::T(Str::TabAudioLog));
+        tabButtons_[5]->setText(Str::T(Str::TabKeys));
+        tabButtons_[6]->setText(Str::T(Str::TabOther));
     }
 
     // ===== Toggle / Multi 刷新 =====
-    if (displayTab_) displayTab_->refreshLabels();
-    if (graphicsTab_) graphicsTab_->refreshLabels();
-    if (audioTab_) audioTab_->refreshLabels();
+    if (displayTab_)
+        displayTab_->refreshLabels();
+    if (graphicsTab_)
+        graphicsTab_->refreshLabels();
+    if (audioTab_)
+        audioTab_->refreshLabels();
     if (presetRow_) {
         presetRow_->label.setString(toSf(Str::T(Str::LabelPreset)));
         if (presetRow_->buttons.size() >= 5) {
@@ -20706,13 +21381,19 @@ void SettingsScene::refreshLabels() {
             presetRow_->buttons[4]->setText(Str::T(Str::PresetNight));
         }
     }
-    if (otherTab_) otherTab_->refreshLabels();
-    if (interfaceTab_) interfaceTab_->refreshLabels();
-    if (keysTab_) keysTab_->refreshLabels();
+    if (otherTab_)
+        otherTab_->refreshLabels();
+    if (interfaceTab_)
+        interfaceTab_->refreshLabels();
+    if (keysTab_)
+        keysTab_->refreshLabels();
     // ===== 其他按钮 =====
-    if (aboutButton_)     aboutButton_->setText(Str::T(Str::ButtonAbout));
-    if (resetButton_)     resetButton_->setText(Str::T(Str::ResetDefault));
-    if (backButton_)      backButton_->setText(Str::T(Str::Back));
+    if (aboutButton_)
+        aboutButton_->setText(Str::T(Str::ButtonAbout));
+    if (resetButton_)
+        resetButton_->setText(Str::T(Str::ResetDefault));
+    if (backButton_)
+        backButton_->setText(Str::T(Str::Back));
 }
 
 void SettingsScene::refreshSelection() {
@@ -20720,19 +21401,24 @@ void SettingsScene::refreshSelection() {
         tabButtons_[i]->setSelected(i == static_cast<int>(currentTab_));
 
     // Display
-    if (displayTab_) displayTab_->refreshSelection();
+    if (displayTab_)
+        displayTab_->refreshSelection();
 
     // Interface
-    if (interfaceTab_) interfaceTab_->refreshSelection();
+    if (interfaceTab_)
+        interfaceTab_->refreshSelection();
 
     // Graphics
-    if (graphicsTab_) graphicsTab_->refreshSelection();
+    if (graphicsTab_)
+        graphicsTab_->refreshSelection();
 
     // Audio
-    if (audioTab_) audioTab_->refreshSelection();
+    if (audioTab_)
+        audioTab_->refreshSelection();
 
     // Other
-    if (otherTab_) otherTab_->refreshSelection();
+    if (otherTab_)
+        otherTab_->refreshSelection();
 }
 
 void SettingsScene::syncFocus() {
@@ -20742,27 +21428,37 @@ void SettingsScene::syncFocus() {
     }
 
     std::vector<Button*> items;
-    for (auto& b : tabButtons_) items.push_back(b.get());
+    for (auto& b : tabButtons_)
+        items.push_back(b.get());
 
     switch (currentTab_) {
-        case Tab::Display:
-            if (displayTab_) displayTab_->registerFocus(items);
-            break;
-        case Tab::Interface:
-            if (interfaceTab_) interfaceTab_->registerFocus(items);
-            break;
-        case Tab::Graphics:
-            if (graphicsTab_) graphicsTab_->registerFocus(items);
-            break;
-        case Tab::Audio:
-            audioTab_->registerFocus(items);
-            break;
-        case Tab::Keys:
-            if (keysTab_) keysTab_->registerFocus(items);
-            break;
-        case Tab::Other:
-            if (otherTab_) otherTab_->registerFocus(items);
-            break;
+    case Tab::Display:
+        if (displayTab_)
+            displayTab_->registerFocus(items);
+        break;
+    case Tab::Interface:
+        if (interfaceTab_)
+            interfaceTab_->registerFocus(items);
+        break;
+    case Tab::Wallpaper:
+        if (wallpaperTab_)
+            wallpaperTab_->registerFocus(items);
+        break;
+    case Tab::Graphics:
+        if (graphicsTab_)
+            graphicsTab_->registerFocus(items);
+        break;
+    case Tab::Audio:
+        audioTab_->registerFocus(items);
+        break;
+    case Tab::Keys:
+        if (keysTab_)
+            keysTab_->registerFocus(items);
+        break;
+    case Tab::Other:
+        if (otherTab_)
+            otherTab_->registerFocus(items);
+        break;
     }
     // ⭐ 返回按钮在窗口坐标系固定右下角，不参与设计坐标系几何导航
     //    用 ESC 或手柄 B 键返回
@@ -20773,7 +21469,9 @@ void SettingsScene::syncFocus() {
 // 应用状态
 // ============================================================
 
-void SettingsScene::resetAllPreferences() { preferences_->resetAll(); }
+void SettingsScene::resetAllPreferences() {
+    preferences_->resetAll();
+}
 
 // ============================================================
 // 事件
@@ -20819,7 +21517,7 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             contentScroll_ -= ws->delta * 40.f;
             contentScroll_ = std::clamp(contentScroll_, 0.f, maxScroll);
         }
-        return;   // 不往下传
+        return; // 不往下传
     }
 
     // ⭐ 底部一行按钮在窗口坐标系（不缩放），用原始 event
@@ -20832,8 +21530,14 @@ void SettingsScene::handleEvent(const sf::Event& event) {
         resetGraphicsButton_->handleEvent(event);
     }
 
-    if (resetConfirm_) { resetConfirm_->handleEvent(ev); return; }
-    if (aboutDialog_)  { aboutDialog_->handleEvent(ev);  return; }
+    if (resetConfirm_) {
+        resetConfirm_->handleEvent(ev);
+        return;
+    }
+    if (aboutDialog_) {
+        aboutDialog_->handleEvent(ev);
+        return;
+    }
 
     bool inputFocused = anySliderEditing();
     if (const auto* kp = ev.getIf<sf::Event::KeyPressed>()) {
@@ -20842,27 +21546,38 @@ void SettingsScene::handleEvent(const sf::Event& event) {
             return;
         }
     }
-    for (auto& b : tabButtons_) b->handleEvent(ev);
+    for (auto& b : tabButtons_)
+        b->handleEvent(ev);
 
     switch (currentTab_) {
-        case Tab::Display:
-            if (displayTab_) displayTab_->handleEvent(ev);
-            break;
-        case Tab::Interface:
-            if (interfaceTab_) interfaceTab_->handleEvent(ev);
-            break;
-        case Tab::Graphics:
-            if (graphicsTab_) graphicsTab_->handleEvent(ev);
-            break;
-        case Tab::Audio:
-            if (audioTab_) audioTab_->handleEvent(ev);
-            break;
-        case Tab::Keys:
-            if (keysTab_) keysTab_->handleEvent(ev);
-            break;
-        case Tab::Other:
-            if (otherTab_) otherTab_->handleEvent(ev);
-            break;
+    case Tab::Display:
+        if (displayTab_)
+            displayTab_->handleEvent(ev);
+        break;
+    case Tab::Interface:
+        if (interfaceTab_)
+            interfaceTab_->handleEvent(ev);
+        break;
+    case Tab::Wallpaper:
+        if (wallpaperTab_)
+            wallpaperTab_->handleEvent(ev);
+        break;
+    case Tab::Graphics:
+        if (graphicsTab_)
+            graphicsTab_->handleEvent(ev);
+        break;
+    case Tab::Audio:
+        if (audioTab_)
+            audioTab_->handleEvent(ev);
+        break;
+    case Tab::Keys:
+        if (keysTab_)
+            keysTab_->handleEvent(ev);
+        break;
+    case Tab::Other:
+        if (otherTab_)
+            otherTab_->handleEvent(ev);
+        break;
     }
 }
 
@@ -20872,9 +21587,9 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 
 void SettingsScene::update(float /*dt*/) {
     // ⭐ 画面 Tab 重置按钮
-    if (currentTab_ == Tab::Graphics
-        && resetGraphicsButton_->consumeClick()) {
-        if (graphicsTab_) graphicsTab_->resetPost();
+    if (currentTab_ == Tab::Graphics && resetGraphicsButton_->consumeClick()) {
+        if (graphicsTab_)
+            graphicsTab_->resetPost();
         return;
     }
 
@@ -20902,7 +21617,7 @@ void SettingsScene::update(float /*dt*/) {
         if (tabButtons_[i]->consumeClick()) {
             if (static_cast<int>(currentTab_) != i) {
                 currentTab_ = static_cast<Tab>(i);
-                contentScroll_ = 0.f;      // ⭐ 切 Tab 重置滚动
+                contentScroll_ = 0.f; // ⭐ 切 Tab 重置滚动
                 refreshSelection();
                 syncFocus();
             }
@@ -20911,48 +21626,56 @@ void SettingsScene::update(float /*dt*/) {
     }
 
     switch (currentTab_) {
-        case Tab::Display:
-            if (displayTab_) displayTab_->update();
-            break;
-        case Tab::Interface:
-            if (interfaceTab_) interfaceTab_->update();
-            break;
-        case Tab::Graphics:
-            if (graphicsTab_) graphicsTab_->update();
-            break;
-        case Tab::Audio:
-            if (audioTab_) audioTab_->update();
-            break;
-        case Tab::Keys:
-            if (keysTab_) keysTab_->update();
-            break;
-        case Tab::Other: {
-            if (otherTab_) otherTab_->update();
+    case Tab::Display:
+        if (displayTab_)
+            displayTab_->update();
+        break;
+    case Tab::Interface:
+        if (interfaceTab_)
+            interfaceTab_->update();
+        break;
+    case Tab::Wallpaper:
+        if (wallpaperTab_)
+            wallpaperTab_->update();
+        break;
+    case Tab::Graphics:
+        if (graphicsTab_)
+            graphicsTab_->update();
+        break;
+    case Tab::Audio:
+        if (audioTab_)
+            audioTab_->update();
+        break;
+    case Tab::Keys:
+        if (keysTab_)
+            keysTab_->update();
+        break;
+    case Tab::Other: {
+        if (otherTab_)
+            otherTab_->update();
 
-            if (aboutButton_->consumeClick()) {
-                std::string msg =
-                    std::string(Str::T(Str::AboutTitle)) + "\n\n"
-                    + Str::T(Str::AboutVersion) + PROJECT_VERSION + "\n"
-                    + Str::T(Str::AboutBuild)   + BUILD_DATE + "\n"
-                    + Str::T(Str::AboutAuthor)  + "ljm-233";
-                aboutDialog_ = std::make_unique<ConfirmDialog>(
-                    font_, msg, sf::Vector2f(kDesignW, kDesignH),
-                    ConfirmDialog::Mode::Info);
-                syncFocus();
-                return;
-            }
-            if (resetButton_->consumeClick()) {
-                resetConfirm_ = std::make_unique<ConfirmDialog>(
-                    font_, Str::T(Str::ResetConfirm),
-                    sf::Vector2f(kDesignW, kDesignH));
-                syncFocus();
-                return;
-            }
-            break;
+        if (aboutButton_->consumeClick()) {
+            std::string msg = std::string(Str::T(Str::AboutTitle)) + "\n\n" +
+                              Str::T(Str::AboutVersion) + PROJECT_VERSION + "\n" +
+                              Str::T(Str::AboutBuild) + BUILD_DATE + "\n" +
+                              Str::T(Str::AboutAuthor) + "ljm-233";
+            aboutDialog_ = std::make_unique<ConfirmDialog>(
+                font_, msg, sf::Vector2f(kDesignW, kDesignH), ConfirmDialog::Mode::Info);
+            syncFocus();
+            return;
         }
+        if (resetButton_->consumeClick()) {
+            resetConfirm_ = std::make_unique<ConfirmDialog>(
+                font_, Str::T(Str::ResetConfirm), sf::Vector2f(kDesignW, kDesignH));
+            syncFocus();
+            return;
+        }
+        break;
+    }
     }
 
-    if (backButton_->consumeClick()) nextScene_ = SceneId::Back;
+    if (backButton_->consumeClick())
+        nextScene_ = SceneId::Back;
 }
 
 // ============================================================
@@ -20966,8 +21689,8 @@ void SettingsScene::renderTabs(Window& window) {
     }
 }
 
-float SettingsScene::renderDisplayTab(Window& window, float contentX,
-                                     float ctrlX, float y) {
+float SettingsScene::renderDisplayTab(Window& window, float contentX, float ctrlX,
+                                      float y) {
     headingDisplay_.setPosition({contentX, y});
     window.target().draw(headingDisplay_);
     y += 36.f;
@@ -20978,8 +21701,8 @@ float SettingsScene::renderDisplayTab(Window& window, float contentX,
     return y;
 }
 
-float SettingsScene::renderInterfaceTab(Window& window, float contentX,
-                                       float ctrlX, float y) {
+float SettingsScene::renderInterfaceTab(Window& window, float contentX, float ctrlX,
+                                        float y) {
     headingInterface_.setPosition({contentX, y});
     window.target().draw(headingInterface_);
     y += 36.f;
@@ -20990,8 +21713,20 @@ float SettingsScene::renderInterfaceTab(Window& window, float contentX,
     return y;
 }
 
-float SettingsScene::renderGraphicsTab(Window& window, float contentX,
-                                      float ctrlX, float y) {
+float SettingsScene::renderWallpaperTab(Window& window, float contentX, float /*ctrlX*/,
+                                        float y) {
+    headingWallpaper_.setPosition({contentX, y});
+    window.target().draw(headingWallpaper_);
+    y += 36.f;
+
+    if (wallpaperTab_) {
+        return wallpaperTab_->render(window.target(), contentX, y);
+    }
+    return y;
+}
+
+float SettingsScene::renderGraphicsTab(Window& window, float contentX, float ctrlX,
+                                       float y) {
     headingGraphics_.setPosition({contentX, y});
     window.target().draw(headingGraphics_);
     y += 36.f;
@@ -21002,8 +21737,8 @@ float SettingsScene::renderGraphicsTab(Window& window, float contentX,
     return y;
 }
 
-float SettingsScene::renderAudioTab(Window& window, float contentX,
-                                   float ctrlX, float y) {
+float SettingsScene::renderAudioTab(Window& window, float contentX, float ctrlX,
+                                    float y) {
     headingAudio_.setPosition({contentX, y});
     window.target().draw(headingAudio_);
     y += 36.f;
@@ -21014,8 +21749,7 @@ float SettingsScene::renderAudioTab(Window& window, float contentX,
     return y;
 }
 
-float SettingsScene::renderKeysTab(Window& window, float contentX,
-                                  float ctrlX, float y) {
+float SettingsScene::renderKeysTab(Window& window, float contentX, float ctrlX, float y) {
     headingKeys_.setPosition({contentX, y});
     window.target().draw(headingKeys_);
     y += 36.f;
@@ -21026,8 +21760,8 @@ float SettingsScene::renderKeysTab(Window& window, float contentX,
     return y + 30.f;
 }
 
-float SettingsScene::renderOtherTab(Window& window, float contentX,
-                                   float ctrlX, float y) {
+float SettingsScene::renderOtherTab(Window& window, float contentX, float ctrlX,
+                                    float y) {
     headingOther_.setPosition({contentX, y});
     window.target().draw(headingOther_);
     y += 36.f;
@@ -21046,14 +21780,16 @@ void SettingsScene::updateDesignView() {
     auto size = window_->native().getSize();
     float winW = static_cast<float>(size.x);
     float winH = static_cast<float>(size.y);
-    if (winW <= 0.f || winH <= 0.f) return;
+    if (winW <= 0.f || winH <= 0.f)
+        return;
 
     // ⭐ uiScale 决定设计区域的"多少"映射到窗口
     //   uiScale = 1.0 → 1280×720 设计区域占满窗口
     //   uiScale = 0.5 → 2560×1440 设计区域缩到窗口（UI 缩小一半）
     //   uiScale = 2.0 → 640×360 设计区域放大到窗口（UI 放大两倍）
     float uiS = getUiScale();
-    if (uiS < 0.01f) uiS = 1.0f;
+    if (uiS < 0.01f)
+        uiS = 1.0f;
 
     float viewW = kDesignW / uiS;
     float viewH = kDesignH / uiS;
@@ -21068,18 +21804,16 @@ void SettingsScene::updateDesignView() {
     designView_.setCenter({viewW * 0.5f, viewH * 0.5f + contentScroll_});
 
     // Viewport 保持设计宽高比
-    float winAspect    = winW / winH;
+    float winAspect = winW / winH;
     float designAspect = viewW / viewH;
 
     sf::FloatRect vp;
     if (winAspect > designAspect) {
         float vpW = designAspect / winAspect;
-        vp = sf::FloatRect(sf::Vector2f{(1.f - vpW) * 0.5f, 0.f},
-                           sf::Vector2f{vpW, 1.f});
+        vp = sf::FloatRect(sf::Vector2f{(1.f - vpW) * 0.5f, 0.f}, sf::Vector2f{vpW, 1.f});
     } else {
         float vpH = winAspect / designAspect;
-        vp = sf::FloatRect(sf::Vector2f{0.f, (1.f - vpH) * 0.5f},
-                           sf::Vector2f{1.f, vpH});
+        vp = sf::FloatRect(sf::Vector2f{0.f, (1.f - vpH) * 0.5f}, sf::Vector2f{1.f, vpH});
     }
     designView_.setViewport(vp);
 }
@@ -21093,12 +21827,14 @@ void SettingsScene::render(Window& window) {
     // 阶段 1：窗口坐标系画背景
     native.setView(native.getDefaultView());
     native.clear(sf::Color::Black);
-    if (background_) background_->render(native);
+    if (background_)
+        background_->render(native);
 
     // 阶段 2a：Tab 栏用不滚动的 View（固定左侧）
     {
         float uiS = getUiScale();
-        if (uiS < 0.01f) uiS = 1.0f;
+        if (uiS < 0.01f)
+            uiS = 1.0f;
         sf::View tabView = designView_;
         tabView.setCenter({kDesignW / uiS * 0.5f, kDesignH / uiS * 0.5f});
         native.setView(tabView);
@@ -21110,24 +21846,27 @@ void SettingsScene::render(Window& window) {
 
     float contentBottom = 0.f;
     switch (currentTab_) {
-        case Tab::Display:
-            contentBottom = renderDisplayTab(window, kContentX, kCtrlX, 60.f);
-            break;
-        case Tab::Interface:
-            contentBottom = renderInterfaceTab(window, kContentX, kCtrlX, 50.f);
-            break;
-        case Tab::Graphics:
-            contentBottom = renderGraphicsTab(window, kContentX, kCtrlX, 50.f);
-            break;
-        case Tab::Audio:
-            contentBottom = renderAudioTab(window, kContentX, kCtrlX, 60.f);
-            break;
-        case Tab::Keys:
-            contentBottom = renderKeysTab(window, kContentX, kCtrlX, 60.f);
-            break;
-        case Tab::Other:
-            contentBottom = renderOtherTab(window, kContentX, kCtrlX, 60.f);
-            break;
+    case Tab::Display:
+        contentBottom = renderDisplayTab(window, kContentX, kCtrlX, 60.f);
+        break;
+    case Tab::Interface:
+        contentBottom = renderInterfaceTab(window, kContentX, kCtrlX, 50.f);
+        break;
+    case Tab::Wallpaper:
+        contentBottom = renderWallpaperTab(window, kContentX, kCtrlX, 50.f);
+        break;
+    case Tab::Graphics:
+        contentBottom = renderGraphicsTab(window, kContentX, kCtrlX, 50.f);
+        break;
+    case Tab::Audio:
+        contentBottom = renderAudioTab(window, kContentX, kCtrlX, 60.f);
+        break;
+    case Tab::Keys:
+        contentBottom = renderKeysTab(window, kContentX, kCtrlX, 60.f);
+        break;
+    case Tab::Other:
+        contentBottom = renderOtherTab(window, kContentX, kCtrlX, 60.f);
+        break;
     }
     contentTotalH_ = contentBottom;
 
@@ -21168,12 +21907,12 @@ void SettingsScene::render(Window& window) {
         float winW = static_cast<float>(size.x);
         float winH = static_cast<float>(size.y);
 
-        const float gap    = 20.f;
+        const float gap = 20.f;
         const float margin = 20.f;
 
         float bw = backButton_->size().x;
         float bh = backButton_->size().y;
-        float y  = winH - bh - margin;
+        float y = winH - bh - margin;
 
         float backX = winW - bw - margin;
 
@@ -22516,20 +23255,21 @@ namespace {
 constexpr float kRowH = 50.f;
 
 const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
-constexpr int kPosCount  = 4;
+constexpr int kPosCount = 4;
 
 const char* kFpsFormatLabels[] = {"纯数字", "60 FPS", "60.0 FPS"};
-constexpr int kFpsFormatCount  = 3;
+constexpr int kFpsFormatCount = 3;
 
 const float kUiScales[] = {0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 2.0f};
 constexpr int kUiScaleCount = 10;
-const char* kUiScaleLabels[] = {"0.5x", "0.6x", "0.7x", "0.8x", "0.9x",
+const char* kUiScaleLabels[] = {"0.5x", "0.6x", "0.7x",  "0.8x", "0.9x",
                                 "1.0x", "1.1x", "1.25x", "1.5x", "2.0x"};
 
-const float kRenderScales[] = {2.0f, 1.5f, 1.25f, 1.0f, 0.75f, 0.5f, 1.0f/3.0f, 0.25f, 0.10f};
+const float kRenderScales[] = {2.0f, 1.5f,        1.25f, 1.0f, 0.75f,
+                               0.5f, 1.0f / 3.0f, 0.25f, 0.10f};
 constexpr int kRenderScaleCount = 9;
 
-const int kConsoleFonts[]  = {14, 18, 22, 26};
+const int kConsoleFonts[] = {14, 18, 22, 26};
 constexpr int kConsoleFontCount = 4;
 const char* kConsoleFontLabels[] = {"小", "中", "大", "特大"};
 
@@ -22541,26 +23281,30 @@ constexpr int kConsoleLineHeightCount = 3;
 const char* kConsoleLineHeightLabels[] = {"紧凑", "正常", "宽松"};
 
 const char* kConsolePromptLabels[] = {">", "$", "λ", "❯"};
-constexpr int kConsolePromptCount  = 4;
+constexpr int kConsolePromptCount = 4;
 
 int indexOfUiScale(float s) {
     for (int i = 0; i < kUiScaleCount; ++i)
-        if (std::abs(kUiScales[i] - s) < 0.01f) return i;
+        if (std::abs(kUiScales[i] - s) < 0.01f)
+            return i;
     return 5;
 }
 int indexOfConsoleFont(int f) {
     for (int i = 0; i < kConsoleFontCount; ++i)
-        if (kConsoleFonts[i] == f) return i;
+        if (kConsoleFonts[i] == f)
+            return i;
     return 1;
 }
 int indexOfConsoleHistory(int n) {
     for (int i = 0; i < kConsoleHistoryCount; ++i)
-        if (kConsoleHistory[i] == n) return i;
+        if (kConsoleHistory[i] == n)
+            return i;
     return 2;
 }
 int indexOfConsoleLineHeight(int h) {
     for (int i = 0; i < kConsoleLineHeightCount; ++i)
-        if (kConsoleLineHeights[i] == h) return i;
+        if (kConsoleLineHeights[i] == h)
+            return i;
     return 1;
 }
 int indexOfPos(int idx) {
@@ -22574,46 +23318,40 @@ int indexOfConsolePrompt(int idx) {
 }
 int indexOfRenderScale(float s) {
     for (int i = 0; i < kRenderScaleCount; ++i)
-        if (std::abs(kRenderScales[i] - s) < 0.01f) return i;
+        if (std::abs(kRenderScales[i] - s) < 0.01f)
+            return i;
     return 3;
 }
 
 } // namespace
 
-InterfaceTab::InterfaceTab(const sf::Font& font,
-                           std::shared_ptr<Preferences> prefs,
-                           std::shared_ptr<Window> window,
-                           std::shared_ptr<Background> background)
+InterfaceTab::InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                           std::shared_ptr<Window> window)
       : font_(font),
         prefs_(std::move(prefs)),
         window_(std::move(window)),
-        background_(std::move(background)),
-        labelWallpaper_      (font, sf::String(), scaledFontSize(20)),
-        labelConsoleMask_    (font, sf::String(), scaledFontSize(20)),
+        labelConsoleMask_(font, sf::String(), scaledFontSize(20)),
         labelConsolePanelAlpha_(font, sf::String(), scaledFontSize(20)),
-        hintUiScale_         (font, sf::String(), scaledFontSize(14)) {
-
+        hintUiScale_(font, sf::String(), scaledFontSize(14)) {
     loadFromPrefs();
 
     auto labelColor = sf::Color(230, 230, 230);
-    for (auto* t : {&labelWallpaper_, &labelConsoleMask_,
-                    &labelConsolePanelAlpha_}) {
+    for (auto* t : {&labelConsoleMask_, &labelConsolePanelAlpha_}) {
         t->setFillColor(labelColor);
     }
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
-    auto makeToggle = [&](const std::string& onText,
-                          const std::string& offText) {
-        auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
+    auto makeToggle = [&](const std::string& onText, const std::string& offText) {
+        auto on = std::make_unique<Button>(onText, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(offText, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
     auto addToggle = [&](const char* key, std::function<void(bool)> cb) {
         auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
         auto [on, off] = makeToggle(Str::On, Str::Off);
-        row->onButton  = std::move(on);
+        row->onButton = std::move(on);
         row->offButton = std::move(off);
         toggles_.push_back(std::move(row));
     };
@@ -22626,24 +23364,28 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
     // [0] FpsPos
     {
         auto* row = addMulti(Str::LabelFpsPos, [this](int i) {
-            fpsPosition_ = i; refreshSelection(); applyFpsPosition();
+            fpsPosition_ = i;
+            refreshSelection();
+            applyFpsPosition();
         });
         row->stepX = 86.f;
         for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{76.f, 40.f}, 16));
     }
     // [1] FpsFormat
     {
         auto* row = addMulti(Str::LabelFpsFormat, [this](int i) {
-            fpsFormat_ = i; refreshSelection(); applyFpsFormat();
+            fpsFormat_ = i;
+            refreshSelection();
+            applyFpsFormat();
         });
         row->stepX = 114.f;
         for (int i = 0; i < kFpsFormatCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kFpsFormatLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{110.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kFpsFormatLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{110.f, 40.f}, 16));
     }
     // [2] UiScale
     {
@@ -22654,9 +23396,9 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kUiScale, uiScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kUiScaleLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [3] FontScale
     {
@@ -22667,9 +23409,9 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kFontScale, fontScale_);
         });
         for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kUiScaleLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [4] RenderScale
     {
@@ -22680,24 +23422,33 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setDouble(ConfigKey::kRenderScale, renderScale_);
         });
         row->stepX = 96.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale150),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale125),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale100),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale75),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale50),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale33),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale25),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale10),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale150), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale125), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale100), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale75), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale50), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale33), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale25), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale10), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
     }
     // [5] UpscaleMode
     {
@@ -22708,132 +23459,147 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
             prefs_->setInt(ConfigKey::kUpscaleMode, upscaleMode_);
         });
         row->stepX = 100.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleBicubic),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleFsr1),
-            font_, sf::Vector2f{0.f,0.f}, sf::Vector2f{86.f,40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleBicubic), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
+        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleFsr1), font_,
+                                                sf::Vector2f{0.f, 0.f},
+                                                sf::Vector2f{86.f, 40.f}, 18));
     }
     // [6] Theme
     {
         auto* row = addMulti(Str::LabelTheme, [this](int i) {
             themeId_ = i;
-            refreshSelection(); applyTheme();
+            refreshSelection();
+            applyTheme();
         });
         row->stepX = 110.f;
         for (int i = 0; i < kThemeCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                themeName(static_cast<ThemeId>(i)), font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(themeName(static_cast<ThemeId>(i)),
+                                                    font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{100.f, 40.f}, 18));
     }
     // [7] Language
     {
         auto* row = addMulti(Str::LabelLanguage, [this](int i) {
-            languageIdx_ = i; refreshSelection(); applyLanguage();
+            languageIdx_ = i;
+            refreshSelection();
+            applyLanguage();
         });
         row->stepX = 110.f;
         for (const auto& code : Lang::instance().available()) {
             std::string label = code;
-            if (code == "zh")         label = "中文";
-            else if (code == "zh-TW") label = "繁體中文";
-            else if (code == "en")    label = "English";
-            else if (code == "ja")    label = "日本語";
-            else if (code == "ko")    label = "한국어";
-            row->addButton(std::make_unique<Button>(
-                label, font_, sf::Vector2f{0.f, 0.f},
-                sf::Vector2f{100.f, 40.f}, 18));
+            if (code == "zh")
+                label = "中文";
+            else if (code == "zh-TW")
+                label = "繁體中文";
+            else if (code == "en")
+                label = "English";
+            else if (code == "ja")
+                label = "日本語";
+            else if (code == "ko")
+                label = "한국어";
+            row->addButton(std::make_unique<Button>(label, font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{100.f, 40.f}, 18));
         }
     }
     // [8] ClockPos
     {
         auto* row = addMulti(Str::LabelClockPos, [this](int i) {
-            clockPosition_ = i; refreshSelection();
+            clockPosition_ = i;
+            refreshSelection();
             prefs_->setInt(ConfigKey::kClockPosition, clockPosition_);
         });
         row->stepX = 86.f;
         for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{76.f, 40.f}, 16));
     }
     // [9] ConsoleFont
     {
         auto* row = addMulti(Str::LabelConsoleFont, [this](int i) {
-            consoleFontSize_ = kConsoleFonts[i]; refreshSelection();
+            consoleFontSize_ = kConsoleFonts[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleFontSize, consoleFontSize_);
         });
         for (int i = 0; i < kConsoleFontCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsoleFontLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsoleFontLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [10] ConsoleHistory
     {
         auto* row = addMulti(Str::LabelConsoleHistory, [this](int i) {
-            consoleHistoryLines_ = kConsoleHistory[i]; refreshSelection();
+            consoleHistoryLines_ = kConsoleHistory[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleHistoryLines, consoleHistoryLines_);
         });
         for (int i = 0; i < kConsoleHistoryCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                std::to_string(kConsoleHistory[i]), font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(std::to_string(kConsoleHistory[i]),
+                                                    font_, sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [11] ConsoleLineHeight
     {
         auto* row = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
-            consoleLineHeight_ = kConsoleLineHeights[i]; refreshSelection();
+            consoleLineHeight_ = kConsoleLineHeights[i];
+            refreshSelection();
             prefs_->setInt(ConfigKey::kConsoleLineHeight, consoleLineHeight_);
         });
         for (int i = 0; i < kConsoleLineHeightCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsoleLineHeightLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsoleLineHeightLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{86.f, 40.f}, 18));
     }
     // [12] ConsolePrompt
     {
         auto* row = addMulti(Str::LabelConsolePrompt, [this](int i) {
-            consolePrompt_ = i; refreshSelection(); applyConsolePrompt();
+            consolePrompt_ = i;
+            refreshSelection();
+            applyConsolePrompt();
         });
         row->stepX = 70.f;
         for (int i = 0; i < kConsolePromptCount; ++i)
-            row->addButton(std::make_unique<Button>(
-                kConsolePromptLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{60.f, 40.f}, 18));
+            row->addButton(std::make_unique<Button>(kConsolePromptLabels[i], font_,
+                                                    sf::Vector2f{0.f, 0.f},
+                                                    sf::Vector2f{60.f, 40.f}, 18));
     }
 
     // Toggles
     addToggle(Str::LabelFps, [this](bool v) {
-        showFps_ = v; refreshSelection();
+        showFps_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kShowFps, v);
     });
     addToggle(Str::LabelClock, [this](bool v) {
-        showClock_ = v; refreshSelection();
+        showClock_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kShowClock, v);
     });
     addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
-        consoleAutoScroll_ = v; refreshSelection();
+        consoleAutoScroll_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
     });
     addToggle(Str::LabelConsoleBlink, [this](bool v) {
-        consoleBlinkCursor_ = v; refreshSelection();
+        consoleBlinkCursor_ = v;
+        refreshSelection();
         prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
     });
 
-    // Wallpaper button
-    wallpaperButton_ = std::make_unique<Button>(
-        Str::NextWallpaper, font_,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{150.f, 40.f}, 18);
-
     // Console sliders
-    consoleMaskSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(consoleMask_),
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    consoleMaskSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(consoleMask_),
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     consoleMaskSlider_->setDefaultValue(160.f);
 
     consolePanelAlphaSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_),
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_), sf::Vector2f{0.f, 0.f},
+        sf::Vector2f{240.f, 22.f});
     consolePanelAlphaSlider_->setDefaultValue(220.f);
 
     refreshLabels();
@@ -22841,31 +23607,35 @@ InterfaceTab::InterfaceTab(const sf::Font& font,
 }
 
 void InterfaceTab::loadFromPrefs() {
-    showFps_             = prefs_->getBool(ConfigKey::kShowFps, false);
-    fpsPosition_         = prefs_->getInt(ConfigKey::kFpsPosition, 1);
-    fpsFormat_           = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
-    uiScale_             = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
-    fontScale_           = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
-    renderScale_         = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
-    upscaleMode_         = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
-    themeId_             = prefs_->getInt(ConfigKey::kTheme, 0);
-    showClock_           = prefs_->getBool(ConfigKey::kShowClock, false);
-    clockPosition_       = prefs_->getInt(ConfigKey::kClockPosition, 0);
-    consoleMask_         = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
-    consolePanelAlpha_   = std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
-    consoleFontSize_     = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
+    showFps_ = prefs_->getBool(ConfigKey::kShowFps, false);
+    fpsPosition_ = prefs_->getInt(ConfigKey::kFpsPosition, 1);
+    fpsFormat_ = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
+    uiScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
+    fontScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
+    renderScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
+    upscaleMode_ = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
+    themeId_ = prefs_->getInt(ConfigKey::kTheme, 0);
+    showClock_ = prefs_->getBool(ConfigKey::kShowClock, false);
+    clockPosition_ = prefs_->getInt(ConfigKey::kClockPosition, 0);
+    consoleMask_ = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
+    consolePanelAlpha_ =
+        std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
+    consoleFontSize_ = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
     consoleHistoryLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
-    consoleLineHeight_   = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
-    consoleAutoScroll_   = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
-    consoleBlinkCursor_  = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
-    consolePrompt_       = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
+    consoleLineHeight_ = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
+    consoleAutoScroll_ = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
+    consoleBlinkCursor_ = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
+    consolePrompt_ = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
 
     {
         std::string langCode = prefs_->get(ConfigKey::kLanguage, "zh");
         const auto& avail = Lang::instance().available();
         languageIdx_ = 0;
         for (std::size_t i = 0; i < avail.size(); ++i) {
-            if (avail[i] == langCode) { languageIdx_ = static_cast<int>(i); break; }
+            if (avail[i] == langCode) {
+                languageIdx_ = static_cast<int>(i);
+                break;
+            }
         }
     }
 }
@@ -22882,17 +23652,12 @@ void InterfaceTab::applyTheme() {
 }
 void InterfaceTab::applyLanguage() {
     const auto& avail = Lang::instance().available();
-    if (languageIdx_ < 0 || languageIdx_ >= static_cast<int>(avail.size())) return;
+    if (languageIdx_ < 0 || languageIdx_ >= static_cast<int>(avail.size()))
+        return;
 
     const std::string& code = avail[languageIdx_];
     Lang::instance().load(code);
     prefs_->set(ConfigKey::kLanguage, code);
-}
-void InterfaceTab::applyWallpaper() {
-    if (!background_) return;
-    if (background_->next()) {
-        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
-    }
 }
 void InterfaceTab::applyConsolePrompt() {
     prefs_->setInt(ConfigKey::kConsolePrompt, consolePrompt_);
@@ -22904,29 +23669,22 @@ void InterfaceTab::refreshLabels() {
         row->onButton->setText(Str::T(Str::On));
         row->offButton->setText(Str::T(Str::Off));
     }
-    for (auto& row : multiRows_) row->refreshLabel();
-    if (wallpaperButton_) wallpaperButton_->setText(Str::T(Str::NextWallpaper));
+    for (auto& row : multiRows_)
+        row->refreshLabel();
 
-    labelConsoleMask_      .setString(toSf(Str::T(Str::LabelConsoleMask)));
+    labelConsoleMask_.setString(toSf(Str::T(Str::LabelConsoleMask)));
     labelConsolePanelAlpha_.setString(toSf(Str::T(Str::LabelConsolePanelAlpha)));
-    hintUiScale_           .setString(toSf(Str::T(Str::HintUiScale)));
+    hintUiScale_.setString(toSf(Str::T(Str::HintUiScale)));
 
     // 主题按钮文字（英文/日文等需要刷新）
     if (multiRows_.size() > 6) {
         auto& themeRow = *multiRows_[6];
-        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size()); ++i) {
+        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size());
+             ++i) {
             themeRow.buttons[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
         }
     }
     // 壁纸标签显示当前进度
-    if (background_) {
-        labelWallpaper_.setString(toSf(
-            std::string(Str::T(Str::LabelWallpaper)) + "  ("
-            + std::to_string(background_->currentIndex() + 1) + "/"
-            + std::to_string(background_->totalWallpapers()) + ")"));
-    } else {
-        labelWallpaper_.setString(toSf(Str::T(Str::LabelWallpaper)));
-    }
 }
 
 void InterfaceTab::refreshSelection() {
@@ -22964,8 +23722,8 @@ void InterfaceTab::handleEvent(const sf::Event& ev) {
         row->offButton->handleEvent(ev);
     }
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) btn->handleEvent(ev);
-    wallpaperButton_->handleEvent(ev);
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
     consoleMaskSlider_->handleEvent(ev);
     consolePanelAlphaSlider_->handleEvent(ev);
 }
@@ -22973,11 +23731,13 @@ void InterfaceTab::handleEvent(const sf::Event& ev) {
 void InterfaceTab::update() {
     for (auto& row : toggles_) {
         if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged) row->onChanged(true);
+            if (row->onChanged)
+                row->onChanged(true);
             return;
         }
         if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged) row->onChanged(false);
+            if (row->onChanged)
+                row->onChanged(false);
             return;
         }
     }
@@ -22989,11 +23749,6 @@ void InterfaceTab::update() {
                 return;
             }
         }
-    }
-    if (wallpaperButton_->consumeClick()) {
-        applyWallpaper();
-        refreshLabels();
-        return;
     }
     if (consoleMaskSlider_->consumeChanged()) {
         consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
@@ -23011,18 +23766,19 @@ void InterfaceTab::registerFocus(std::vector<Button*>& out) {
         out.push_back(row->offButton.get());
     }
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) out.push_back(btn.get());
-    out.push_back(wallpaperButton_.get());
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
 }
 
 bool InterfaceTab::anyEditing() const {
-    if (consoleMaskSlider_       && consoleMaskSlider_->isEditing())       return true;
-    if (consolePanelAlphaSlider_ && consolePanelAlphaSlider_->isEditing()) return true;
+    if (consoleMaskSlider_ && consoleMaskSlider_->isEditing())
+        return true;
+    if (consolePanelAlphaSlider_ && consolePanelAlphaSlider_->isEditing())
+        return true;
     return false;
 }
 
-float InterfaceTab::render(sf::RenderTarget& target,
-                           float contentX, float ctrlX,
+float InterfaceTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
                            float startY) {
     float y = startY;
 
@@ -23039,8 +23795,7 @@ float InterfaceTab::render(sf::RenderTarget& target,
         row.label.setPosition({contentX, y + 8.f});
         target.draw(row.label);
         for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition(
-                {ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
             row.buttons[i]->render(target);
         }
         y += kRowH;
@@ -23055,39 +23810,31 @@ float InterfaceTab::render(sf::RenderTarget& target,
 
     // FPS
     drawToggle(*toggles_[0]);
-    drawMulti(*multiRows_[0]);   // FpsPos
-    drawMulti(*multiRows_[1]);   // FpsFormat
+    drawMulti(*multiRows_[0]); // FpsPos
+    drawMulti(*multiRows_[1]); // FpsFormat
     // UI 缩放
-    drawMulti(*multiRows_[2]);   // UiScale
-    drawMulti(*multiRows_[3]);   // FontScale
+    drawMulti(*multiRows_[2]); // UiScale
+    drawMulti(*multiRows_[3]); // FontScale
     hintUiScale_.setPosition({contentX, y - 26.f});
     target.draw(hintUiScale_);
     // 渲染缩放
-    drawMulti(*multiRows_[4]);   // RenderScale
-    drawMulti(*multiRows_[5]);   // UpscaleMode
+    drawMulti(*multiRows_[4]); // RenderScale
+    drawMulti(*multiRows_[5]); // UpscaleMode
     // 主题 / 语言
-    drawMulti(*multiRows_[6]);   // Theme
-    drawMulti(*multiRows_[7]);   // Language
-    // 壁纸
-    {
-        labelWallpaper_.setPosition({contentX, y + 8.f});
-        target.draw(labelWallpaper_);
-        wallpaperButton_->setPosition({ctrlX, y});
-        wallpaperButton_->render(target);
-        y += kRowH;
-    }
+    drawMulti(*multiRows_[6]); // Theme
+    drawMulti(*multiRows_[7]); // Language
     // 时钟
     drawToggle(*toggles_[1]);
-    drawMulti(*multiRows_[8]);   // ClockPos
+    drawMulti(*multiRows_[8]); // ClockPos
     // 控制台
-    drawSlider(labelConsoleMask_,       *consoleMaskSlider_);
+    drawSlider(labelConsoleMask_, *consoleMaskSlider_);
     drawSlider(labelConsolePanelAlpha_, *consolePanelAlphaSlider_);
-    drawMulti(*multiRows_[9]);   // ConsoleFont
-    drawMulti(*multiRows_[10]);  // ConsoleHistory
-    drawMulti(*multiRows_[11]);  // ConsoleLineHeight
-    drawToggle(*toggles_[2]);    // AutoScroll
-    drawToggle(*toggles_[3]);    // Blink
-    drawMulti(*multiRows_[12]);  // ConsolePrompt
+    drawMulti(*multiRows_[9]);  // ConsoleFont
+    drawMulti(*multiRows_[10]); // ConsoleHistory
+    drawMulti(*multiRows_[11]); // ConsoleLineHeight
+    drawToggle(*toggles_[2]);   // AutoScroll
+    drawToggle(*toggles_[3]);   // Blink
+    drawMulti(*multiRows_[12]); // ConsolePrompt
 
     return y;
 }
@@ -26998,6 +27745,12 @@ WallpaperLoader::~WallpaperLoader() {
         worker_.join();
 }
 
+std::shared_ptr<const sf::Image> WallpaperLoader::thumbnail(int index) {
+    std::lock_guard<std::mutex> lk(mu_);
+    const auto it = thumbs_.find(index);
+    return it == thumbs_.end() ? nullptr : it->second;
+}
+
 void WallpaperLoader::shutdown() {
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -27014,8 +27767,12 @@ bool WallpaperLoader::prime(int index, const WallpaperInfo& info) {
     if (!img.loadFromFile(info.path.string()))
         return false;
 
+    // 缩略图必须在把 img move 走之前生成
+    auto thumb = std::make_shared<const sf::Image>(makeThumbnail(img, kThumbnailMaxDim));
+
     std::lock_guard<std::mutex> lk(mu_);
     ready_[index] = std::move(img);
+    thumbs_[index] = std::move(thumb);
     // 这张已经被取走的诉求"已达成"，从 pending 里清掉（如果之前还排队的话）
     pending_.erase(index);
     cv_.notify_all();
@@ -27091,10 +27848,14 @@ void WallpaperLoader::workerLoop() {
 
         sf::Image img;
         if (img.loadFromFile(job.second)) {
+            // 缩略图在 move 之前生成（解码一次，产出全尺寸 + 缩略图两份）
+            auto thumb =
+                std::make_shared<const sf::Image>(makeThumbnail(img, kThumbnailMaxDim));
             std::lock_guard<std::mutex> lk(mu_);
             // prime 也许在这期间把它变成 ready 了 —— pending 端已经被清掉，
             // 这里覆盖是无害的（内容相同）
             ready_[job.first] = std::move(img);
+            thumbs_[job.first] = std::move(thumb);
         }
         // 解码失败就让 ready 里没有这一项 —— take 会超时返回 false，
         // 调用方会回退到旧图或默认。
@@ -27131,6 +27892,7 @@ add_executable(unit_tests
     test_resource_manager.cpp
     test_config_seeding.cpp
     test_wallpaper_library.cpp
+    test_wallpaper_thumbnail.cpp
 )
 
 # 只有 doctest.h 需要额外加路径；游戏源码的 include 路径、
@@ -41054,15 +41816,18 @@ int main(int argc, char** argv) {
 // ⚠️ 为什么不能只判"不是纯黑"：上面第 1 个 bug 实测画出来是**纯白**，
 //    "不是黑"照样通过。必须和基准逐位比。
 #include "log/logger.h"
+#include "theme.h"
 #include "ui/background.h"
 #include "wallpaper/wallpaper_library.h"
 #include "wallpaper/wallpaper_loader.h"
+#include "scene/tabs/wallpaper_tab.h"
 
 #include <SFML/Graphics.hpp>
 
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -41218,6 +41983,131 @@ int main(int argc, char** argv) {
         const int idx = bg.displayedIndex();
         check(closeTo(c, sampleFresh(lib, logger, idx)),
               "拒绝之后当前壁纸还在且与基准一致 (rgb=" + rgb(c) + ")");
+    }
+
+    // ============================================================
+    // 设置里的「壁纸」页（0.3.7 从 InterfaceTab 独立出来）
+    // ============================================================
+    std::cout << "\n--- 设置里的壁纸页 ---\n";
+
+    // 缩略图是 worker 后台逐个产出的，先把它们等齐
+    {
+        int ready = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (std::chrono::steady_clock::now() < deadline) {
+            ready = 0;
+            for (int i = 0; i < lib.size(); ++i)
+                if (loader.thumbnail(i))
+                    ++ready;
+            if (ready == lib.size())
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        check(ready == lib.size(), "全部 " + std::to_string(lib.size()) +
+                                       " 张缩略图都生成了（实得 " +
+                                       std::to_string(ready) + "）");
+    }
+
+    sf::Font font;
+    check(font.openFromFile("assets/font.ttf"), "加载字体 assets/font.ttf");
+
+    // 非拥有型 shared_ptr：这些对象在栈上，生命周期覆盖整段测试
+    auto keep = [](auto*) {};
+    WallpaperTab tab(font, nullptr /* 不落盘 */, std::shared_ptr<Background>(&bg, keep),
+                     std::shared_ptr<WallpaperLibrary>(&lib, keep),
+                     std::shared_ptr<WallpaperLoader>(&loader, keep));
+
+    constexpr float kCX = 240.f; // 与 settings_scene 的 kContentX 一致
+    constexpr float kSY = 50.f;
+
+    // ⚠️ 顺序要和真实游戏一致：每帧先 update() 再 render()。
+    //    缩略图纹理是在 update() 里上传的，先 render 的话只会画到占位块 ——
+    //    这个坑我第一次就踩了（页面采样出来只有一种颜色）。
+    tab.update();
+
+    sf::RenderTexture page(sf::Vector2u{1280, 720});
+    page.clear(sf::Color::Black);
+    const float bottom = tab.render(page, kCX, kSY);
+    page.display();
+
+    check(bottom > kSY + 100.f,
+          "壁纸页渲染出了内容（底部 y=" + std::to_string(bottom) + "）");
+
+    const sf::Image shot = page.getTexture().copyToImage();
+
+    // 缩略图那一格必须是**真实图像**。占位块是 panelBg 纯色 ——
+    // 如果这里只采样到一两种颜色，说明缩略图根本没上传，页面看着是空的。
+    {
+        const sf::Vector2f tp = wallpaper_tab_layout::rowThumbPos(kCX, kSY, 0);
+        std::set<std::string> colors;
+        for (unsigned y = 8; y < 82; y += 8) {
+            for (unsigned x = 8; x < 152; x += 8) {
+                const sf::Color c = shot.getPixel(
+                    {static_cast<unsigned>(tp.x) + x, static_cast<unsigned>(tp.y) + y});
+                colors.insert(std::to_string(c.r) + "," + std::to_string(c.g) + "," +
+                              std::to_string(c.b));
+            }
+        }
+        check(colors.size() > 3, "第一行缩略图是真图不是占位块（采样到 " +
+                                     std::to_string(colors.size()) + " 种颜色）");
+    }
+
+    // 点第 target 行 → 应当切到那一张，并且配置项也立刻跟上
+    {
+        const int target = (bg.currentIndex() + 1) % lib.size();
+        const sf::Vector2f bp = wallpaper_tab_layout::rowButtonPos(kCX, kSY, target);
+        const sf::Vector2i at{
+            static_cast<int>(bp.x + wallpaper_tab_layout::kBtnW * 0.5f),
+            static_cast<int>(bp.y + wallpaper_tab_layout::kBtnH * 0.5f)};
+
+        // Button 的点击判定 = 在按钮内按下 + 在按钮内松开
+        sf::Event press(sf::Event::MouseButtonPressed{sf::Mouse::Button::Left, at});
+        sf::Event release(sf::Event::MouseButtonReleased{sf::Mouse::Button::Left, at});
+        tab.handleEvent(press);
+        tab.handleEvent(release);
+        tab.update();
+
+        check(bg.currentIndex() == target, "点第 " + std::to_string(target) +
+                                               " 行切过去了（实得 " +
+                                               std::to_string(bg.currentIndex()) + "）");
+        check(bg.currentFile() == lib.filenames()[target],
+              "点的就是那张（" + bg.currentFile() + "）");
+
+        // 选中高亮必须跟着走 —— 重新渲染后，那一行的缩略图框应当有高亮描边
+        page.clear(sf::Color::Black);
+        tab.render(page, kCX, kSY);
+        page.display();
+        const sf::Image after = page.getTexture().copyToImage();
+        const sf::Vector2f tp = wallpaper_tab_layout::rowThumbPos(kCX, kSY, target);
+        const Theme& th = getTheme();
+        // 在上边**中点**附近找主题选中色。
+        //
+        // 两个坑：
+        //   1. 别取角上 —— 角落的描边接合形状不可靠，而且缩略图那个角本身
+        //      可能就是黑的（第一次就是被这个骗过去的，"黑 != panelBg" 竟然算过了）
+        //   2. SFML 的 setOutlineThickness 是**向外**画的（矩形 160x90 加 3px
+        //      描边之后整体是 166x96），所以描边在矩形外面的那一圈，
+        //      采矩形内侧是采不到的
+        // 这里上下各扫几像素，兼容描边方向的实现差异，但要求颜色**必须等于**
+        // 主题的选中色 —— 而不是"只要不是某个色就算过"。
+        const int sx = static_cast<int>(tp.x) + 80;
+        const int sy = static_cast<int>(tp.y);
+        bool found = false;
+        sf::Color foundColor =
+            after.getPixel({static_cast<unsigned>(sx), static_cast<unsigned>(sy)});
+        for (int dy = -3; dy <= 2 && !found; ++dy) {
+            const int y = sy + dy;
+            if (y < 0 || y >= 720)
+                continue;
+            const sf::Color c =
+                after.getPixel({static_cast<unsigned>(sx), static_cast<unsigned>(y)});
+            if (closeTo(c, th.buttonSelected, 3)) {
+                found = true;
+                foundColor = c;
+            }
+        }
+        check(found, "选中行的缩略图框用了主题选中色 " + rgb(th.buttonSelected) +
+                         " 做高亮（上边缘附近实得 " + rgb(foundColor) + "）");
     }
 
     std::cout << (failures == 0 ? "\n全部通过\n"

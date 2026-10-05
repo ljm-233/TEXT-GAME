@@ -26,6 +26,7 @@ add_executable(unit_tests
     test_resource_manager.cpp
     test_config_seeding.cpp
     test_wallpaper_library.cpp
+    test_wallpaper_thumbnail.cpp
 )
 
 # 只有 doctest.h 需要额外加路径；游戏源码的 include 路径、

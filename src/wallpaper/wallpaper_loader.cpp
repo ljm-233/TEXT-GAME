@@ -12,6 +12,12 @@ WallpaperLoader::~WallpaperLoader() {
         worker_.join();
 }
 
+std::shared_ptr<const sf::Image> WallpaperLoader::thumbnail(int index) {
+    std::lock_guard<std::mutex> lk(mu_);
+    const auto it = thumbs_.find(index);
+    return it == thumbs_.end() ? nullptr : it->second;
+}
+
 void WallpaperLoader::shutdown() {
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -28,8 +34,12 @@ bool WallpaperLoader::prime(int index, const WallpaperInfo& info) {
     if (!img.loadFromFile(info.path.string()))
         return false;
 
+    // 缩略图必须在把 img move 走之前生成
+    auto thumb = std::make_shared<const sf::Image>(makeThumbnail(img, kThumbnailMaxDim));
+
     std::lock_guard<std::mutex> lk(mu_);
     ready_[index] = std::move(img);
+    thumbs_[index] = std::move(thumb);
     // 这张已经被取走的诉求"已达成"，从 pending 里清掉（如果之前还排队的话）
     pending_.erase(index);
     cv_.notify_all();
@@ -105,10 +115,14 @@ void WallpaperLoader::workerLoop() {
 
         sf::Image img;
         if (img.loadFromFile(job.second)) {
+            // 缩略图在 move 之前生成（解码一次，产出全尺寸 + 缩略图两份）
+            auto thumb =
+                std::make_shared<const sf::Image>(makeThumbnail(img, kThumbnailMaxDim));
             std::lock_guard<std::mutex> lk(mu_);
             // prime 也许在这期间把它变成 ready 了 —— pending 端已经被清掉，
             // 这里覆盖是无害的（内容相同）
             ready_[job.first] = std::move(img);
+            thumbs_[job.first] = std::move(thumb);
         }
         // 解码失败就让 ready 里没有这一项 —— take 会超时返回 false，
         // 调用方会回退到旧图或默认。
