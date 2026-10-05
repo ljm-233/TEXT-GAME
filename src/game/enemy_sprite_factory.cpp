@@ -37,6 +37,9 @@ void drawEnemyFrame(sf::RenderTarget& rt, int frameIndex) {
             legRightX -= 2.f; legRightY -= 1.f;
             legLeftX  += 2.f;
             break;
+        default:
+            // 帧号越界就按站立画，别让"没匹配上"看起来像漏了分支
+            break;
     }
 
     // ===== 腿（先画，在身体底下）=====

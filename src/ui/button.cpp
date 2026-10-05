@@ -111,11 +111,13 @@ void Button::updateColors(float dt) {
     const auto& t = getTheme();
 
     sf::Color targetFill;
-    if (pressed_)        targetFill = t.buttonPressed;
-    else if (hovered_)   targetFill = t.buttonHover;
-    else if (focused_)   targetFill = t.buttonSelected;   // 焦点 = 选中色
-    else if (selected_)  targetFill = t.buttonSelected;
-    else                 targetFill = t.buttonNormal;
+    if (pressed_)                    targetFill = t.buttonPressed;
+    else if (hovered_)               targetFill = t.buttonHover;
+    // 焦点与"选中"用同一个颜色。合成一个条件而不是写两遍 —— 原来两个分支
+    // 完全一样，clang-tidy 的 bugprone-branch-clone 会报
+    // "repeated branch body in conditional chain"。
+    else if (focused_ || selected_)  targetFill = t.buttonSelected;
+    else                             targetFill = t.buttonNormal;
 
     sf::Color targetOutline = focused_ ? sf::Color(255, 240, 120)
                                        : t.outline;

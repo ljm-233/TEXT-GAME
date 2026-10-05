@@ -74,6 +74,36 @@ jobs:
         run: ./build/tests/unit_tests
 
   # ============================================================
+  # clang-tidy（.clang-tidy 里 WarningsAsErrors: '*'，有 warning 就红）
+  #
+  # 只需要 configure、不需要 build：clang-tidy 要的是
+  # compile_commands.json 里的编译参数。所以这个 job 很便宜。
+  # ============================================================
+  lint:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            base-devel cmake ninja sfml git clang
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (only to get compile_commands.json)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        run: run-clang-tidy -p build -j "$(nproc)" src/
+
+  # ============================================================
   # Ubuntu（从源码编译 SFML 3）
   # ============================================================
   build-ubuntu:

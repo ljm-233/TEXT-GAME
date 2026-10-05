@@ -1207,7 +1207,7 @@ void EditorScene::render(Window& window) {
         if (kBrushes[i].ch == brush_) { brushName = kBrushes[i].name; break; }
     }
 
-    int zoomPct = static_cast<int>(zoom_ * 100.f + 0.5f);
+    int zoomPct = static_cast<int>(std::lround(zoom_ * 100.f));
 
     std::ostringstream h1;
     h1 << Str::T(Str::EditorHudFile)  << currentFileName()

@@ -1,0 +1,28 @@
+# clang-tidy 配置。
+#
+# 原则：只开**能当 BUG 修**的检查。一套门禁里塞几十条假阳性，大家就会开始
+# 无视它，那还不如没有。当前这套在 src/ 与 include/ 上是 0 warning，
+# CI 的 lint job 就是靠这一条红的（WarningsAsErrors: '*'）。
+#
+# 被刻意排除的几类，都是"报得没错但改了没意义"：
+#   bugprone-easily-swappable-parameters   两个相邻参数类型相同就报，
+#                                          这个项目的 API 里到处都是
+#   bugprone-signed-bitwise                UTF-8 编码里 0xC0 | (cp >> 6) 那种，
+#                                          全是有意的位运算
+#   bugprone-narrowing-conversions         float/double 到处转，噪音
+#   bugprone-throwing-static-initialization 静态初始化抛异常，本项目没有
+#   clang-analyzer-optin.*                 都是"可选"的性能/风格建议
+#                                          （比如结构体字段重排省几个字节）
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-optin.*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
+  -bugprone-narrowing-conversions,
+  -bugprone-throwing-static-initialization
+
+WarningsAsErrors: '*'
+
+HeaderFilterRegex: '(include|src)/'

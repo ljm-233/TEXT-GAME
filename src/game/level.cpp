@@ -1,8 +1,30 @@
 #include "level.h"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <fstream>
 #include <sstream>
+
+namespace {
+
+// 关卡瓦片索引。
+//
+// ⚠️ 乘法必须在 size_t 上做。原来的写法是先按 int 算好 `ty * width + tx`、
+// 再把结果 static_cast 成 size_t —— 关卡尺寸一大就 int 溢出，
+// 而且是**静默算错**（clang-tidy 的 bugprone-misplaced-widening-cast
+// 在 level.cpp 里一次报了 12 处）。关卡是用户用编辑器画的，尺寸不受我们
+// 控制，所以统一走这一个函数，顺便把 13 处重复的表达式收敛掉。
+inline std::size_t tileIndex(int tx, int ty, int width) {
+    return static_cast<std::size_t>(ty) * static_cast<std::size_t>(width) +
+           static_cast<std::size_t>(tx);
+}
+
+/// 同样的道理：瓦片总数也要在 size_t 上乘（原来是 width * height 按 int 乘）
+inline std::size_t tileCount(int width, int height) {
+    return static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+}
+
+} // namespace
 
 // ============================================================
 // 加载
@@ -71,8 +93,8 @@ bool Level::loadFromString(const std::string& text) {
     for (const auto& l : lines)
         width_ = std::max(width_, static_cast<int>(l.size()));
 
-    tiles_.assign(static_cast<size_t>(width_ * height_), ' ');
-    dynamicSolid_.assign(static_cast<size_t>(width_ * height_), false);
+    tiles_.assign(tileCount(width_, height_), ' ');
+    dynamicSolid_.assign(tileCount(width_, height_), false);
 
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < static_cast<int>(lines[y].size()); ++x) {
@@ -93,7 +115,7 @@ bool Level::loadFromString(const std::string& text) {
                 case '^': spikeSpawns_.push_back({px, py}); c = ' '; break;
                 default: break;
             }
-            tiles_[static_cast<size_t>(y * width_ + x)] = c;
+            tiles_[tileIndex(x, y, width_)] = c;
         }
     }
     buildGeometry();
@@ -102,23 +124,23 @@ bool Level::loadFromString(const std::string& text) {
 
 char Level::tileAt(int tx, int ty) const {
     if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return ' ';
-    return tiles_[static_cast<size_t>(ty * width_ + tx)];
+    return tiles_[tileIndex(tx, ty, width_)];
 }
 
 bool Level::isSolid(int tx, int ty) const {
     if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
-    if (tiles_[static_cast<size_t>(ty * width_ + tx)] == '#') return true;
-    return dynamicSolid_[static_cast<size_t>(ty * width_ + tx)];
+    if (tiles_[tileIndex(tx, ty, width_)] == '#') return true;
+    return dynamicSolid_[tileIndex(tx, ty, width_)];
 }
 
 void Level::setDynamicSolid(int tx, int ty, bool solid) {
     if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return;
-    dynamicSolid_[static_cast<size_t>(ty * width_ + tx)] = solid;
+    dynamicSolid_[tileIndex(tx, ty, width_)] = solid;
 }
 
 bool Level::isDynamicSolid(int tx, int ty) const {
     if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
-    return dynamicSolid_[static_cast<size_t>(ty * width_ + tx)];
+    return dynamicSolid_[tileIndex(tx, ty, width_)];
 }
 
 void Level::setPseudo3D(bool b) {
@@ -144,7 +166,7 @@ void Level::buildGeometry() {
     std::size_t vertexCount = 0;
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
-            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
 
             vertexCount += 6;   // 主体
             if (!pseudo3D_) continue;
@@ -175,7 +197,7 @@ void Level::buildGeometry() {
     // ===== 第三步：填充 =====
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
-            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
 
             float px = static_cast<float>(x) * tsF;
             float py = static_cast<float>(y) * tsF;
@@ -213,7 +235,7 @@ void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
     std::size_t vertexCount = 0;
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
-            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
             vertexCount += 6;
             if (!pseudo3D_) continue;
             if (!isSolid(x, y - 1)) vertexCount += 6;
@@ -239,7 +261,7 @@ void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
 
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
-            if (tiles_[static_cast<size_t>(y * width_ + x)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
 
             float px = static_cast<float>(x) * tsF;
             float py = static_cast<float>(y) * tsF;

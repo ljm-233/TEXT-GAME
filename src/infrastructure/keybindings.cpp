@@ -116,7 +116,8 @@ const char* KeyBindings::keyToString(sf::Keyboard::Key k) {
         case sf::Keyboard::Key::F11: return "F11";
         case sf::Keyboard::Key::F12: return "F12";
 
-        case sf::Keyboard::Key::Unknown: return "?";
+        // Key::Unknown 走 default 就是 "?"，不用单列一条 ——
+        // 单列会让 clang-tidy 报 bugprone-branch-clone（两个分支体一样）。
         default: return "?";
     }
 }
