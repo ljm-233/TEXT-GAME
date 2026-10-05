@@ -553,7 +553,14 @@ if(WIN32)
     set(CPACK_NSIS_DISPLAY_NAME "TEXT-GAME")
 
     if(EXISTS "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
-        set(CPACK_PACKAGE_ICON     "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
+        # ⚠️ 这里**不能**设 CPACK_PACKAGE_ICON。
+        #    NSIS 生成器把它当成 MUI_HEADERIMAGE_BITMAP 用，而那个宏只收 BMP。
+        #    喂 .ico 进去会让 makensis 直接 abort：
+        #      !define: "MUI_HEADERIMAGE_BITMAP"= ".../text-game.ico"
+        #      File: ".../text-game.ico" -> no files found.
+        #      Error in macro MUI_HEADERIMAGE_INIT ... aborting creation process
+        #    安装程序的图标走 CPACK_NSIS_MUI_ICON（那个才是收 .ico 的），
+        #    顶部横幅图留着 NSIS 默认的就行；真要换得先有张 BMP。
         set(CPACK_NSIS_MUI_ICON    "${CMAKE_SOURCE_DIR}/packaging/icons/text-game.ico")
     endif()
 
