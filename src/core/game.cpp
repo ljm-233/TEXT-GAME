@@ -2,10 +2,12 @@
 #include "notification.h"
 #include "sound_manager.h"
 #include "infrastructure/gamepad.h"
+#include "infrastructure/gamepad_config.h"
 #include "infrastructure/keybindings.h"
 #include "focus_group.h"
 #include "config/keys.h"
 #include <SFML/System/Clock.hpp>
+#include <SFML/Window/Keyboard.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -53,6 +55,9 @@ void Game::switchScene(SceneId next) {
 
     // ⭐ 先清空焦点，让新场景的 onEnter/onResume 重新注册
     FocusGroup::instance().clear();
+    // 键盘导航可能在设置页的文本输入里被挂起过（见 SettingsScene::update）。
+    // 换场景一定要恢复 —— 否则"在输入框里按鼠标点返回"会把键盘导航永久关死。
+    FocusGroup::instance().setKeyboardNavEnabled(true);
 
     if (next == SceneId::Back) {
         sceneManager_->pop();
@@ -192,9 +197,39 @@ int Game::run() {
 
         Gamepad::instance().update();
 
-        FocusGroup::instance().setEnabled(
-            preferences_->getBool(ConfigKey::kGamepadEnabled, true));
-        FocusGroup::instance().update(dt);
+        // ===== 焦点导航的输入翻译：设备状态 → 几个 bool =====
+        // FocusGroup 不自己去轮询：sf::Keyboard::isKeyPressed 是全局状态，
+        // 测试里伪造不了；把设备翻译留在主循环，导航逻辑才能被测住。
+        const bool gamepadOn = preferences_->getBool(ConfigKey::kGamepadEnabled, true);
+        FocusGroup::NavInput nav;
+        if (FocusGroup::instance().keyboardNavEnabled()) {
+            // 移动：方向键 或 WASD；确认：Enter
+            // （刻意不用 Space —— 游戏里那是跳跃，暂停菜单开着时容易双触发）
+            nav.up = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+                     sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W);
+            nav.down = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+                       sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S);
+            nav.left = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+                       sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A);
+            nav.right = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) ||
+                        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D);
+            nav.confirm = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter);
+        }
+        if (gamepadOn) {
+            auto& gp = Gamepad::instance();
+            if (gp.isConnected()) {
+                constexpr float T = GamepadConfig::kNavStickThreshold;
+                nav.up = nav.up || gp.dpadUp() || gp.leftY() < -T;
+                nav.down = nav.down || gp.dpadDown() || gp.leftY() > T;
+                nav.left = nav.left || gp.dpadLeft() || gp.leftX() < -T;
+                nav.right = nav.right || gp.dpadRight() || gp.leftX() > T;
+                nav.confirm = nav.confirm || gp.isButtonPressed(0); // A 键
+            }
+        }
+
+        // "手柄支持"只管手柄那一路，键盘导航不受它影响
+        FocusGroup::instance().setGamepadEnabled(gamepadOn);
+        FocusGroup::instance().update(dt, nav);
 
         // 自动暂停
         if (preferences_->getBool(ConfigKey::kAutoPauseOnBlur, true)) {

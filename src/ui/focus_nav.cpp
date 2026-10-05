@@ -21,6 +21,38 @@ sf::Vector2f centerOf(const sf::FloatRect& r) {
 
 } // namespace
 
+bool Repeater::tick(bool now, float dt) {
+    // 松开：清空状态。原实现（FocusGroup::handleDirection 的 !now 分支）同样
+    // 在这里把 holdTimer / triggerCount 归零，保留。
+    if (!now) {
+        held = false;
+        timer = 0.f;
+        return false;
+    }
+
+    // 按下沿：立刻触发一次，然后转入"等待 kRepeatDelay"的倒计时。
+    // 原实现是 triggerCount = 1 + holdTimer = 0，下一次阈值取 kInitialDelay。
+    if (!held) {
+        held = true;
+        timer = -kRepeatDelay;
+        return true;
+    }
+
+    // 按住中：累加 dt，倒计时到 0 触发一次，再进入 kRepeatRate 的节拍。
+    // 原实现是 threshold = (triggerCount == 1) ? kInitialDelay : kRepeatEvery，
+    // 触发后 holdTimer 归零 —— 这里换成等价的"把 timer 拨到 -速率"。
+    timer += dt;
+    if (timer >= 0.f) {
+        // 注意：这里把超出阈值的那一小段 dt 丢掉（timer 直接拨回 -kRepeatRate），
+        // 与原实现"触发后 holdTimer = 0"完全一致。代价是长按的节拍会比
+        // kRepeatRate 略慢（最多一帧）。这是**原样保留**的行为，不是漏改 ——
+        // 要改得先确认所有场景的手感都能接受。
+        timer = -kRepeatRate;
+        return true;
+    }
+    return false;
+}
+
 int nextInDirection(const std::vector<sf::FloatRect>& rects, int cur, Direction dir) {
     if (rects.empty()) return -1;
     if (cur < 0 || cur >= static_cast<int>(rects.size())) return -1;

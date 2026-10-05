@@ -9,12 +9,32 @@
 // 剩下的这部分只依赖矩形几何，搬出来就是纯函数。
 // 手感全靠它：每个场景每个设置 Tab 的手柄导航都走这里。
 //
+#include "infrastructure/gamepad_config.h"
 #include <SFML/Graphics/Rect.hpp>
 #include <vector>
 
 namespace FocusNav {
 
 enum class Direction { Up, Down, Left, Right };
+
+/// 按住方向键的重复时序（秒）。数值取自 GamepadConfig（手柄手感参数的唯一
+/// 来源），这里只是给它起一个在"重复触发"语境下读得懂的名字。
+inline constexpr float kRepeatDelay = GamepadConfig::kNavInitialDelay;
+inline constexpr float kRepeatRate = GamepadConfig::kNavRepeatEvery;
+
+/// 方向键/摇杆"按住重复"的边沿 + 节拍状态机：
+/// 第一次按下立刻触发一次，之后先等 kRepeatDelay，再按 kRepeatRate 重复。
+///
+/// 从 FocusGroup::handleDirection 原样搬出来的（数值与判定次序都没动）。
+/// 它不碰 Button，所以能脱离 GL 直接测 —— 而"按一下方向键焦点到底走没走、
+/// 走对了几次"恰恰是导航里最该被测住的部分。
+struct Repeater {
+    bool held = false; ///< 上一帧是否按住（= 原来的 last*）
+    float timer = 0.f; ///< 倒计时：负数=还在等（-timer 秒后触发），累加 ≥ 0 就触发一次
+
+    /// 推进一帧，返回本帧是否应当移动一次
+    bool tick(bool now, float dt);
+};
 
 /// 主方向投影的阈值（像素）。小于它的候选算作"不在这个方向上"，
 /// 避免正上/正下方的按钮被当成左右邻居。

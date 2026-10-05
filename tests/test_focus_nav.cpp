@@ -188,3 +188,66 @@ TEST_CASE("FocusNav - 线性移动的结果永远在范围内") {
         }
     }
 }
+
+// ============================================================
+// 按住重复触发（Repeater）
+//
+// 从 FocusGroup::handleDirection 原样搬出来的状态机：按下沿立刻触发一次，
+// 之后先等 kRepeatDelay，再按 kRepeatRate 重复。时序常量就是 GamepadConfig
+// 里那两个值（见 FocusNav 的别名），这里不改数值，只把行为钉住。
+// ============================================================
+
+TEST_CASE("FocusNav Repeater - 第一次按下立刻触发一次") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f)); // 按下沿
+    CHECK(r.held);
+    CHECK(r.timer < 0.f); // 已经进入"等 kRepeatDelay"的倒计时
+}
+
+TEST_CASE("FocusNav Repeater - 按住未到延迟不重复") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));                                // 边沿那次
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatDelay * 0.5f)); // 累计 half
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatDelay * 0.4f)); // 累计 0.9×delay
+}
+
+TEST_CASE("FocusNav Repeater - 过了延迟按节拍重复") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f)); // 首次重复
+
+    // 进入 kRepeatRate 节拍：半个节拍不触发，跨过一个节拍才触发
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate * 0.5f));
+    CHECK(r.tick(true, FocusNav::kRepeatRate * 0.5f + 0.001f));
+
+    // 再来一轮，证明是持续节拍而不是只重复一次
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate * 0.5f));
+    CHECK(r.tick(true, FocusNav::kRepeatRate * 0.5f + 0.001f));
+}
+
+TEST_CASE("FocusNav Repeater - 松开当帧不触发并清空状态") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f)); // 正在重复
+    CHECK_FALSE(r.tick(false, 0.0f));                     // 松开
+    CHECK_FALSE(r.held);
+    CHECK(r.timer == 0.0f);
+}
+
+TEST_CASE("FocusNav Repeater - 松开再按又立刻触发") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f));
+    CHECK_FALSE(r.tick(false, 0.0f)); // 松开
+
+    CHECK(r.tick(true, 0.0f)); // 重新按下：立刻触发
+
+    // 而且延迟是**重新**开始算的：刚过 kRepeatRate 还远不够 kRepeatDelay
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate + 0.001f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay - FocusNav::kRepeatRate));
+}

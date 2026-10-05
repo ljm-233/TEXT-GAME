@@ -105,7 +105,9 @@ void ControlsTab::loadFromPrefs() {
 
 void ControlsTab::applyGamepad() {
     prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
-    FocusGroup::instance().setEnabled(gamepadEnabled_);
+    // ⭐ 只关手柄那一路。不能调 setEnabled —— 那会把整个焦点系统关掉，
+    // 于是用户一关"手柄支持"，键盘导航也跟着死，菜单再也点不动。
+    FocusGroup::instance().setGamepadEnabled(gamepadEnabled_);
 }
 
 void ControlsTab::applyGamepadVibration() {

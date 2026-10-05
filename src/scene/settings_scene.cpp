@@ -461,6 +461,10 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 // ============================================================
 
 void SettingsScene::update(float /*dt*/) {
+    // ⭐ 文本输入/滑块编辑期间挂起键盘导航：否则在"玩家名"里打字母会同时
+    // 移动焦点，按 Enter 还会误触按钮。每帧同步一次，输入框失焦后自然恢复。
+    FocusGroup::instance().setKeyboardNavEnabled(!anySliderEditing());
+
     // 「恢复本页默认」的确认框。重置只碰本页的键，所以确认之后不用重启 ——
     // 重置完就地重新读一遍并把需要即时生效的东西应用上（见 resetCurrentTab）
     if (resetTabConfirm_) {
