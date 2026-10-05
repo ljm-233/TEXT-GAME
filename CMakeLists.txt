@@ -301,7 +301,7 @@ if(BUNDLE_RUNTIME_DEPS AND UNIX AND NOT APPLE)
             COMPONENT Runtime)
 
 elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
-    # macOS：依赖收进 TEXT-GAME.app/Contents/Frameworks/，改写 install name，
+    # macOS：依赖收进 <bundle>/Contents/Frameworks/，改写 install name，
     # 最后 ad-hoc 重签名。
     #
     # 为什么必须"改写 + 重签名"成套做：
@@ -311,8 +311,28 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
     #   重新签一遍，只做前半截等于把包做坏。
     #
     # 为什么不用 DYLD_LIBRARY_PATH + 启动器：
-    #   那样只有从终端跑 ./TEXT-GAME 才拿得到环境变量，Finder 双击 .app
-    #   是没有的。改写 install name 之后双击也能跑，还省掉一个启动器脚本。
+    #   那样只有从终端跑才拿得到环境变量，Finder 双击 .app 是没有的。
+    #   改写 install name 之后双击也能跑，还省掉一个启动器脚本。
+    #
+    # ⚠️ 资源必须在**签名之前**装进 bundle：签名会给 bundle 盖封条
+    #    （Contents/_CodeSignature/CodeResources），签完再往里塞文件，
+    #    封条就盖不住它们了。所以这两条 install 规则必须在 install(CODE) 前面
+    #    —— 文件里的顺序就是执行顺序。
+    #
+    # bundle 目录名 = <OUTPUT_NAME>.app（MACOSX_BUNDLE_BUNDLE_NAME 只写进
+    # Info.plist，不影响目录名），所以从 target 属性取，不写死。
+    # 写死过一次 TEXT-GAME.app，结果包里凭空多出一个只装资源的空 bundle。
+    get_target_property(_tg_out_name text_game OUTPUT_NAME)
+    if(NOT _tg_out_name)
+        set(_tg_out_name text_game)
+    endif()
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets/"
+            DESTINATION "${_tg_out_name}.app/Contents/MacOS/assets"
+            COMPONENT Runtime)
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/wallpaper/"
+            DESTINATION "${_tg_out_name}.app/Contents/MacOS/wallpaper"
+            COMPONENT Runtime)
+
     install(CODE [[
         # ⚠️ bundle 的目录名不是 target 名 —— MACOSX_BUNDLE_BUNDLE_NAME 只写进
         #    Info.plist，不影响 .app 的目录名（实际是 text_game.app）。所以这里
@@ -322,6 +342,11 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
             message(FATAL_ERROR "install 之后在 ${CMAKE_INSTALL_PREFIX} 里找不到 .app")
         endif()
         list(GET _bundles 0 _bundle)
+        list(LENGTH _bundles _bn)
+        if(NOT _bn EQUAL 1)
+            # 包根出现第二个 .app，通常就是某处把 bundle 目录名写死了
+            message(FATAL_ERROR "包根下应当只有 1 个 .app，实际 ${_bn} 个: ${_bundles}")
+        endif()
         set(_bin "${_bundle}/Contents/MacOS/$<TARGET_FILE_NAME:text_game>")
         if(NOT EXISTS "${_bin}")
             message(FATAL_ERROR "bundle 里找不到可执行文件: ${_bin}")
@@ -453,19 +478,18 @@ endif()
 # ⚠️ macOS 上资源必须装进 bundle 里，不能放 tar 根目录。
 #    Paths 判定"打包模式"看的是**可执行文件旁边**有没有 assets/
 #    （include/core/paths.h:20），而 macOS 的可执行文件在
-#    TEXT-GAME.app/Contents/MacOS/ 下。装到根目录等于找不到 ——
-#    那样 Paths 会退回"开发模式"，去用编译期的 PROJECT_ROOT
-#    （构建机的路径），用户机器上根本不存在，字体和关卡都加载不了。
-if(APPLE)
-    set(TEXTGAME_ASSET_DEST      "TEXT-GAME.app/Contents/MacOS/assets")
-    set(TEXTGAME_WALLPAPER_DEST  "TEXT-GAME.app/Contents/MacOS/wallpaper")
-else()
-    set(TEXTGAME_ASSET_DEST      "assets")
-    set(TEXTGAME_WALLPAPER_DEST  "wallpaper")
+#    <bundle>/Contents/MacOS/ 下。装到根目录等于找不到 —— 那样 Paths 会退回
+#    "开发模式"，去用编译期的 PROJECT_ROOT（构建机的路径），用户机器上根本
+#    不存在，字体和关卡都加载不了。
+#
+#    但这里**不能写死 bundle 目录名**：MACOSX_BUNDLE_BUNDLE_NAME 只影响
+#    Info.plist，.app 的目录名来自 target 名（实际是 text_game.app）。
+#    写死 TEXT-GAME.app 会凭空多出一个只有资源的空 bundle —— 真发生过。
+#    所以 macOS 那段挪进下面的 install(CODE)，用 glob 出来的真实 bundle 路径。
+if(NOT APPLE)
+    install(DIRECTORY assets/    DESTINATION assets    COMPONENT Runtime)
+    install(DIRECTORY wallpaper/ DESTINATION wallpaper COMPONENT Runtime)
 endif()
-
-install(DIRECTORY assets/    DESTINATION "${TEXTGAME_ASSET_DEST}"     COMPONENT Runtime)
-install(DIRECTORY wallpaper/ DESTINATION "${TEXTGAME_WALLPAPER_DEST}" COMPONENT Runtime)
 install(FILES README.md LICENSE DESTINATION .      COMPONENT Runtime)
 
 # ============================================================

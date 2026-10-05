@@ -100,7 +100,14 @@ jobs:
           mkdir -p /tmp/verify
           tar xzf TEXT-GAME-*-macOS.tar.gz -C /tmp/verify
 
-          APP=$(ls -d /tmp/verify/*.app | head -1)
+          # 包根只该有一个 .app。多出来的那个是"某处把 bundle 目录名写死了"
+          # 的典型症状 —— 上一次演练就是这么凭空多出一个只装资源的空 bundle，
+          # 而且它挡住了真正的那个（glob 按字典序取第一个）。
+          apps=$(ls -d /tmp/verify/*.app 2>/dev/null | wc -l)
+          echo ".app 数量: $apps"
+          [ "$apps" -eq 1 ] || { echo "包根下应当只有 1 个 .app"; ls -d /tmp/verify/*.app; exit 1; }
+
+          APP=$(ls -d /tmp/verify/*.app)
           test -n "$APP" || { echo "包根下没有 .app"; exit 1; }
           FW="$APP/Contents/Frameworks"
 
