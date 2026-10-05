@@ -160,10 +160,9 @@ TEST_CASE("SaveManager - 读回全部字段") {
 TEST_CASE("SaveManager - 兼容旧字段名 progress（历史存档）") {
     Sandbox box;
     // 老版本把金币数存在 progress= 里
-    box.writeRawSave("legacy.conf",
-                     "name=老存档\n"
-                     "progress=99\n"
-                     "current_level=5\n");
+    box.writeRawSave("legacy.conf", "name=老存档\n"
+                                    "progress=99\n"
+                                    "current_level=5\n");
 
     SaveInfo info;
     REQUIRE(box.saves->loadSave("legacy.conf", info));
@@ -174,10 +173,9 @@ TEST_CASE("SaveManager - 兼容旧字段名 progress（历史存档）") {
 
 TEST_CASE("SaveManager - 关卡数组短于 9 关时补齐") {
     Sandbox box;
-    box.writeRawSave("short.conf",
-                     "name=短\n"
-                     "level_stars=3,1\n"
-                     "level_best_times=5.00\n");
+    box.writeRawSave("short.conf", "name=短\n"
+                                   "level_stars=3,1\n"
+                                   "level_best_times=5.00\n");
 
     SaveInfo info;
     REQUIRE(box.saves->loadSave("short.conf", info));
@@ -209,11 +207,10 @@ TEST_CASE("SaveManager - 字段缺失时用默认值填充") {
 
 TEST_CASE("SaveManager - 字段值不是数字时回退默认而不是抛异常") {
     Sandbox box;
-    box.writeRawSave("bad.conf",
-                     "name=坏的\n"
-                     "coins=abc\n"
-                     "current_level=xyz\n"
-                     "level_stars=3,abc,1\n");
+    box.writeRawSave("bad.conf", "name=坏的\n"
+                                 "coins=abc\n"
+                                 "current_level=xyz\n"
+                                 "level_stars=3,abc,1\n");
 
     SaveInfo info;
     REQUIRE(box.saves->loadSave("bad.conf", info));
@@ -221,7 +218,7 @@ TEST_CASE("SaveManager - 字段值不是数字时回退默认而不是抛异常"
     CHECK(info.coins == 0);
     CHECK(info.currentLevel == 1);
     CHECK(info.levelStars[0] == 3);
-    CHECK(info.levelStars[1] == 0);   // 解析失败的那一项当 0
+    CHECK(info.levelStars[1] == 0); // 解析失败的那一项当 0
 }
 
 // ============================================================
@@ -236,16 +233,14 @@ TEST_CASE("SaveManager - 空目录列出空列表") {
 
 TEST_CASE("SaveManager - 只列 .conf，且按最后游玩时间倒序") {
     Sandbox box;
-    box.writeRawSave("old.conf",
-                     "name=旧的\nlast_played=2026-01-01 00:00:00\n");
-    box.writeRawSave("new.conf",
-                     "name=新的\nlast_played=2026-06-01 00:00:00\n");
+    box.writeRawSave("old.conf", "name=旧的\nlast_played=2026-01-01 00:00:00\n");
+    box.writeRawSave("new.conf", "name=新的\nlast_played=2026-06-01 00:00:00\n");
     box.writeRawSave("notes.txt", "不是存档\n");
 
     const auto list = box.saves->listSaves();
 
     REQUIRE(list.size() == 2);
-    CHECK(list[0].name == "新的");   // 最近玩过的排前面
+    CHECK(list[0].name == "新的"); // 最近玩过的排前面
     CHECK(list[1].name == "旧的");
 }
 
@@ -255,13 +250,13 @@ TEST_CASE("SaveManager - 只列 .conf，且按最后游玩时间倒序") {
 
 TEST_CASE("SaveManager - 进度只增不减") {
     Sandbox box;
-    box.writeRawSave("p.conf", kGoodSave);   // coins=42, level=3
+    box.writeRawSave("p.conf", kGoodSave); // coins=42, level=3
 
-    CHECK(box.saves->updateProgress("p.conf", 10, 1));   // 更低的成绩
+    CHECK(box.saves->updateProgress("p.conf", 10, 1)); // 更低的成绩
 
     SaveInfo info;
     REQUIRE(box.saves->loadSave("p.conf", info));
-    CHECK(info.coins == 42);          // 没被改小
+    CHECK(info.coins == 42); // 没被改小
     CHECK(info.currentLevel == 3);
 }
 
@@ -289,9 +284,9 @@ TEST_CASE("SaveManager - 对不存在的存档更新进度返回 false") {
 
 TEST_CASE("SaveManager - 星级取最高，不会被更差的成绩覆盖") {
     Sandbox box;
-    box.writeRawSave("s.conf", kGoodSave);   // 第 1 关 3 星
+    box.writeRawSave("s.conf", kGoodSave); // 第 1 关 3 星
 
-    CHECK(box.saves->setLevelStar("s.conf", 1, 1));   // 更差
+    CHECK(box.saves->setLevelStar("s.conf", 1, 1)); // 更差
 
     SaveInfo info;
     REQUIRE(box.saves->loadSave("s.conf", info));
@@ -300,7 +295,7 @@ TEST_CASE("SaveManager - 星级取最高，不会被更差的成绩覆盖") {
 
 TEST_CASE("SaveManager - 星级提高时会被写入") {
     Sandbox box;
-    box.writeRawSave("s.conf", kGoodSave);   // 第 4 关 0 星
+    box.writeRawSave("s.conf", kGoodSave); // 第 4 关 0 星
 
     CHECK(box.saves->setLevelStar("s.conf", 4, 2));
 
@@ -324,7 +319,7 @@ TEST_CASE("SaveManager - 越界的关卡号被拒绝") {
 
 TEST_CASE("SaveManager - PB 取最小，更慢的成绩不算刷新") {
     Sandbox box;
-    box.writeRawSave("t.conf", kGoodSave);   // 第 1 关 12.34 秒
+    box.writeRawSave("t.conf", kGoodSave); // 第 1 关 12.34 秒
 
     // 注意：未刷新时返回 false，与 setLevelStar（未提升也返回 true）不一致，
     // 这里把当前行为钉住 —— 改语义时至少会有一条测试提醒。
@@ -348,7 +343,7 @@ TEST_CASE("SaveManager - 更快的成绩会刷新 PB") {
 
 TEST_CASE("SaveManager - 0 秒视为无记录，第一次通关一定写入") {
     Sandbox box;
-    box.writeRawSave("t.conf", kGoodSave);   // 第 5 关是 0
+    box.writeRawSave("t.conf", kGoodSave); // 第 5 关是 0
 
     CHECK(box.saves->setLevelBestTime("t.conf", 5, 60.f));
 

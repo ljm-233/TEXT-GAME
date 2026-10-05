@@ -116,8 +116,8 @@ public:
             keys.push_back(entry.first);
         std::sort(keys.begin(), keys.end());
 
-        std::string head = filePath_.filename().string() + " (" +
-                           std::to_string(values_.size()) + " 项";
+        std::string head =
+            filePath_.filename().string() + " (" + std::to_string(values_.size()) + " 项";
         if (dirty_)
             head += "，有未落盘改动";
         head += ")";
@@ -129,7 +129,7 @@ public:
     }
 
 protected:
-    const ResourceManager* resources_ = nullptr;   // 可空（裸路径构造时）
+    const ResourceManager* resources_ = nullptr; // 可空（裸路径构造时）
     std::filesystem::path filePath_;
     std::unordered_map<std::string, std::string> values_;
 
@@ -143,8 +143,7 @@ protected:
             out << k << '=' << v << '\n';
         }
         if (!out) {
-            std::cerr << "[Config] 写入过程中出错: "
-                      << filePath_.string() << "\n";
+            std::cerr << "[Config] 写入过程中出错: " << filePath_.string() << "\n";
         }
     }
 

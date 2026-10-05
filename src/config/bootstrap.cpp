@@ -29,13 +29,13 @@ void seedDefaultIfMissing(const Paths& paths, const ResourceManager& resources,
 
     const fs::path target = paths.configDir() / filename;
     if (fs::exists(target, ec))
-        return;   // 已经有了：这是用户的文件，别动
+        return; // 已经有了：这是用户的文件，别动
 
     // 走别名，不自己拼 assets/defaults/ —— "默认配置放在包里的哪一层"
     // 只有别名表该知道
     const fs::path source = resources.get("defaults", filename);
     if (source.empty() || !fs::exists(source, ec))
-        return;   // 没带默认值，用内置默认
+        return; // 没带默认值，用内置默认
 
     fs::create_directories(target.parent_path(), ec);
     fs::copy_file(source, target, fs::copy_options::none, ec);

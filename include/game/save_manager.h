@@ -11,9 +11,9 @@ struct SaveInfo {
     std::string name;
     std::string createdAt;
     std::string lastPlayed;
-    int         coins        = 0;   // ⭐ 实际存的是金币数（旧名 progress）
-    int         currentLevel = 1;
-    std::vector<int> levelStars;   // 每关星级，索引 0 = 第 1 关，值 0~3
+    int coins = 0; // ⭐ 实际存的是金币数（旧名 progress）
+    int currentLevel = 1;
+    std::vector<int> levelStars; // 每关星级，索引 0 = 第 1 关，值 0~3
 
     // ⭐ 每关最佳通关时间（秒），0 = 无记录
     std::vector<float> levelBestTimes;
@@ -23,16 +23,13 @@ class SaveManager {
 public:
     /// 只依赖 Paths —— 存档全在 saves 目录下，跟配置内容无关。
     /// （以前收的是 RuntimeConfig，但只用到 saveFile/savesDir 两个转发。）
-    SaveManager(std::shared_ptr<Paths> paths,
-                std::shared_ptr<Logger> logger);
+    SaveManager(std::shared_ptr<Paths> paths, std::shared_ptr<Logger> logger);
 
     std::vector<SaveInfo> listSaves() const;
     SaveInfo createSave(const std::string& customName = "");
     bool loadSave(const std::string& filename, SaveInfo& out) const;
     bool deleteSave(const std::string& filename);
-    bool updateProgress(const std::string& filename,
-                        int coins,
-                        int currentLevel = 1);
+    bool updateProgress(const std::string& filename, int coins, int currentLevel = 1);
 
     // ⭐ 写入某关星级（取最高）
     bool setLevelStar(const std::string& filename, int level, int stars);
@@ -41,7 +38,11 @@ public:
     bool setLevelBestTime(const std::string& filename, int level, float seconds);
 
     void setPendingSave(const SaveInfo& info) { pending_ = info; }
-    SaveInfo takePendingSave() { auto s = pending_; pending_ = {}; return s; }
+    SaveInfo takePendingSave() {
+        auto s = pending_;
+        pending_ = {};
+        return s;
+    }
     bool hasPendingSave() const { return !pending_.filename.empty(); }
 
 private:

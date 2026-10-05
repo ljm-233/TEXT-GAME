@@ -53,7 +53,8 @@ std::shared_ptr<Window> makeWindow(Container& container) {
         }
     }
     if (w == 0 || h == 0) {
-        const int idx = clampResolutionIndex(prefs->getInt(ConfigKey::kResolutionIndex, 0));
+        const int idx =
+            clampResolutionIndex(prefs->getInt(ConfigKey::kResolutionIndex, 0));
         w = kResolutions[idx].width;
         h = kResolutions[idx].height;
     }
@@ -76,9 +77,11 @@ std::shared_ptr<Window> makeWindow(Container& container) {
 
     // 恢复后处理参数
     auto& pp = window->postProcess();
-    pp.setSaturation(static_cast<float>(prefs->getDouble(ConfigKey::kPostSaturation, 1.0)));
+    pp.setSaturation(
+        static_cast<float>(prefs->getDouble(ConfigKey::kPostSaturation, 1.0)));
     pp.setContrast(static_cast<float>(prefs->getDouble(ConfigKey::kPostContrast, 1.0)));
-    pp.setBrightness(static_cast<float>(prefs->getDouble(ConfigKey::kPostBrightness, 1.0)));
+    pp.setBrightness(
+        static_cast<float>(prefs->getDouble(ConfigKey::kPostBrightness, 1.0)));
     pp.setGamma(static_cast<float>(prefs->getDouble(ConfigKey::kPostGamma, 1.0)));
     pp.setVignette(static_cast<float>(prefs->getDouble(ConfigKey::kPostVignette, 0.0)));
     pp.setBloomStrength(
@@ -98,7 +101,7 @@ std::shared_ptr<Window> makeWindow(Container& container) {
     return window;
 }
 
-}  // namespace
+} // namespace
 
 void registerCore(Container& container) {
     // ---------------- 路径 ----------------
@@ -130,8 +133,7 @@ void registerCore(Container& container) {
     container.reg<FontHolder>("font_holder", [&container]() {
         auto resources = container.require<ResourceManager>("resources");
         auto logger = container.require<Logger>("logger");
-        return std::make_shared<FontHolder>(resources->get("assets", "font.ttf"),
-                                            logger);
+        return std::make_shared<FontHolder>(resources->get("assets", "font.ttf"), logger);
     });
 
     // ---------------- 存档 ----------------
@@ -161,9 +163,8 @@ void registerCore(Container& container) {
         auto runtimeConfig = container.require<RuntimeConfig>("runtime_config");
         auto sceneRegistry = container.require<SceneRegistry>("scene_registry");
 
-        return std::make_shared<Game>(window, logger, background, fontHolder,
-                                      saveManager, preferences, runtimeConfig,
-                                      sceneRegistry);
+        return std::make_shared<Game>(window, logger, background, fontHolder, saveManager,
+                                      preferences, runtimeConfig, sceneRegistry);
     });
 
     // ---------------- 主循环 ----------------
@@ -192,7 +193,8 @@ void applyPreferences(Container& container) {
     setTheme(static_cast<ThemeId>(prefs->getInt(ConfigKey::kTheme, 0)));
 
     ButtonStyle style;
-    style.cornerRadius = static_cast<float>(prefs->getDouble(ConfigKey::kButtonCorner, 6.0));
+    style.cornerRadius =
+        static_cast<float>(prefs->getDouble(ConfigKey::kButtonCorner, 6.0));
     style.outlineThickness =
         static_cast<float>(prefs->getDouble(ConfigKey::kButtonOutline, 2.0));
     setButtonStyle(style);
@@ -200,7 +202,8 @@ void applyPreferences(Container& container) {
     Anim::setEnabled(prefs->getBool(ConfigKey::kAnimationEnabled, true));
     {
         static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
-        const int idx = std::clamp(prefs->getInt(ConfigKey::kAnimationSpeedIndex, 1), 0, 2);
+        const int idx =
+            std::clamp(prefs->getInt(ConfigKey::kAnimationSpeedIndex, 1), 0, 2);
         Anim::setSpeed(kSpeeds[idx]);
     }
 
@@ -240,7 +243,8 @@ void applyPreferences(Container& container) {
 
     // 音效
     SoundManager::instance().init();
-    SoundManager::instance().setEnabled(prefs->getBool(ConfigKey::kAudioSoundEnabled, true));
+    SoundManager::instance().setEnabled(
+        prefs->getBool(ConfigKey::kAudioSoundEnabled, true));
     SoundManager::instance().setMasterVolume(
         static_cast<float>(prefs->getDouble(ConfigKey::kAudioMasterVolume, 1.0)));
     SoundManager::instance().setSFXVolume(
@@ -251,8 +255,8 @@ void applyPreferences(Container& container) {
     // 手柄振动
     Gamepad::instance().setVibrationEnabled(
         prefs->getBool(ConfigKey::kGamepadVibrationEnabled, true));
-    Gamepad::instance().setVibrationIntensity(static_cast<float>(
-        prefs->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0)));
+    Gamepad::instance().setVibrationIntensity(
+        static_cast<float>(prefs->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0)));
 }
 
 /// 需要操作系统资源的子系统。放在偏好之后，因为它们要读偏好。
@@ -283,7 +287,7 @@ void logStartupInfo(Container& container) {
     logger->info("系统缓存目录: " + Platform::userCacheDir().string());
 }
 
-}  // namespace
+} // namespace
 
 void wireCore(Application& app) {
     Container& container = app.container();

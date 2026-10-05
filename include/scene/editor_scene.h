@@ -13,12 +13,10 @@
 
 class EditorScene : public Scene {
 public:
-    EditorScene(std::shared_ptr<Background>      background,
-                std::shared_ptr<Preferences>     preferences,
-                const sf::Font&                  font,
-                std::shared_ptr<Logger>          logger,
-                std::shared_ptr<ResourceManager> resources,
-                std::shared_ptr<Paths>           paths);
+    EditorScene(std::shared_ptr<Background> background,
+                std::shared_ptr<Preferences> preferences, const sf::Font& font,
+                std::shared_ptr<Logger> logger,
+                std::shared_ptr<ResourceManager> resources, std::shared_ptr<Paths> paths);
 
     void onEnter() override;
 
@@ -63,16 +61,16 @@ private:
     void showFlash(const std::string& text, float duration = 1.5f);
 
     // 声明顺序必须和构造函数的初始化列表一致，否则 -Wreorder 会报
-    std::shared_ptr<Background>      background_;
-    std::shared_ptr<Preferences>     preferences_;
-    std::shared_ptr<Logger>          logger_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<Preferences> preferences_;
+    std::shared_ptr<Logger> logger_;
     std::shared_ptr<ResourceManager> resources_;
-    std::shared_ptr<Paths>           paths_;
-    const sf::Font*                  font_ = nullptr;
+    std::shared_ptr<Paths> paths_;
+    const sf::Font* font_ = nullptr;
 
     std::vector<std::string> lines_;
-    int width_    = 40;
-    int height_   = 22;
+    int width_ = 40;
+    int height_ = 22;
     int tileSize_ = 32;
 
     char brush_ = '#';
@@ -81,15 +79,15 @@ private:
 
     // 缩放（1.0 = 1x，2.0 = 2 倍大小）
     float zoom_ = 1.0f;
-    bool  showGrid_ = true;
+    bool showGrid_ = true;
 
     // ⭐ 可达性可视化
     bool showReachability_ = false;
     ValidationReport reachReport_;
     bool reachDirty_ = true;
 
-    bool leftDown_   = false;
-    bool rightDown_  = false;
+    bool leftDown_ = false;
+    bool rightDown_ = false;
     bool middleDown_ = false;
     sf::Vector2f middleAnchor_{0.f, 0.f};
 
@@ -110,7 +108,7 @@ private:
     // ⭐ 性能：笔刷条预渲染
     sf::RenderTexture brushBarRT_;
     bool brushBarDirty_ = true;
-    int  lastBrushBarHover_ = -2;
+    int lastBrushBarHover_ = -2;
     char lastBrushBarSelected_ = '\0';
     unsigned lastBrushBarWinW_ = 0;
 
@@ -126,7 +124,7 @@ private:
     sf::Text hudText_;
     sf::Text hintText_;
     sf::Text flashDraw_;
-    sf::Text brushNameText_;   // ⭐ 复用，不每帧构造/析构
+    sf::Text brushNameText_; // ⭐ 复用，不每帧构造/析构
 
     std::string savePath_;
 

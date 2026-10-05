@@ -50,9 +50,8 @@ struct Sandbox {
         container.reg<Paths>("paths", [paths]() { return paths; });
         // Config 现在从 ResourceManager 取默认配置文件（别名 defaults），
         // 所以沙箱里也得把它注册上
-        container.reg<ResourceManager>("resources", [paths]() {
-            return std::make_shared<ResourceManager>(*paths);
-        });
+        container.reg<ResourceManager>(
+            "resources", [paths]() { return std::make_shared<ResourceManager>(*paths); });
         registerConfig(container);
     }
 
@@ -122,9 +121,9 @@ TEST_CASE("配置播种 - 包里没带默认值时不报错，走内置默认") 
     Sandbox box(false);
     REQUIRE_FALSE(fs::exists(box.bundledDefault()));
 
-    box.resolvePreferences();   // 不应该抛异常
+    box.resolvePreferences(); // 不应该抛异常
 
-    CHECK_FALSE(fs::exists(box.configFile()));   // 也不会凭空造文件
+    CHECK_FALSE(fs::exists(box.configFile())); // 也不会凭空造文件
 }
 
 TEST_CASE("配置播种 - 播种出来的值真的能被读出来") {
@@ -190,8 +189,8 @@ struct FakeTree {
     FakeTree() {
         namespace fs = std::filesystem;
         static int counter = 0;
-        base = fs::temp_directory_path() /
-               ("textgame_devroot_" + std::to_string(++counter));
+        base =
+            fs::temp_directory_path() / ("textgame_devroot_" + std::to_string(++counter));
         std::error_code ec;
         fs::remove_all(base, ec);
         fs::create_directories(base / "proj" / "src");
@@ -221,7 +220,7 @@ TEST_CASE("Paths::findDevRoot - 只有 CMakeLists.txt、没有 src/ 不算源码
     fs::create_directories(base / "sub");
     std::ofstream(base / "CMakeLists.txt") << "x\n";
 
-    CHECK(Paths::findDevRoot(base / "sub").empty());   // 只认 src/ + CMakeLists.txt
+    CHECK(Paths::findDevRoot(base / "sub").empty()); // 只认 src/ + CMakeLists.txt
     fs::remove_all(base, ec);
 }
 
@@ -288,7 +287,7 @@ TEST_CASE("Config - 裸路径构造时没有资源表，不做插值") {
     }
 
     Config bare(f);
-    CHECK(bare.get("p") == "${path:wallpaper}/a.jpg");   // 原样，不崩
+    CHECK(bare.get("p") == "${path:wallpaper}/a.jpg"); // 原样，不崩
 
     std::error_code ec;
     fs::remove(f, ec);

@@ -15,11 +15,9 @@
 
 class GameScene : public Scene {
 public:
-    GameScene(std::shared_ptr<Background>      background,
-              const sf::Font&                  font,
-              std::shared_ptr<Logger>          logger,
-              std::shared_ptr<SaveManager>     saveManager,
-              std::shared_ptr<Preferences>     preferences,
+    GameScene(std::shared_ptr<Background> background, const sf::Font& font,
+              std::shared_ptr<Logger> logger, std::shared_ptr<SaveManager> saveManager,
+              std::shared_ptr<Preferences> preferences,
               std::shared_ptr<ResourceManager> resources);
 
     void onEnter() override;
@@ -40,25 +38,24 @@ private:
     void subscribeWorldEvents();
     bool handleDebugKey(sf::Keyboard::Key k);
     void renderDebugHud(sf::RenderTarget& rt, Window& window);
-    void renderPerfHud(sf::RenderTarget& rt, Window& window,
-                       float winW, float winH);
+    void renderPerfHud(sf::RenderTarget& rt, Window& window, float winW, float winH);
     void refreshHud();
     void refreshOverlayLayout(float winW, float winH);
     void rebuildOverlayButtons();
     void renderStateOverlay(sf::RenderTarget& rt, float winW, float winH);
 
-    int  calcStars() const;
-    int  targetTime() const;
+    int calcStars() const;
+    int targetTime() const;
     void applyStars();
     void checkAchievements();
 
-    std::shared_ptr<Background>      background_;
-    std::shared_ptr<Logger>          logger_;
-    std::shared_ptr<SaveManager>     saveManager_;
-    std::shared_ptr<Preferences>     preferences_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<Logger> logger_;
+    std::shared_ptr<SaveManager> saveManager_;
+    std::shared_ptr<Preferences> preferences_;
     std::shared_ptr<ResourceManager> resources_;
-    SaveInfo                     save_;
-    const sf::Font*              font_ = nullptr;
+    SaveInfo save_;
+    const sf::Font* font_ = nullptr;
 
     int levelIndex_ = 1;
 
@@ -69,70 +66,70 @@ private:
     // 粒子归表现层所有。GameWorld 只发事件，这里决定事件要不要变成火花。
     // 之前它挂在 GameWorld 上，等于让 game 层持有一个渲染器并自己调 render()。
     ParticleSystem particles_;
-    bool           particlesOn_ = true;   // 每帧从偏好同步，见 applyPreferences
+    bool particlesOn_ = true; // 每帧从偏好同步，见 applyPreferences
 
     float levelTime_ = 0.f;
-    float hitstopTimer_ = 0.f;   // 受击停顿时长（秒）
-    int   finalStars_ = 0;
-    int   finalCoins_ = 0;
-    int   finalTotalCoins_ = 0;
-    float prevBestTime_ = 0.f;    // 本关之前的 PB（0 = 无记录）
-    bool  newRecord_ = false;     // 本次是否刷新 PB
+    float hitstopTimer_ = 0.f; // 受击停顿时长（秒）
+    int finalStars_ = 0;
+    int finalCoins_ = 0;
+    int finalTotalCoins_ = 0;
+    float prevBestTime_ = 0.f; // 本关之前的 PB（0 = 无记录）
+    bool newRecord_ = false;   // 本次是否刷新 PB
 
     // 屏幕闪光
-    float     screenFlashTimer_ = 0.f;
-    float     screenFlashDuration_ = 0.3f;
+    float screenFlashTimer_ = 0.f;
+    float screenFlashDuration_ = 0.3f;
     sf::Color screenFlashColor_ = sf::Color::White;
 
     std::unique_ptr<ParallaxBackground> parallax_;
-    std::unique_ptr<LevelIntro>         intro_;   // ⭐ 常驻，不 reset
-    bool                                introActive_ = false;
+    std::unique_ptr<LevelIntro> intro_; // ⭐ 常驻，不 reset
+    bool introActive_ = false;
 
     sf::View worldView_;
-    float    lastViewWinW_ = 0.f;
-    float    lastViewWinH_ = 0.f;
+    float lastViewWinW_ = 0.f;
+    float lastViewWinH_ = 0.f;
 
     sf::Text hudText_;
-    int      lastHudLives_ = -1;
-    int      lastHudCoins_ = -1;
-    int      lastHudLevel_ = -1;
+    int lastHudLives_ = -1;
+    int lastHudCoins_ = -1;
+    int lastHudLevel_ = -1;
 
-    sf::Text  overlayTitle_;
-    sf::Text  overlayHint_;
-    sf::Text  overlaySubHint_;
-    sf::Text  overlayTime_;
-    sf::Text  overlayStars_;
+    sf::Text overlayTitle_;
+    sf::Text overlayHint_;
+    sf::Text overlaySubHint_;
+    sf::Text overlayTime_;
+    sf::Text overlayStars_;
     sf::RectangleShape overlayBg_;
-    float     lastOverlayWinW_ = 0.f;
-    float     lastOverlayWinH_ = 0.f;
+    float lastOverlayWinW_ = 0.f;
+    float lastOverlayWinH_ = 0.f;
     GameWorld::State lastOverlayState_ = GameWorld::State::Playing;
-    GameWorld::State lastFocusState_   = GameWorld::State::Playing;   // ⭐ 新增
+    GameWorld::State lastFocusState_ = GameWorld::State::Playing; // ⭐ 新增
 
     std::vector<std::unique_ptr<Button>> overlayButtons_;
 
-    SceneId   nextScene_ = SceneId::None;
+    SceneId nextScene_ = SceneId::None;
 
     // ⭐ 调试工具
-    bool     debugHud_           = false;
-    bool     debugInvincible_    = false;
-    bool     debugShowColliders_ = false;
-    bool     pendingScreenshot_  = false;
-    float    debugTimeScale_     = 1.f;
+    bool debugHud_ = false;
+    bool debugInvincible_ = false;
+    bool debugShowColliders_ = false;
+    bool pendingScreenshot_ = false;
+    float debugTimeScale_ = 1.f;
     sf::Text debugText_;
     sf::View lastWorldView_;
 
     // ⭐ 成就：本关是否受伤
-    bool      tookDamageThisLevel_ = false;
+    bool tookDamageThisLevel_ = false;
 
     // ⭐ 性能面板
-    bool      perfHud_        = false;
-    float     perfFrameMs_    = 0.f;
-    float     perfUpdateMs_   = 0.f;
-    float     perfRenderMs_   = 0.f;
+    bool perfHud_ = false;
+    float perfFrameMs_ = 0.f;
+    float perfUpdateMs_ = 0.f;
+    float perfRenderMs_ = 0.f;
     sf::Clock perfFrameClock_;
-    sf::Text  perfText_;
+    sf::Text perfText_;
 
     static constexpr float kLogicalW = 1280.f;
     static constexpr float kLogicalH = 720.f;
-    static constexpr int   kMaxLevels = 9;
+    static constexpr int kMaxLevels = 9;
 };

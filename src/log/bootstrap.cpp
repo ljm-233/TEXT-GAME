@@ -22,7 +22,7 @@ int minLevelFromPreferences(const std::shared_ptr<Preferences>& prefs) {
     return prefs->getInt(ConfigKey::kLogLevel, static_cast<int>(LogLevel::Info));
 }
 
-}  // namespace
+} // namespace
 
 void registerLog(Container& container) {
     // ---------------- 控制台 ----------------
@@ -41,14 +41,13 @@ void registerLog(Container& container) {
         auto paths = container.require<Paths>("paths");
         auto prefs = container.tryGet<Preferences>("preferences");
 
-        const int rotateIndex = clampLogRotationIndex(
-            prefs ? prefs->getInt(ConfigKey::kLogRotate, 0) : 0);
-        const int keepIndex = clampLogKeepIndex(
-            prefs ? prefs->getInt(ConfigKey::kLogKeep, 1) : 1);
+        const int rotateIndex =
+            clampLogRotationIndex(prefs ? prefs->getInt(ConfigKey::kLogRotate, 0) : 0);
+        const int keepIndex =
+            clampLogKeepIndex(prefs ? prefs->getInt(ConfigKey::kLogKeep, 1) : 1);
 
         auto handler = std::make_shared<FileHandler>(
-            (paths->configDir() / "app.log").string(),
-            logRotationSizeAt(rotateIndex),
+            (paths->configDir() / "app.log").string(), logRotationSizeAt(rotateIndex),
             logRotationKeepAt(keepIndex));
         handler->setFormatter(std::make_shared<TextFormatter>());
         return handler;

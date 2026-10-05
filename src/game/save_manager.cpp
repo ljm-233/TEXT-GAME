@@ -10,9 +10,9 @@
 
 namespace fs = std::filesystem;
 
-SaveManager::SaveManager(std::shared_ptr<Paths> paths,
-                         std::shared_ptr<Logger> logger)
-    : paths_(std::move(paths)), logger_(std::move(logger)) {}
+SaveManager::SaveManager(std::shared_ptr<Paths> paths, std::shared_ptr<Logger> logger)
+      : paths_(std::move(paths)),
+        logger_(std::move(logger)) {}
 
 fs::path SaveManager::savePath(const std::string& filename) const {
     return paths_->savesDir() / filename;
@@ -35,7 +35,8 @@ std::string SaveManager::currentTimestamp() const {
 std::string SaveManager::serializeStars(const std::vector<int>& stars) {
     std::string out;
     for (size_t i = 0; i < stars.size(); ++i) {
-        if (i > 0) out += ',';
+        if (i > 0)
+            out += ',';
         out += std::to_string(stars[i]);
     }
     return out;
@@ -46,8 +47,11 @@ std::vector<int> SaveManager::parseStars(const std::string& s) {
     std::istringstream iss(s);
     std::string token;
     while (std::getline(iss, token, ',')) {
-        try { out.push_back(std::stoi(token)); }
-        catch (...) { out.push_back(0); }
+        try {
+            out.push_back(std::stoi(token));
+        } catch (...) {
+            out.push_back(0);
+        }
     }
     return out;
 }
@@ -55,7 +59,8 @@ std::vector<int> SaveManager::parseStars(const std::string& s) {
 std::string SaveManager::serializeTimes(const std::vector<float>& times) {
     std::string out;
     for (std::size_t i = 0; i < times.size(); ++i) {
-        if (i > 0) out += ',';
+        if (i > 0)
+            out += ',';
         // 用 snprintf 控制小数位，避免 to_string 产生 6 位小数
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%.2f", times[i]);
@@ -69,8 +74,11 @@ std::vector<float> SaveManager::parseTimes(const std::string& s) {
     std::istringstream iss(s);
     std::string token;
     while (std::getline(iss, token, ',')) {
-        try { out.push_back(std::stof(token)); }
-        catch (...) { out.push_back(0.f); }
+        try {
+            out.push_back(std::stof(token));
+        } catch (...) {
+            out.push_back(0.f);
+        }
     }
     return out;
 }
@@ -78,22 +86,24 @@ std::vector<float> SaveManager::parseTimes(const std::string& s) {
 std::vector<SaveInfo> SaveManager::listSaves() const {
     std::vector<SaveInfo> result;
     auto dir = paths_->savesDir();
-    if (!fs::exists(dir)) return result;
+    if (!fs::exists(dir))
+        return result;
 
     for (const auto& entry : fs::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+            continue;
         auto path = entry.path();
-        if (path.extension() != ".conf") continue;
+        if (path.extension() != ".conf")
+            continue;
 
         SaveInfo info;
         if (loadSave(path.filename().string(), info))
             result.push_back(info);
     }
 
-    std::sort(result.begin(), result.end(),
-              [](const SaveInfo& a, const SaveInfo& b) {
-                  return a.lastPlayed > b.lastPlayed;
-              });
+    std::sort(result.begin(), result.end(), [](const SaveInfo& a, const SaveInfo& b) {
+        return a.lastPlayed > b.lastPlayed;
+    });
     return result;
 }
 
@@ -103,15 +113,14 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     std::string filename = "save_" + std::to_string(ts) + ".conf";
 
     SaveInfo info;
-    info.filename   = filename;
-    info.name       = customName.empty()
-                        ? (std::string(Str::SaveNamePrefix) + now)
-                        : customName;
-    info.createdAt  = now;
+    info.filename = filename;
+    info.name =
+        customName.empty() ? (std::string(Str::SaveNamePrefix) + now) : customName;
+    info.createdAt = now;
     info.lastPlayed = now;
-    info.coins        = 0;
+    info.coins = 0;
     info.currentLevel = 1;
-    info.levelStars   = std::vector<int>(9, 0);
+    info.levelStars = std::vector<int>(9, 0);
     info.levelBestTimes = std::vector<float>(9, 0.f);
 
     auto path = savePath(filename);
@@ -120,12 +129,12 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
         logger_->error("创建存档失败: 无法写入 " + path.string());
         return {};
     }
-    out << "name="             << info.name         << '\n';
-    out << "created_at="       << info.createdAt    << '\n';
-    out << "last_played="      << info.lastPlayed   << '\n';
-    out << "coins="            << info.coins        << '\n';
-    out << "current_level="    << info.currentLevel << '\n';
-    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    out << "name=" << info.name << '\n';
+    out << "created_at=" << info.createdAt << '\n';
+    out << "last_played=" << info.lastPlayed << '\n';
+    out << "coins=" << info.coins << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
+    out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
     out.flush();
     if (!out) {
@@ -140,40 +149,51 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
 bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     auto path = savePath(filename);
     std::ifstream in(path);
-    if (!in) return false;
+    if (!in)
+        return false;
 
-    out.filename   = filename;
-    out.name       = Str::UnnamedSave;
-    out.createdAt  = "";
+    out.filename = filename;
+    out.name = Str::UnnamedSave;
+    out.createdAt = "";
     out.lastPlayed = "";
-    out.coins        = 0;
+    out.coins = 0;
     out.currentLevel = 1;
-    out.levelStars   = std::vector<int>(9, 0);
+    out.levelStars = std::vector<int>(9, 0);
     out.levelBestTimes = std::vector<float>(9, 0.f);
 
     std::string line;
     while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#')
+            continue;
         auto pos = line.find('=');
-        if (pos == std::string::npos) continue;
+        if (pos == std::string::npos)
+            continue;
         std::string k = line.substr(0, pos);
         std::string v = line.substr(pos + 1);
-        if      (k == "name")        out.name       = v;
-        else if (k == "created_at")  out.createdAt  = v;
-        else if (k == "last_played") out.lastPlayed = v;
+        if (k == "name")
+            out.name = v;
+        else if (k == "created_at")
+            out.createdAt = v;
+        else if (k == "last_played")
+            out.lastPlayed = v;
         // ⭐ 兼容旧字段名 progress= 和新字段名 coins=
         else if (k == "coins" || k == "progress") {
-            try { out.coins = std::stoi(v); } catch (...) { out.coins = 0; }
-        }
-        else if (k == "current_level") {
-            try { out.currentLevel = std::stoi(v); } catch (...) { out.currentLevel = 1; }
-        }
-        else if (k == "level_stars") {
+            try {
+                out.coins = std::stoi(v);
+            } catch (...) {
+                out.coins = 0;
+            }
+        } else if (k == "current_level") {
+            try {
+                out.currentLevel = std::stoi(v);
+            } catch (...) {
+                out.currentLevel = 1;
+            }
+        } else if (k == "level_stars") {
             out.levelStars = parseStars(v);
             if (out.levelStars.size() < 9)
                 out.levelStars.resize(9, 0);
-        }
-        else if (k == "level_best_times") {
+        } else if (k == "level_best_times") {
             out.levelBestTimes = parseTimes(v);
             if (out.levelBestTimes.size() < 9)
                 out.levelBestTimes.resize(9, 0.f);
@@ -184,7 +204,8 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
 
 bool SaveManager::deleteSave(const std::string& filename) {
     auto path = savePath(filename);
-    if (!fs::exists(path)) return false;
+    if (!fs::exists(path))
+        return false;
     std::error_code ec;
     fs::remove(path, ec);
     if (ec) {
@@ -195,32 +216,33 @@ bool SaveManager::deleteSave(const std::string& filename) {
     return true;
 }
 
-bool SaveManager::updateProgress(const std::string& filename,
-                                 int coins,
+bool SaveManager::updateProgress(const std::string& filename, int coins,
                                  int currentLevel) {
     SaveInfo info;
-    if (!loadSave(filename, info)) return false;
-    info.coins        = std::max(info.coins, coins);
+    if (!loadSave(filename, info))
+        return false;
+    info.coins = std::max(info.coins, coins);
     info.currentLevel = std::max(info.currentLevel, currentLevel);
-    info.lastPlayed   = currentTimestamp();
+    info.lastPlayed = currentTimestamp();
 
     auto path = savePath(filename);
     std::ofstream out(path);
-    if (!out) return false;
-    out << "name="             << info.name         << '\n';
-    out << "created_at="       << info.createdAt    << '\n';
-    out << "last_played="      << info.lastPlayed   << '\n';
-    out << "coins="            << info.coins        << '\n';
-    out << "current_level="    << info.currentLevel << '\n';
-    out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+    if (!out)
+        return false;
+    out << "name=" << info.name << '\n';
+    out << "created_at=" << info.createdAt << '\n';
+    out << "last_played=" << info.lastPlayed << '\n';
+    out << "coins=" << info.coins << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
+    out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
     return true;
 }
 
-bool SaveManager::setLevelStar(const std::string& filename,
-                               int level, int stars) {
+bool SaveManager::setLevelStar(const std::string& filename, int level, int stars) {
     SaveInfo info;
-    if (!loadSave(filename, info)) return false;
+    if (!loadSave(filename, info))
+        return false;
     if (level < 1 || level > static_cast<int>(info.levelStars.size()))
         return false;
 
@@ -231,13 +253,14 @@ bool SaveManager::setLevelStar(const std::string& filename,
 
         auto path = savePath(filename);
         std::ofstream out(path);
-        if (!out) return false;
-        out << "name="             << info.name         << '\n';
-        out << "created_at="       << info.createdAt    << '\n';
-        out << "last_played="      << info.lastPlayed   << '\n';
-        out << "coins="            << info.coins        << '\n';
-        out << "current_level="    << info.currentLevel << '\n';
-        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        if (!out)
+            return false;
+        out << "name=" << info.name << '\n';
+        out << "created_at=" << info.createdAt << '\n';
+        out << "last_played=" << info.lastPlayed << '\n';
+        out << "coins=" << info.coins << '\n';
+        out << "current_level=" << info.currentLevel << '\n';
+        out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
@@ -246,13 +269,15 @@ bool SaveManager::setLevelStar(const std::string& filename,
     return true;
 }
 
-bool SaveManager::setLevelBestTime(const std::string& filename,
-                                   int level, float seconds) {
+bool SaveManager::setLevelBestTime(const std::string& filename, int level,
+                                   float seconds) {
     SaveInfo info;
-    if (!loadSave(filename, info)) return false;
+    if (!loadSave(filename, info))
+        return false;
     if (level < 1 || level > static_cast<int>(info.levelBestTimes.size()))
         return false;
-    if (seconds <= 0.f) return false;
+    if (seconds <= 0.f)
+        return false;
 
     int idx = level - 1;
     // 首次通关，或刷新 PB
@@ -262,18 +287,19 @@ bool SaveManager::setLevelBestTime(const std::string& filename,
 
         auto path = savePath(filename);
         std::ofstream out(path);
-        if (!out) return false;
-        out << "name="             << info.name         << '\n';
-        out << "created_at="       << info.createdAt    << '\n';
-        out << "last_played="      << info.lastPlayed   << '\n';
-        out << "coins="            << info.coins        << '\n';
-        out << "current_level="    << info.currentLevel << '\n';
-        out << "level_stars="      << serializeStars(info.levelStars) << '\n';
+        if (!out)
+            return false;
+        out << "name=" << info.name << '\n';
+        out << "created_at=" << info.createdAt << '\n';
+        out << "last_played=" << info.lastPlayed << '\n';
+        out << "coins=" << info.coins << '\n';
+        out << "current_level=" << info.currentLevel << '\n';
+        out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
                       std::to_string(seconds) + " 秒");
         return true;
     }
-    return false;   // 未刷新
+    return false; // 未刷新
 }

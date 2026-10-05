@@ -37,9 +37,7 @@ struct Deps {
     std::shared_ptr<Background> background() {
         return container.require<Background>("background");
     }
-    std::shared_ptr<Logger> logger() {
-        return container.require<Logger>("logger");
-    }
+    std::shared_ptr<Logger> logger() { return container.require<Logger>("logger"); }
     std::shared_ptr<SaveManager> saveManager() {
         return container.require<SaveManager>("save_manager");
     }
@@ -49,24 +47,18 @@ struct Deps {
     std::shared_ptr<RuntimeConfig> runtimeConfig() {
         return container.require<RuntimeConfig>("runtime_config");
     }
-    std::shared_ptr<Window> window() {
-        return container.require<Window>("window");
-    }
+    std::shared_ptr<Window> window() { return container.require<Window>("window"); }
     std::shared_ptr<ResourceManager> resources() {
         return container.require<ResourceManager>("resources");
     }
-    std::shared_ptr<Paths> paths() {
-        return container.require<Paths>("paths");
-    }
+    std::shared_ptr<Paths> paths() { return container.require<Paths>("paths"); }
 
     /// 字体由 FontHolder 这个容器单例持有，生命周期到进程结束，
     /// 所以这里返回引用是安全的（临时 shared_ptr 析构不影响对象本身）。
-    const sf::Font& font() {
-        return container.require<FontHolder>("font_holder")->get();
-    }
+    const sf::Font& font() { return container.require<FontHolder>("font_holder")->get(); }
 };
 
-}  // namespace
+} // namespace
 
 void registerScenes(Container& container) {
     auto registry = container.require<SceneRegistry>("scene_registry");
@@ -81,25 +73,23 @@ void registerScenes(Container& container) {
     // ---------------- 存档选择 ----------------
     registry->add(SceneId::SaveSelect, [&container]() {
         Deps deps{container};
-        return std::make_unique<SaveSelectScene>(deps.background(),
-                                                 deps.saveManager(), deps.font(),
-                                                 deps.logger());
+        return std::make_unique<SaveSelectScene>(deps.background(), deps.saveManager(),
+                                                 deps.font(), deps.logger());
     });
 
     // ---------------- 关卡选择 ----------------
     registry->add(SceneId::LevelSelect, [&container]() {
         Deps deps{container};
-        return std::make_unique<LevelSelectScene>(deps.background(),
-                                                  deps.saveManager(), deps.font(),
-                                                  deps.logger());
+        return std::make_unique<LevelSelectScene>(deps.background(), deps.saveManager(),
+                                                  deps.font(), deps.logger());
     });
 
     // ---------------- 游戏本体 ----------------
     registry->add(SceneId::Game, [&container]() {
         Deps deps{container};
-        return std::make_unique<GameScene>(deps.background(), deps.font(),
-                                           deps.logger(), deps.saveManager(),
-                                           deps.preferences(), deps.resources());
+        return std::make_unique<GameScene>(deps.background(), deps.font(), deps.logger(),
+                                           deps.saveManager(), deps.preferences(),
+                                           deps.resources());
     });
 
     // ---------------- 设置 ----------------
@@ -122,8 +112,8 @@ void registerScenes(Container& container) {
     registry->add(SceneId::Editor, [&container]() {
         Deps deps{container};
         return std::make_unique<EditorScene>(deps.background(), deps.preferences(),
-                                             deps.font(), deps.logger(),
-                                             deps.resources(), deps.paths());
+                                             deps.font(), deps.logger(), deps.resources(),
+                                             deps.paths());
     });
 
     // ---------------- 成就 ----------------
