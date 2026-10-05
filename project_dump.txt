@@ -123,12 +123,15 @@ void leftAt(sf::Text& t, float x, float y) {
 }
 
 // 表格几何
-constexpr float kColW = 420.f;
-constexpr float kColGap = 40.f;
-constexpr float kOffLevel = 0.f;
-constexpr float kOffStars = 80.f;
-constexpr float kOffTime = 190.f;
-constexpr float kOffCoins = 330.f;
+constexpr float kColW = 420.f;    // 一栏的理想宽度
+constexpr float kColMinW = 240.f; // 再窄四列就挤了 —— 换栏而不是继续压
+constexpr float kColGap = 20.f;
+constexpr float kPaneGap = 24.f;
+// 四列的横向位置是栏宽的**比例**而不是固定像素：栏窄了列间距跟着缩，
+// 否则「最佳金币」会跑到下一栏里去。420 时正好是 80 / 189 / 332。
+constexpr float kRatioStars = 0.19f;
+constexpr float kRatioTime = 0.45f;
+constexpr float kRatioCoins = 0.79f;
 
 } // namespace
 
@@ -348,107 +351,132 @@ void StatsScene::render(Window& window) {
     auto size = window.native().getSize();
     const float w = static_cast<float>(size.x);
     const float h = static_cast<float>(size.y);
+    const auto& theme = getTheme();
 
-    centerOn(titleText_, w / 2.f, 46.f);
-    window.target().draw(titleText_);
+    // ⚠️ 纵向布局按**实测文字高度**往下推，不写死 y —— 字号走 scaledFontSize，
+    //    跟随 fontScale；写死的话大字号下总计会和进度条 / 表头叠在一起。
+    const sf::Vector2f backSize = backButton_->size();
+    backButton_->setPosition({w / 2.f - backSize.x / 2.f, h - 20.f - backSize.y});
 
+    float y = 18.f;
+    {
+        auto b = titleText_.getLocalBounds();
+        centerOn(titleText_, w / 2.f, y + b.size.y / 2.f);
+        window.target().draw(titleText_);
+        y += b.size.y + 14.f;
+    }
+
+    // ---- 存档名 + 上一个 / 下一个 ----
+    const float saveRowH =
+        std::max(prevSaveButton_->size().y, saveText_.getLocalBounds().size.y);
     if (saves_.size() > 1) {
-        prevSaveButton_->setPosition({w / 2.f - 250.f, 96.f});
-        nextSaveButton_->setPosition({w / 2.f + 202.f, 96.f});
+        prevSaveButton_->setPosition({w / 2.f - 250.f, y});
+        nextSaveButton_->setPosition({w / 2.f + 202.f, y});
         prevSaveButton_->render(window.target());
         nextSaveButton_->render(window.target());
     }
-    centerOn(saveText_, w / 2.f, 118.f);
+    centerOn(saveText_, w / 2.f, y + saveRowH / 2.f);
     window.target().draw(saveText_);
-
-    const float backY = h - 72.f;
-    backButton_->setPosition({w / 2.f - 90.f, backY});
+    y += saveRowH + 16.f;
 
     if (index_ < 0) {
-        centerOn(emptyText_, w / 2.f, h / 2.f);
+        centerOn(emptyText_, w / 2.f, y + (h - 40.f - backSize.y - y) / 2.f);
         window.target().draw(emptyText_);
         backButton_->render(window.target());
         return;
     }
 
-    // ---- 总计 + 进度条 ----
-    const float left = w / 2.f - 300.f;
-    leftAt(summaryText_, left, 148.f);
-    window.target().draw(summaryText_);
-
-    const float barW = 360.f;
-    const float barH = 18.f;
-    const float barX = w / 2.f - 170.f;
-    const float barY = 278.f;
-
-    leftAt(progressText_, left, 276.f);
-    window.target().draw(progressText_);
-
-    const auto& theme = getTheme();
-    progressBg_.setPosition({barX, barY});
-    progressBg_.setSize({barW, barH});
-    progressBg_.setFillColor(theme.buttonNormal);
-    progressBg_.setOutlineThickness(1.f);
-    progressBg_.setOutlineColor(theme.outline);
-    window.target().draw(progressBg_);
-
-    const float fillW = barW * std::clamp(summary_.progress(), 0.f, 1.f);
-    if (fillW > 0.f) {
-        progressFill_.setPosition({barX, barY});
-        progressFill_.setSize({fillW, barH});
-        progressFill_.setFillColor(theme.buttonSelected);
-        window.target().draw(progressFill_);
-    }
-
-    // ---- 表格 ----
-    const float tableTop = 330.f;
-    const float tableBottom = h - 100.f;
-    const float availH = std::max(40.f, tableBottom - tableTop);
+    // 标题 / 存档行以下是左右两栏：左栏放总计与进度条，右栏放表格。
+    // 竖着堆的话 800x480 这种小窗口里表格只剩十几像素（9 关都放不下）。
+    const float margin = 24.f;
+    const float leftW = std::clamp(w * 0.28f, 200.f, 320.f);
+    const float tableAvailW = std::max(240.f, w - margin * 2.f - leftW - kPaneGap);
+    const float tableBottom = h - 20.f - backSize.y - 20.f;
+    const float paneTop = y;
 
     const auto& rows = summary_.levels;
     const int n = static_cast<int>(rows.size());
 
-    if (!summary_.anyRecord) {
-        // 全新存档：一句提示，而不是一屏空格子
-        centerOn(noRecordText_, w / 2.f, tableTop + availH / 2.f);
-        window.target().draw(noRecordText_);
-        backButton_->render(window.target());
-        return;
-    }
+    const float headerH = colLevelText_.getLocalBounds().size.y;
+    const float tableTop = paneTop + headerH + 10.f;
+    const float rowsH = std::max(20.f, tableBottom - tableTop);
 
-    const float rowH = static_cast<float>(scaledFontSize(18)) + 12.f;
-    int perCol = std::max(1, static_cast<int>(availH / rowH));
+    // 先把整块版面居中：知道了栏数才能知道总宽，所以先算栏数、再定 x
+    const float rowH = (n > 0 ? levelTexts_[0]->getLocalBounds().size.y : 18.f) + 12.f;
+    const int perColFit = std::max(1, static_cast<int>(rowsH / rowH));
+    const int colsByHeight = std::max(1, (n + perColFit - 1) / perColFit);
     const int maxCols =
-        std::max(1, static_cast<int>((w - 80.f + kColGap) / (kColW + kColGap)));
-    int cols = (n + perCol - 1) / perCol;
+        std::max(1, static_cast<int>((tableAvailW + kColGap) / (kColMinW + kColGap)));
+    const int cols = std::min(colsByHeight, maxCols);
+    const int perCol = std::max(1, (n + cols - 1) / cols);
+    // 栏数被宽度卡住时行高才会被压（关数极多的小窗口）。
+    // ponytail: 那种情况会挤成一团，真到那一步再上滚动。
+    const float rowStep = std::min(rowH, rowsH / static_cast<float>(perCol));
+    const float colW =
+        std::min(kColW, (tableAvailW - static_cast<float>(cols - 1) * kColGap) / cols);
+    const float totalW = cols * colW + static_cast<float>(cols - 1) * kColGap;
+    const float blockW = leftW + kPaneGap + totalW;
+    const float startX = (w - blockW) / 2.f;
+    const float tableX = startX + leftW + kPaneGap;
 
-    if (cols > maxCols) {
-        // 一屏塞不下：先压行高，最多用 maxCols 栏。
-        // ponytail: 关数极多（几百关）时会挤成一团，真到那一步再上滚动。
-        cols = maxCols;
-        perCol = (n + cols - 1) / cols;
-        // 就地复用 rowH 变量会掩盖上面 perCol 的算法，重新算一次清楚
+    const float offStars = colW * kRatioStars;
+    const float offTime = colW * kRatioTime;
+    const float offCoins = colW * kRatioCoins;
+
+    // ---- 左栏：总计 + 进度条 ----
+    leftAt(summaryText_, startX, paneTop);
+    window.target().draw(summaryText_);
+
+    float ly = paneTop + summaryText_.getLocalBounds().size.y + 14.f;
+    {
+        const auto b = progressText_.getLocalBounds();
+        leftAt(progressText_, startX, ly);
+        window.target().draw(progressText_);
+        ly += b.size.y + 8.f;
+
+        const float barH = std::max(12.f, b.size.y * 0.6f);
+        progressBg_.setPosition({startX, ly});
+        progressBg_.setSize({leftW, barH});
+        progressBg_.setFillColor(theme.buttonNormal);
+        progressBg_.setOutlineThickness(1.f);
+        progressBg_.setOutlineColor(theme.outline);
+        window.target().draw(progressBg_);
+
+        const float fillW = leftW * std::clamp(summary_.progress(), 0.f, 1.f);
+        if (fillW > 0.f) {
+            progressFill_.setPosition({startX, ly});
+            progressFill_.setSize({fillW, barH});
+            progressFill_.setFillColor(theme.buttonSelected);
+            window.target().draw(progressFill_);
+        }
     }
-    const float rowStep =
-        (cols > 1) ? std::max(4.f, availH / static_cast<float>(perCol)) : rowH;
 
-    const float totalW = cols * kColW + (cols - 1) * kColGap;
-    const float startX = (w - totalW) / 2.f;
-
-    panel_.setPosition({startX - 24.f, tableTop - 34.f});
-    panel_.setSize({totalW + 48.f, availH + 44.f});
+    // ---- 右栏：表格 ----
+    // 关数少时面板跟着内容收（不然一大块空面板看着像加载失败）
+    const float panelH =
+        std::min(tableBottom - paneTop + 16.f,
+                 headerH + 10.f + static_cast<float>(perCol) * rowStep + 8.f);
+    panel_.setPosition({tableX - 16.f, paneTop - 8.f});
+    panel_.setSize({totalW + 32.f, panelH});
     panel_.setFillColor(theme.panelBg);
     panel_.setOutlineThickness(1.f);
     panel_.setOutlineColor(theme.outline);
     window.target().draw(panel_);
 
+    if (!summary_.anyRecord) {
+        // 全新存档：一句提示，而不是一屏空格子
+        centerOn(noRecordText_, tableX + totalW / 2.f, tableTop + rowsH / 2.f);
+        window.target().draw(noRecordText_);
+        backButton_->render(window.target());
+        return;
+    }
+
     for (int c = 0; c < cols; ++c) {
-        const float x = startX + static_cast<float>(c) * (kColW + kColGap);
-        const float hy = tableTop - 28.f;
-        leftAt(colLevelText_, x + kOffLevel, hy);
-        leftAt(colStarsText_, x + kOffStars, hy);
-        leftAt(colTimeText_, x + kOffTime, hy);
-        leftAt(colCoinsText_, x + kOffCoins, hy);
+        const float x = tableX + static_cast<float>(c) * (colW + kColGap);
+        leftAt(colLevelText_, x, paneTop);
+        leftAt(colStarsText_, x + offStars, paneTop);
+        leftAt(colTimeText_, x + offTime, paneTop);
+        leftAt(colCoinsText_, x + offCoins, paneTop);
         window.target().draw(colLevelText_);
         window.target().draw(colStarsText_);
         window.target().draw(colTimeText_);
@@ -458,13 +486,13 @@ void StatsScene::render(Window& window) {
     for (int i = 0; i < n; ++i) {
         const int col = i / perCol;
         const int row = i % perCol;
-        const float x = startX + static_cast<float>(col) * (kColW + kColGap);
-        const float y = tableTop + static_cast<float>(row) * rowStep;
+        const float x = tableX + static_cast<float>(col) * (colW + kColGap);
+        const float rowY = tableTop + static_cast<float>(row) * rowStep;
 
-        leftAt(*levelTexts_[static_cast<std::size_t>(i)], x + kOffLevel, y);
-        leftAt(*starTexts_[static_cast<std::size_t>(i)], x + kOffStars, y);
-        leftAt(*timeTexts_[static_cast<std::size_t>(i)], x + kOffTime, y);
-        leftAt(*coinTexts_[static_cast<std::size_t>(i)], x + kOffCoins, y);
+        leftAt(*levelTexts_[static_cast<std::size_t>(i)], x, rowY);
+        leftAt(*starTexts_[static_cast<std::size_t>(i)], x + offStars, rowY);
+        leftAt(*timeTexts_[static_cast<std::size_t>(i)], x + offTime, rowY);
+        leftAt(*coinTexts_[static_cast<std::size_t>(i)], x + offCoins, rowY);
 
         window.target().draw(*levelTexts_[static_cast<std::size_t>(i)]);
         window.target().draw(*starTexts_[static_cast<std::size_t>(i)]);
@@ -1366,7 +1394,9 @@ include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
                   Notification / Theme / ParticleSystem ...）
   game/           游戏本体（Player / Enemy / Level / GameWorld / Camera /
                   LevelValidator / LevelCodec / SaveManager ...）
-  scene/          8 个场景 + console/（控制台命令）
+  scene/          9 个场景 + console/（控制台命令）
+                  （MainMenu / SaveSelect / LevelSelect / Game / Settings /
+                   Console / Editor / Achievements / Stats）
 
   scene/tabs/     9 个设置 Tab（DisplayTab / InterfaceTab / WallpaperTab /
                   GraphicsTab / AudioTab / ControlsTab / GameTab /
@@ -1644,6 +1674,25 @@ Scene 绘制 ──> RenderTexture (rt_)
 
 `Window` 通过 `needsRT()` 决定是否走中间 RT。
 `Upscaler` / `PostProcessor` 只在需要时激活。
+
+### 成绩 / 统计页
+
+`SceneId::Stats`，从主菜单进。**一个字都不自己算** —— 数据全部来自
+`Stats::summarize(SaveInfo)`（`include/game/stats.h`，纯函数、有单测）。
+
+为什么抽成纯函数：成绩页是 Scene，构造要 `sf::Font`（GlResource），无头环境连
+构造都做不到。而"某关没打过时那一行显示什么""存档数组长度不齐怎么办"恰恰最容易
+写错。搬出来之后这些都能直接测。
+
+页面本身只负责排版，几条刻意的做法：
+
+- **关卡数不写死**：一屏放不下就按可用高度分栏，栏数又被可用宽度夹住
+- **纵向布局按实测文字高度往下推**，不写死 y —— 字号走 `scaledFontSize()`，
+  写死的话大字号下总计会和进度条叠在一起
+- 每行的 `sf::Text` 是**成员**、按关数只增不减地扩容，**绝不在 render 里构造**
+  （SFML 3.1 的 `sf::Text` 析构会死锁，CLAUDE.md 上面写了）
+- 存档默认选**最近玩的那个**（`listSaves()` 已按 `lastPlayed` 降序），
+  多个存档时给上一个/下一个按钮
 
 ### 成就系统
 
@@ -1998,7 +2047,12 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
 | KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
-| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **真实关卡走一遍编辑器→试玩的格式变换**) | ✅ |
+| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **内存路径与磁盘路径逐格等价**) | ✅ |
+| KeyBindings 方向键兜底（**改键后兜底仍生效** / 兜底键不撞任何默认键位） | ✅ |
+| FocusNav::Repeater（按下沿立刻触发 / 未到延迟不重复 / 按节拍重复 / 松开清状态） | ✅ |
+| EnemyKind（四种敌人各自的 AI / **现有 E 的行为逐字未变**（停顿帧数 == 0）） | ✅ |
+| Stats 聚合（数组长度不齐 / 星级越界夹取 / 只累加有记录的 / 空存档不除零） | ✅ |
+| SaveManager 每关最佳金币（只增不减 / **五个写盘点都不抹掉它** / 老存档缺字段可读） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
@@ -2049,6 +2103,14 @@ SFML 里凡是继承 `sf::GlResource` 的类型 —— `sf::Texture` / `sf::Rend
 | 土狼时间加成 | +0.9 格水平 |
 | 跳跃缓冲加成 | +0.9 格水平 |
 | 弹跳板 `J` | ≤ 10 格高 |
+
+关卡里的敌人有四种：`E` 基础（遇墙/悬崖立刻掉头）、`W` 巡逻（掉头后停顿
+0.35s）、`F` 飞行（不受重力、正弦浮动）、`B` 跳跃（贴地待机、周期起跳）。
+**四种都在编辑器的笔刷条里**，不用手写关卡文件。
+
+⚠️ `E` 与 `W` 的差别**只有"掉头后停一下"**：边缘掉头是两者共有的
+（`cliffAhead()` 一直在转向条件里），别以为 `W` 才是会看边缘的那个 ——
+`tests/test_enemy.cpp` 里有一条专门断言 `E` 的停顿帧数 `== 0`。
 
 画完关卡后跑 `./build/debug/validate_levels assets/levels` 验证，或者在编辑器里按 T 看可达性。
 
@@ -3333,31 +3395,45 @@ Scene 绘制 ──> RenderTexture (rt_)
 - **关卡编辑器**：可视化编辑 ASCII 关卡
 - **控制台**：内嵌虚拟终端，支持命令和计算器
 - **成就**：跨存档全局，解锁时弹通知
-- **设置**：6 个 Tab，70+ 项
+- **成绩**：每个存档的通关进度 / 星级 / 最佳时间 / 最佳金币（可切换存档）
+- **设置**：9 个 Tab，76 项
 - **退出游戏**
 
 ### 设置
 
-**显示**：分辨率 / 全屏 / 垂直同步 / 抗锯齿 / 日志级别 / 帧率上限
+设置按"改这一项的时候你脑子里想的是什么"分成 9 个页：
 
-**界面**：FPS 显示 / 界面缩放 / 字体缩放 / 渲染缩放 / **超分辨率** / 主题 / 语言 / 壁纸 / 时钟 / 控制台遮罩 / 字号 / 历史 / 行高 / 自动滚动 / 光标闪烁 / 提示符
+**显示**：分辨率 / 全屏 / 窗口模式 / 垂直同步 / 帧率上限 / 抗锯齿 / 记住窗口大小 / 失焦自动暂停
 
-**画面**：初始生命 / 动画 / 伪3D / 视差 / 玩家动画 / 关卡开场 / 粒子 / 屏幕震动 / 通知 / 按钮圆角 / 按钮边框 / 显示碰撞盒 / **画面预设** / **11 项后处理**
+**界面**：主题 / 界面缩放 / 字体缩放 / 语言 / 按钮圆角 / 按钮边框 / 动画与速度 / 屏幕通知（开关 · 位置 · **显示时长**）/ FPS 显示（格式 · 位置）/ 时钟（位置）
 
-**音频**：总音量 / 音效开关 / 音效音量 / BGM 开关 / BGM 音量 / 手柄支持 / **手柄振动** / **振动强度**
+**壁纸**：缩略图列表，点一下就换（详见下文"壁纸系统"）
 
-**按键**：左移 / 右移 / 跳跃 / 暂停 / 重开（可重映射）
+**画面**：渲染缩放 / 超分辨率 / 视差 / 伪 3D / 玩家动画 / 粒子与**密度** / 屏幕震动与**强度** / **画面预设** / **11 项后处理**
 
-**其他**：记住窗口大小 / 失焦自动暂停 / 日志轮转 / 保留份数 / 玩家名 / 关于 / 恢复默认
+**音频**：总音量 / 音效（开关 · 音量）/ BGM（开关 · 音量）/ **界面音效**
 
-> **所有可拖动的滑块**都带数字输入框（回车确认）+ 单滑块重置按钮（↺）。画面 Tab 底部还有一个"重置画面"按钮，一键归零所有后处理。
+**操作**：左移 / 右移 / 跳跃 / 暂停 / 重开（可重映射）/ **恢复默认按键** / 手柄支持 / 手柄振动（开关 · 强度）
+
+**游戏**：初始生命 / 关卡开场 / 玩家名
+
+**控制台**：字号 / 历史行数 / 行高 / 提示符 / 自动滚动 / 光标闪烁 / 遮罩 / 面板透明度
+
+**高级**：日志级别 / 轮转 / 保留份数 / 显示碰撞盒 / 打开配置目录 / 打开日志目录 / 设置导出与导入
+
+> **每页底部都有「恢复本页默认」**，只重置本页、不影响其它页。
+>
+> **所有可拖动的滑块**都带数字输入框（回车确认）+ 单滑块重置按钮（↺）。
+>
+> **设置导出/导入**用一段分享码（`TS1:` 前缀）在机器之间搬配置。它**只带观感、音量、按键这类换台机器也成立的项**——分辨率、窗口模式、垂直同步、UI 缩放这些跟机器绑定的**刻意不带走**：导入别人的分辨率可能开出你根本用不了的窗口，而设置界面正是你改回来的地方。
 
 ### 关卡编辑器
 
-- 底部笔刷面板（13 种元素，图标预览）
+- 底部笔刷面板（16 种元素，图标预览；宽度按窗口自适应）
 - **左键画 / 拖动连画**（斜线也支持）
 - **Shift + 拖动 = 矩形填充**（带黄色预览）
 - **右键擦 / 拖动连擦**
+- **F5**：用**当前编辑内容**直接试玩（不用先保存），退出后回到编辑器继续改
 - **T 键**：可达性可视化开关
 - `Ctrl+Z` 撤销（100 步栈）
 - `Ctrl+S` 保存
@@ -45940,6 +46016,47 @@ TEST_CASE("存档 - 老存档没有 level_best_coins 这一行也能读") {
     // 缺的字段回落到默认（9 个 0），而不是空的
     REQUIRE(back.levelBestCoins.size() == 9);
     CHECK(back.levelBestCoins[0] == 0);
+}
+
+TEST_CASE("存档 - 五个写盘点，每一个都不会抹掉最佳金币") {
+    // 我在 CLAUDE.md 里写了"每加一个字段要改五个写盘点"——这条测试就是那句话的
+    // 执行版本。存档是**整体重写**的：哪个 setter 漏写了 level_best_coins，
+    // 调它一次就会把玩家的最佳金币悄悄抹掉。
+    //
+    // 最容易漏的是 `updateProgress`：它**进关卡和每次通关都会调**，
+    // 漏了的话表现是"打一关回来，金币纪录就没了"。
+    Sandbox sb;
+    auto info = sb.saves->createSave("写盘点测试");
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 1, 7));
+
+    auto coinsStillThere = [&](const char* after) {
+        SaveInfo back;
+        REQUIRE(sb.saves->loadSave(info.filename, back));
+        // ⚠️ 不能写 CHECK_MESSAGE(cond, "..." << after) —— doctest 把第二个参数
+        //    包成 MessageBuilder，对 const char* 会选中 operator<<(bool)，
+        //    于是消息打印成"被 1 抹掉了"；而 std::string + const char* 又直接编译不过。
+        //    用 CAPTURE 把变量名与值一起打出来才是 doctest 的正路。
+        CAPTURE(after);
+        CHECK(back.levelBestCoins[0] == 7);
+    };
+
+    // 逐个走一遍其余的写盘点，每次之后都要还在
+    REQUIRE(sb.saves->updateProgress(info.filename, 3, 2));
+    coinsStillThere("updateProgress");
+
+    REQUIRE(sb.saves->setLevelStar(info.filename, 2, 3));
+    coinsStillThere("setLevelStar");
+
+    REQUIRE(sb.saves->setLevelBestTime(info.filename, 2, 12.5f));
+    coinsStillThere("setLevelBestTime");
+
+    // 再存一次金币（刷新纪录的那条路）
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 2, 4));
+    coinsStillThere("setLevelBestCoins");
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    CHECK(back.levelBestCoins[0] == 7); // 第 1 关的旧纪录也还在
+    CHECK(back.levelBestCoins[1] == 4);
 }
 
 ===== ./tests/test_scene_manager.cpp =====

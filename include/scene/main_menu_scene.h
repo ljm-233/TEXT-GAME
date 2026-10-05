@@ -7,8 +7,7 @@
 
 class MainMenuScene : public Scene {
 public:
-    MainMenuScene(std::shared_ptr<Background> background,
-                  const sf::Font& font,
+    MainMenuScene(std::shared_ptr<Background> background, const sf::Font& font,
                   std::shared_ptr<Logger> logger);
 
     void onEnter() override;
@@ -30,13 +29,14 @@ private:
     Button editorButton_;
     Button calculatorButton_;
     Button achievementsButton_;
+    Button statsButton_;
     Button settingsButton_;
     Button exitButton_;
 
     float elapsed_ = 0.f;
-    float lastCx_  = -1.f;
+    float lastCx_ = -1.f;
     static constexpr float kButtonDelay = 0.10f;
-    static constexpr float kButtonRise  = 0.4f;
+    static constexpr float kButtonRise = 0.4f;
 
     SceneId nextScene_ = SceneId::None;
 };

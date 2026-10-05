@@ -19,7 +19,8 @@ enum class SceneId {
     Console,
     LevelSelect,
     Editor,
-    Achievements
+    Achievements,
+    Stats
 };
 
 /// 稳定可读的名字。用于日志、错误消息与调试快照 ——

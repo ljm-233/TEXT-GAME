@@ -8,6 +8,7 @@
 #include "main_menu_scene.h"
 #include "save_select_scene.h"
 #include "settings_scene.h"
+#include "stats_scene.h"
 
 #include "core/scene_registry.h"
 #include "log/logger.h"
@@ -140,5 +141,12 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<AchievementScene>(deps.background(), deps.font(),
                                                   deps.logger());
+    });
+
+    // ---------------- 成绩 / 统计 ----------------
+    registry->add(SceneId::Stats, [&container]() {
+        Deps deps{container};
+        return std::make_unique<StatsScene>(deps.background(), deps.saveManager(),
+                                            deps.font(), deps.logger());
     });
 }

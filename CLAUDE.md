@@ -70,7 +70,9 @@ include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
                   Notification / Theme / ParticleSystem ...）
   game/           游戏本体（Player / Enemy / Level / GameWorld / Camera /
                   LevelValidator / LevelCodec / SaveManager ...）
-  scene/          8 个场景 + console/（控制台命令）
+  scene/          9 个场景 + console/（控制台命令）
+                  （MainMenu / SaveSelect / LevelSelect / Game / Settings /
+                   Console / Editor / Achievements / Stats）
 
   scene/tabs/     9 个设置 Tab（DisplayTab / InterfaceTab / WallpaperTab /
                   GraphicsTab / AudioTab / ControlsTab / GameTab /
@@ -348,6 +350,25 @@ Scene 绘制 ──> RenderTexture (rt_)
 
 `Window` 通过 `needsRT()` 决定是否走中间 RT。
 `Upscaler` / `PostProcessor` 只在需要时激活。
+
+### 成绩 / 统计页
+
+`SceneId::Stats`，从主菜单进。**一个字都不自己算** —— 数据全部来自
+`Stats::summarize(SaveInfo)`（`include/game/stats.h`，纯函数、有单测）。
+
+为什么抽成纯函数：成绩页是 Scene，构造要 `sf::Font`（GlResource），无头环境连
+构造都做不到。而"某关没打过时那一行显示什么""存档数组长度不齐怎么办"恰恰最容易
+写错。搬出来之后这些都能直接测。
+
+页面本身只负责排版，几条刻意的做法：
+
+- **关卡数不写死**：一屏放不下就按可用高度分栏，栏数又被可用宽度夹住
+- **纵向布局按实测文字高度往下推**，不写死 y —— 字号走 `scaledFontSize()`，
+  写死的话大字号下总计会和进度条叠在一起
+- 每行的 `sf::Text` 是**成员**、按关数只增不减地扩容，**绝不在 render 里构造**
+  （SFML 3.1 的 `sf::Text` 析构会死锁，CLAUDE.md 上面写了）
+- 存档默认选**最近玩的那个**（`listSaves()` 已按 `lastPlayed` 降序），
+  多个存档时给上一个/下一个按钮
 
 ### 成就系统
 
@@ -702,7 +723,12 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
 | KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
-| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **真实关卡走一遍编辑器→试玩的格式变换**) | ✅ |
+| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **内存路径与磁盘路径逐格等价**) | ✅ |
+| KeyBindings 方向键兜底（**改键后兜底仍生效** / 兜底键不撞任何默认键位） | ✅ |
+| FocusNav::Repeater（按下沿立刻触发 / 未到延迟不重复 / 按节拍重复 / 松开清状态） | ✅ |
+| EnemyKind（四种敌人各自的 AI / **现有 E 的行为逐字未变**（停顿帧数 == 0）） | ✅ |
+| Stats 聚合（数组长度不齐 / 星级越界夹取 / 只累加有记录的 / 空存档不除零） | ✅ |
+| SaveManager 每关最佳金币（只增不减 / **五个写盘点都不抹掉它** / 老存档缺字段可读） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
@@ -753,6 +779,14 @@ SFML 里凡是继承 `sf::GlResource` 的类型 —— `sf::Texture` / `sf::Rend
 | 土狼时间加成 | +0.9 格水平 |
 | 跳跃缓冲加成 | +0.9 格水平 |
 | 弹跳板 `J` | ≤ 10 格高 |
+
+关卡里的敌人有四种：`E` 基础（遇墙/悬崖立刻掉头）、`W` 巡逻（掉头后停顿
+0.35s）、`F` 飞行（不受重力、正弦浮动）、`B` 跳跃（贴地待机、周期起跳）。
+**四种都在编辑器的笔刷条里**，不用手写关卡文件。
+
+⚠️ `E` 与 `W` 的差别**只有"掉头后停一下"**：边缘掉头是两者共有的
+（`cliffAhead()` 一直在转向条件里），别以为 `W` 才是会看边缘的那个 ——
+`tests/test_enemy.cpp` 里有一条专门断言 `E` 的停顿帧数 `== 0`。
 
 画完关卡后跑 `./build/debug/validate_levels assets/levels` 验证，或者在编辑器里按 T 看可达性。
 

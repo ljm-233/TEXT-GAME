@@ -18,6 +18,7 @@ constexpr const char* StartGame = "启动游戏";
 constexpr const char* Calculator = "控制台";
 constexpr const char* LevelEditor = "关卡编辑器";
 constexpr const char* Achievements = "成就";
+constexpr const char* Stats = "成绩";
 constexpr const char* Settings = "设置";
 constexpr const char* ExitGame = "退出游戏";
 
@@ -411,6 +412,21 @@ constexpr const char* AboutAuthor = "作者: ";
 constexpr const char* BtnNextLevel = "下一关";
 constexpr const char* BtnReplay = "重玩";
 constexpr const char* BtnRetry = "重试";
+
+// ===== 成绩 / 统计页 =====
+constexpr const char* StatsNoRecord = "还没有记录，先去玩一关吧";
+constexpr const char* StatsEmpty = "--";
+constexpr const char* StatsPrev = "◀";
+constexpr const char* StatsNext = "▶";
+constexpr const char* StatsColLevel = "关卡";
+constexpr const char* StatsColStars = "星级";
+constexpr const char* StatsColTime = "最佳时间";
+constexpr const char* StatsColCoins = "最佳金币";
+constexpr const char* StatsSummaryCleared = "通关：";
+constexpr const char* StatsSummaryStars = "总星数：";
+constexpr const char* StatsSummaryTime = "总最佳时间：";
+constexpr const char* StatsSummaryCoins = "金币合计：";
+constexpr const char* StatsProgress = "进度：";
 
 // ============================================================
 // 多语言辅助函数
