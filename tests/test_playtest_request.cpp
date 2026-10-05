@@ -103,7 +103,11 @@ TEST_CASE("试玩交接 - 空草稿也能安全地放进通道") {
 
 namespace {
 
-/// 复刻 EditorScene::loadFile 的读盘变换（\r 去掉、补到等宽）
+/// 走**真实**的编辑器读盘变换。
+///
+/// ⚠️ 这里刻意不手抄一份 —— 第一版就是手抄的，于是测试验的只是"抄得对不对"，
+/// 完全管不到 `EditorScene::loadFile` 里的真实代码。现在两个纯函数
+/// （`PlaytestRequest::normalizeLines` / `toLevelText`）由编辑器与测试共用。
 std::vector<std::string> readLikeEditor(const fs::path& path) {
     std::vector<std::string> lines;
     std::ifstream in(path);
@@ -114,22 +118,8 @@ std::vector<std::string> readLikeEditor(const fs::path& path) {
             line.pop_back();
         lines.push_back(line);
     }
-    std::size_t w = 0;
-    for (const auto& l : lines)
-        w = std::max(w, l.size());
-    for (auto& l : lines)
-        l.resize(w, ' ');
+    PlaytestRequest::normalizeLines(lines);
     return lines;
-}
-
-/// 复刻 EditorScene::startPlaytest 的拼接
-std::string joinLikePlaytest(const std::vector<std::string>& lines) {
-    std::string text;
-    for (const auto& line : lines) {
-        text += line;
-        text += '\n';
-    }
-    return text;
 }
 
 } // namespace
@@ -146,7 +136,7 @@ TEST_CASE("试玩交接 - 编辑器读过的东西一定能被关卡解析（真
         REQUIRE(!lines.empty());
 
         Level level;
-        const bool ok = level.loadFromString(joinLikePlaytest(lines));
+        const bool ok = level.loadFromString(PlaytestRequest::toLevelText(lines));
         CHECK_MESSAGE(ok, "关卡解析失败: " << entry.path().filename().string());
 
         // 尺寸要对得上（编辑器是按"最长行"算宽度的）
@@ -183,7 +173,81 @@ TEST_CASE("试玩交接 - 编辑器新建关卡的初始格子也能被解析") 
     CHECK(PlaytestRequest::hasPlayerSpawn(lines));
 
     Level level;
-    CHECK(level.loadFromString(joinLikePlaytest(lines)));
+    CHECK(level.loadFromString(PlaytestRequest::toLevelText(lines)));
     CHECK(level.width() == w);
     CHECK(level.height() == h);
+}
+
+// ============================================================
+// "从内存建关卡"必须与"从磁盘读关卡"**完全等价**
+// ============================================================
+//
+// 上面那条只验了"能解析"。但试玩的真正承诺是"玩到你正在改的那一份" ——
+// 如果内存路径少解析了某种元素（比如某个 spawn 容器忘了填），
+// 表现就是"试玩里少了几样东西"，而关卡从磁盘进时又是正常的。
+// 这种只在试玩时出现的差异最难查，所以直接把两份结果逐项比一遍。
+
+namespace {
+
+/// 逐项比较两个关卡：尺寸、玩家出生点、各类 spawn、以及整张瓦片网格
+void checkSameLevel(const Level& a, const Level& b) {
+    REQUIRE(a.width() == b.width());
+    REQUIRE(a.height() == b.height());
+
+    CHECK(a.playerSpawn().x == doctest::Approx(b.playerSpawn().x));
+    CHECK(a.playerSpawn().y == doctest::Approx(b.playerSpawn().y));
+
+    // 逐格比瓦片字符与实体性 —— 比单看几个 spawn 更能抓住"漏解析某元素"
+    int diffTiles = 0;
+    int diffSolid = 0;
+    for (int y = 0; y < a.height(); ++y) {
+        for (int x = 0; x < a.width(); ++x) {
+            if (a.tileAt(x, y) != b.tileAt(x, y))
+                ++diffTiles;
+            if (a.isSolid(x, y) != b.isSolid(x, y))
+                ++diffSolid;
+        }
+    }
+    CHECK(diffTiles == 0);
+    CHECK(diffSolid == 0);
+
+    // 各类 spawn 一一对应
+    CHECK(a.enemySpawns().size() == b.enemySpawns().size());
+    CHECK(a.patrolSpawns().size() == b.patrolSpawns().size());
+    CHECK(a.flyerSpawns().size() == b.flyerSpawns().size());
+    CHECK(a.jumperSpawns().size() == b.jumperSpawns().size());
+    CHECK(a.coinSpawns().size() == b.coinSpawns().size());
+    CHECK(a.keySpawns().size() == b.keySpawns().size());
+    CHECK(a.doorSpawns().size() == b.doorSpawns().size());
+    CHECK(a.spikeSpawns().size() == b.spikeSpawns().size());
+    CHECK(a.checkpointSpawns().size() == b.checkpointSpawns().size());
+    CHECK(a.jumpPadSpawns().size() == b.jumpPadSpawns().size());
+    CHECK(a.movingPlatformSpawns().size() == b.movingPlatformSpawns().size());
+    CHECK(a.verticalPlatformSpawns().size() == b.verticalPlatformSpawns().size());
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 内存路径与磁盘路径得到同一个关卡（真实关卡文件）") {
+    const fs::path dir = fs::path(PROJECT_ROOT) / "assets" / "levels";
+    REQUIRE(fs::is_directory(dir));
+
+    int checked = 0;
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".txt")
+            continue;
+
+        // 磁盘路径：GameScene::loadLevel 走的就是这个
+        Level fromDisk;
+        REQUIRE(fromDisk.loadFromFile(entry.path().string()));
+
+        // 内存路径：编辑器 → 试玩
+        const auto lines = readLikeEditor(entry.path());
+        Level fromMemory;
+        REQUIRE(fromMemory.loadFromString(PlaytestRequest::toLevelText(lines)));
+
+        checkSameLevel(fromDisk, fromMemory);
+        ++checked;
+    }
+    CHECK(checked >= 5);
 }

@@ -598,6 +598,8 @@ void EditorScene::loadFile() {
                 line.pop_back();
             lines_.push_back(line);
         }
+        // 补成等宽矩形走 PlaytestRequest::normalizeLines（与试玩用的是同一份实现）
+        PlaytestRequest::normalizeLines(lines_);
         refreshDimensions();
 
         logger_->info("编辑器：加载 " + savePath_ + " " + std::to_string(width_) + "x" +
@@ -618,6 +620,7 @@ void EditorScene::startPlaytest() {
         return;
     }
     if (playtest_) {
+        // 拼接走 PlaytestRequest::toLevelText —— 与测试用的是同一份实现
         playtest_->request(lines_, currentFileName());
         nextScene_ = SceneId::Game;
     }

@@ -42,25 +42,25 @@ private:
     void selectSave(int i); // 上一个 / 下一个存档（环绕）
     void syncFocus();
 
-    std::shared_ptr<Background>  background_;
+    std::shared_ptr<Background> background_;
     std::shared_ptr<SaveManager> saveManager_;
-    std::shared_ptr<Logger>      logger_;
-    const sf::Font&              font_;
+    std::shared_ptr<Logger> logger_;
+    const sf::Font& font_;
 
-    std::vector<SaveInfo> saves_;   // listSaves() 已按 lastPlayed 降序
-    int                   index_ = -1; // saves_ 下标；-1 = 一个存档都没有
-    Stats::Summary        summary_;
+    std::vector<SaveInfo> saves_; // listSaves() 已按 lastPlayed 降序
+    int index_ = -1;              // saves_ 下标；-1 = 一个存档都没有
+    Stats::Summary summary_;
 
     std::unique_ptr<Button> prevSaveButton_;
     std::unique_ptr<Button> nextSaveButton_;
     std::unique_ptr<Button> backButton_;
 
     sf::Text titleText_;
-    sf::Text saveText_;      // "当前存档: 名字  (1/3)"
-    sf::Text emptyText_;     // 一个存档都没有
-    sf::Text noRecordText_;  // 全新存档：还没有记录
-    sf::Text summaryText_;   // 多行总计
-    sf::Text progressText_;  // "进度：33%"
+    sf::Text saveText_;     // "当前存档: 名字  (1/3)"
+    sf::Text emptyText_;    // 一个存档都没有
+    sf::Text noRecordText_; // 全新存档：还没有记录
+    sf::Text summaryText_;  // 多行总计
+    sf::Text progressText_; // "进度：33%"
 
     // 表头
     sf::Text colLevelText_;
@@ -79,13 +79,14 @@ private:
     sf::RectangleShape progressFill_;
 
     SceneId nextScene_ = SceneId::None;
-    int     lastLangVersion_ = -1;
+    int lastLangVersion_ = -1;
 };
 
 ===== ./src/scene/stats_scene.cpp =====
 #include "stats_scene.h"
 #include "focus_group.h"
 #include "theme.h"
+#include "ui_scale.h"
 #include "utils/lang.h"
 #include "utils/text_strings.h"
 #include "utils/utf8.h"
@@ -122,33 +123,32 @@ void leftAt(sf::Text& t, float x, float y) {
 }
 
 // 表格几何
-constexpr float kColW   = 420.f;
+constexpr float kColW = 420.f;
 constexpr float kColGap = 40.f;
 constexpr float kOffLevel = 0.f;
 constexpr float kOffStars = 80.f;
-constexpr float kOffTime  = 190.f;
+constexpr float kOffTime = 190.f;
 constexpr float kOffCoins = 330.f;
 
 } // namespace
 
-StatsScene::StatsScene(std::shared_ptr<Background>  background,
+StatsScene::StatsScene(std::shared_ptr<Background> background,
                        std::shared_ptr<SaveManager> saveManager, const sf::Font& font,
                        std::shared_ptr<Logger> logger)
-    : background_(std::move(background)),
-      saveManager_(std::move(saveManager)),
-      logger_(std::move(logger)),
-      font_(font),
-      titleText_(font, sf::String(), scaledFontSize(44)),
-      saveText_(font, sf::String(), scaledFontSize(22)),
-      emptyText_(font, sf::String(), scaledFontSize(24)),
-      noRecordText_(font, sf::String(), scaledFontSize(24)),
-      summaryText_(font, sf::String(), scaledFontSize(22)),
-      progressText_(font, sf::String(), scaledFontSize(20)),
-      colLevelText_(font, sf::String(), scaledFontSize(20)),
-      colStarsText_(font, sf::String(), scaledFontSize(20)),
-      colTimeText_(font, sf::String(), scaledFontSize(20)),
-      colCoinsText_(font, sf::String(), scaledFontSize(20)) {
-
+      : background_(std::move(background)),
+        saveManager_(std::move(saveManager)),
+        logger_(std::move(logger)),
+        font_(font),
+        titleText_(font, sf::String(), scaledFontSize(44)),
+        saveText_(font, sf::String(), scaledFontSize(22)),
+        emptyText_(font, sf::String(), scaledFontSize(24)),
+        noRecordText_(font, sf::String(), scaledFontSize(24)),
+        summaryText_(font, sf::String(), scaledFontSize(22)),
+        progressText_(font, sf::String(), scaledFontSize(20)),
+        colLevelText_(font, sf::String(), scaledFontSize(20)),
+        colStarsText_(font, sf::String(), scaledFontSize(20)),
+        colTimeText_(font, sf::String(), scaledFontSize(20)),
+        colCoinsText_(font, sf::String(), scaledFontSize(20)) {
     titleText_.setFillColor(getTheme().textPrimary);
     saveText_.setFillColor(getTheme().textSecondary);
     emptyText_.setFillColor(getTheme().textSecondary);
@@ -159,18 +159,15 @@ StatsScene::StatsScene(std::shared_ptr<Background>  background,
     for (auto* t : {&colLevelText_, &colStarsText_, &colTimeText_, &colCoinsText_})
         t->setFillColor(getTheme().textSecondary);
 
-    prevSaveButton_ = std::make_unique<Button>(Str::T(Str::StatsPrev), font_,
-                                               sf::Vector2f{0.f, 0.f},
-                                               sf::Vector2f{48.f, 44.f},
-                                               scaledFontSize(22));
-    nextSaveButton_ = std::make_unique<Button>(Str::T(Str::StatsNext), font_,
-                                               sf::Vector2f{0.f, 0.f},
-                                               sf::Vector2f{48.f, 44.f},
-                                               scaledFontSize(22));
-    backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_,
-                                           sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{180.f, 52.f},
-                                           scaledFontSize(22));
+    prevSaveButton_ =
+        std::make_unique<Button>(Str::T(Str::StatsPrev), font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{48.f, 44.f}, scaledFontSize(22));
+    nextSaveButton_ =
+        std::make_unique<Button>(Str::T(Str::StatsNext), font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{48.f, 44.f}, scaledFontSize(22));
+    backButton_ =
+        std::make_unique<Button>(Str::T(Str::Back), font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{180.f, 52.f}, scaledFontSize(22));
 }
 
 std::string StatsScene::windowTitleHint() const {
@@ -227,10 +224,11 @@ void StatsScene::refreshLabels() {
     }
     emptyText_.setString(sf::String());
 
-    std::string name = Str::T(Str::SaveLabel) + saves_[static_cast<std::size_t>(index_)].name;
+    std::string name =
+        Str::T(Str::SaveLabel) + saves_[static_cast<std::size_t>(index_)].name;
     if (saves_.size() > 1) {
-        name += "  (" + std::to_string(index_ + 1) + "/" +
-                std::to_string(saves_.size()) + ")";
+        name += "  (" + std::to_string(index_ + 1) + "/" + std::to_string(saves_.size()) +
+                ")";
     }
     saveText_.setString(toSf(name));
 
@@ -247,10 +245,10 @@ void StatsScene::refreshLabels() {
     summaryText_.setString(toSf(sum));
 
     const int pct = static_cast<int>(std::lround(s.progress() * 100.f));
-    progressText_.setString(
-        toSf(Str::T(Str::StatsProgress) + std::to_string(pct) + "%"));
+    progressText_.setString(toSf(Str::T(Str::StatsProgress) + std::to_string(pct) + "%"));
 
-    noRecordText_.setString(s.anyRecord ? sf::String() : toSf(Str::T(Str::StatsNoRecord)));
+    noRecordText_.setString(s.anyRecord ? sf::String()
+                                        : toSf(Str::T(Str::StatsNoRecord)));
 
     // ---- 表头 ----
     colLevelText_.setString(toSf(Str::T(Str::StatsColLevel)));
@@ -259,9 +257,9 @@ void StatsScene::refreshLabels() {
     colCoinsText_.setString(toSf(Str::T(Str::StatsColCoins)));
 
     // ---- 每关一行 ----
-    const sf::Color primary   = getTheme().textPrimary;
+    const sf::Color primary = getTheme().textPrimary;
     const sf::Color secondary = getTheme().textSecondary;
-    const sf::Color accent    = getTheme().buttonSelected;
+    const sf::Color accent = getTheme().buttonSelected;
 
     for (std::size_t i = 0; i < s.levels.size(); ++i) {
         const auto& row = s.levels[i];
@@ -269,11 +267,10 @@ void StatsScene::refreshLabels() {
         levelTexts_[i]->setString(toSf(std::to_string(row.level)));
         starTexts_[i]->setString(toSf(fmtStars(row.stars)));
         // 没有记录显示 "--"，别让人把 0.00s 当成"打过但零秒"
-        timeTexts_[i]->setString(toSf(row.bestTime > 0.f ? fmtTime(row.bestTime)
-                                                         : Str::T(Str::StatsEmpty)));
-        coinTexts_[i]->setString(toSf(row.bestCoins > 0
-                                          ? std::to_string(row.bestCoins)
-                                          : Str::T(Str::StatsEmpty)));
+        timeTexts_[i]->setString(
+            toSf(row.bestTime > 0.f ? fmtTime(row.bestTime) : Str::T(Str::StatsEmpty)));
+        coinTexts_[i]->setString(toSf(row.bestCoins > 0 ? std::to_string(row.bestCoins)
+                                                        : Str::T(Str::StatsEmpty)));
 
         const sf::Color c = row.cleared ? primary : secondary;
         levelTexts_[i]->setFillColor(c);
@@ -345,7 +342,8 @@ void StatsScene::update(float /*dt*/) {
 
 void StatsScene::render(Window& window) {
     window.clear();
-    if (background_) background_->render(window.target());
+    if (background_)
+        background_->render(window.target());
 
     auto size = window.native().getSize();
     const float w = static_cast<float>(size.x);
@@ -403,12 +401,12 @@ void StatsScene::render(Window& window) {
     }
 
     // ---- 表格 ----
-    const float tableTop    = 330.f;
+    const float tableTop = 330.f;
     const float tableBottom = h - 100.f;
-    const float availH      = std::max(40.f, tableBottom - tableTop);
+    const float availH = std::max(40.f, tableBottom - tableTop);
 
     const auto& rows = summary_.levels;
-    const int   n    = static_cast<int>(rows.size());
+    const int n = static_cast<int>(rows.size());
 
     if (!summary_.anyRecord) {
         // 全新存档：一句提示，而不是一屏空格子
@@ -418,21 +416,21 @@ void StatsScene::render(Window& window) {
         return;
     }
 
-    const float rowH  = static_cast<float>(scaledFontSize(18)) + 12.f;
-    int         perCol = std::max(1, static_cast<int>(availH / rowH));
-    const int   maxCols =
+    const float rowH = static_cast<float>(scaledFontSize(18)) + 12.f;
+    int perCol = std::max(1, static_cast<int>(availH / rowH));
+    const int maxCols =
         std::max(1, static_cast<int>((w - 80.f + kColGap) / (kColW + kColGap)));
     int cols = (n + perCol - 1) / perCol;
 
     if (cols > maxCols) {
         // 一屏塞不下：先压行高，最多用 maxCols 栏。
         // ponytail: 关数极多（几百关）时会挤成一团，真到那一步再上滚动。
-        cols   = maxCols;
+        cols = maxCols;
         perCol = (n + cols - 1) / cols;
         // 就地复用 rowH 变量会掩盖上面 perCol 的算法，重新算一次清楚
     }
-    const float rowStep = (cols > 1) ? std::max(4.f, availH / static_cast<float>(perCol))
-                                     : rowH;
+    const float rowStep =
+        (cols > 1) ? std::max(4.f, availH / static_cast<float>(perCol)) : rowH;
 
     const float totalW = cols * kColW + (cols - 1) * kColGap;
     const float startX = (w - totalW) / 2.f;
@@ -458,10 +456,10 @@ void StatsScene::render(Window& window) {
     }
 
     for (int i = 0; i < n; ++i) {
-        const int   col = i / perCol;
-        const int   row = i % perCol;
-        const float x   = startX + static_cast<float>(col) * (kColW + kColGap);
-        const float y   = tableTop + static_cast<float>(row) * rowStep;
+        const int col = i / perCol;
+        const int row = i % perCol;
+        const float x = startX + static_cast<float>(col) * (kColW + kColGap);
+        const float y = tableTop + static_cast<float>(row) * rowStep;
 
         leftAt(*levelTexts_[static_cast<std::size_t>(i)], x + kOffLevel, y);
         leftAt(*starTexts_[static_cast<std::size_t>(i)], x + kOffStars, y);
@@ -9112,8 +9110,7 @@ private:
 
 class MainMenuScene : public Scene {
 public:
-    MainMenuScene(std::shared_ptr<Background> background,
-                  const sf::Font& font,
+    MainMenuScene(std::shared_ptr<Background> background, const sf::Font& font,
                   std::shared_ptr<Logger> logger);
 
     void onEnter() override;
@@ -9135,18 +9132,21 @@ private:
     Button editorButton_;
     Button calculatorButton_;
     Button achievementsButton_;
+    Button statsButton_;
     Button settingsButton_;
     Button exitButton_;
 
     float elapsed_ = 0.f;
-    float lastCx_  = -1.f;
+    float lastCx_ = -1.f;
     static constexpr float kButtonDelay = 0.10f;
-    static constexpr float kButtonRise  = 0.4f;
+    static constexpr float kButtonRise = 0.4f;
 
     SceneId nextScene_ = SceneId::None;
 };
 ===== ./include/scene/playtest_request.h =====
 #pragma once
+#include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9182,6 +9182,33 @@ public:
 
     bool has() const { return pending_.has_value(); }
     void clear() { pending_.reset(); }
+
+    /// 编辑器内存里的关卡行 → 关卡文本（逐行拼接、每行末尾补 '\n'）。
+    ///
+    /// ⚠️ **编辑器与测试必须调这一个函数**。测试里手抄一份转换的话，
+    /// 它验证的只是"抄得对不对"——而真正会出错的是生产代码那一份。
+    /// （第一版测试就是这么写的，做完才发现它根本管不到
+    /// `EditorScene::startPlaytest` 里的拼接。）
+    static std::string toLevelText(const std::vector<std::string>& lines) {
+        std::string text;
+        for (const auto& line : lines) {
+            text += line;
+            text += '\n';
+        }
+        return text;
+    }
+
+    /// 把读到的行补成**等宽矩形**（编辑器按最长行算宽度）。
+    ///
+    /// 单独抽出来同样是为了让测试能验真实实现：磁盘上的关卡文件可以长短不一，
+    /// 而 `Level` 的解析是按矩形网格做的。
+    static void normalizeLines(std::vector<std::string>& lines) {
+        std::size_t w = 0;
+        for (const auto& l : lines)
+            w = std::max(w, l.size());
+        for (auto& l : lines)
+            l.resize(w, ' ');
+    }
 
     /// 这份草稿能不能试玩 —— 至少要有一个玩家出生点 'P'。
     ///
@@ -11963,6 +11990,21 @@ constexpr const char* BtnNextLevel = "下一关";
 constexpr const char* BtnReplay = "重玩";
 constexpr const char* BtnRetry = "重试";
 
+// ===== 成绩 / 统计页 =====
+constexpr const char* StatsNoRecord = "还没有记录，先去玩一关吧";
+constexpr const char* StatsEmpty = "--";
+constexpr const char* StatsPrev = "◀";
+constexpr const char* StatsNext = "▶";
+constexpr const char* StatsColLevel = "关卡";
+constexpr const char* StatsColStars = "星级";
+constexpr const char* StatsColTime = "最佳时间";
+constexpr const char* StatsColCoins = "最佳金币";
+constexpr const char* StatsSummaryCleared = "通关：";
+constexpr const char* StatsSummaryStars = "总星数：";
+constexpr const char* StatsSummaryTime = "总最佳时间：";
+constexpr const char* StatsSummaryCoins = "金币合计：";
+constexpr const char* StatsProgress = "进度：";
+
 // ============================================================
 // 多语言辅助函数
 // ============================================================
@@ -14311,17 +14353,30 @@ std::string ResourceManager::str() const {
 
 const char* sceneIdName(SceneId id) {
     switch (id) {
-    case SceneId::None:         return "None";
-    case SceneId::Back:         return "Back";
-    case SceneId::Exit:         return "Exit";
-    case SceneId::MainMenu:     return "MainMenu";
-    case SceneId::SaveSelect:   return "SaveSelect";
-    case SceneId::Game:         return "Game";
-    case SceneId::Settings:     return "Settings";
-    case SceneId::Console:      return "Console";
-    case SceneId::LevelSelect:  return "LevelSelect";
-    case SceneId::Editor:       return "Editor";
-    case SceneId::Achievements: return "Achievements";
+    case SceneId::None:
+        return "None";
+    case SceneId::Back:
+        return "Back";
+    case SceneId::Exit:
+        return "Exit";
+    case SceneId::MainMenu:
+        return "MainMenu";
+    case SceneId::SaveSelect:
+        return "SaveSelect";
+    case SceneId::Game:
+        return "Game";
+    case SceneId::Settings:
+        return "Settings";
+    case SceneId::Console:
+        return "Console";
+    case SceneId::LevelSelect:
+        return "LevelSelect";
+    case SceneId::Editor:
+        return "Editor";
+    case SceneId::Achievements:
+        return "Achievements";
+    case SceneId::Stats:
+        return "Stats";
     }
     return "Unknown";
 }
@@ -19315,6 +19370,7 @@ void AchievementScene::render(Window& window) {
 #include "main_menu_scene.h"
 #include "save_select_scene.h"
 #include "settings_scene.h"
+#include "stats_scene.h"
 
 #include "core/scene_registry.h"
 #include "log/logger.h"
@@ -19447,6 +19503,13 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<AchievementScene>(deps.background(), deps.font(),
                                                   deps.logger());
+    });
+
+    // ---------------- 成绩 / 统计 ----------------
+    registry->add(SceneId::Stats, [&container]() {
+        Deps deps{container};
+        return std::make_unique<StatsScene>(deps.background(), deps.saveManager(),
+                                            deps.font(), deps.logger());
     });
 }
 
@@ -20484,6 +20547,8 @@ void EditorScene::loadFile() {
                 line.pop_back();
             lines_.push_back(line);
         }
+        // 补成等宽矩形走 PlaytestRequest::normalizeLines（与试玩用的是同一份实现）
+        PlaytestRequest::normalizeLines(lines_);
         refreshDimensions();
 
         logger_->info("编辑器：加载 " + savePath_ + " " + std::to_string(width_) + "x" +
@@ -20504,6 +20569,7 @@ void EditorScene::startPlaytest() {
         return;
     }
     if (playtest_) {
+        // 拼接走 PlaytestRequest::toLevelText —— 与测试用的是同一份实现
         playtest_->request(lines_, currentFileName());
         nextScene_ = SceneId::Game;
     }
@@ -22908,18 +22974,19 @@ void LevelSelectScene::render(Window& window) {
 #include "focus_group.h"
 #include <algorithm>
 
-MainMenuScene::MainMenuScene(std::shared_ptr<Background> background,
-                             const sf::Font& font,
+MainMenuScene::MainMenuScene(std::shared_ptr<Background> background, const sf::Font& font,
                              std::shared_ptr<Logger> logger)
-    : background_(std::move(background)),
-      logger_(std::move(logger)),
-      startButton_       (Str::T(Str::StartGame),  font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      levelSelectButton_ (Str::T(Str::LevelSelect), font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      editorButton_      (Str::T(Str::LevelEditor), font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      calculatorButton_  (Str::T(Str::Calculator), font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      achievementsButton_(Str::T(Str::Achievements), font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      settingsButton_    (Str::T(Str::Settings),   font, {0.f, 0.f}, {280.f, 52.f}, 24),
-      exitButton_        (Str::T(Str::ExitGame),   font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
+      : background_(std::move(background)),
+        logger_(std::move(logger)),
+        startButton_(Str::T(Str::StartGame), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        levelSelectButton_(Str::T(Str::LevelSelect), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        editorButton_(Str::T(Str::LevelEditor), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        calculatorButton_(Str::T(Str::Calculator), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        achievementsButton_(Str::T(Str::Achievements), font, {0.f, 0.f}, {280.f, 52.f},
+                            24),
+        statsButton_(Str::T(Str::Stats), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        settingsButton_(Str::T(Str::Settings), font, {0.f, 0.f}, {280.f, 52.f}, 24),
+        exitButton_(Str::T(Str::ExitGame), font, {0.f, 0.f}, {280.f, 52.f}, 24) {}
 
 void MainMenuScene::refreshLabels() {
     startButton_.setText(Str::T(Str::StartGame));
@@ -22927,6 +22994,7 @@ void MainMenuScene::refreshLabels() {
     editorButton_.setText(Str::T(Str::LevelEditor));
     calculatorButton_.setText(Str::T(Str::Calculator));
     achievementsButton_.setText(Str::T(Str::Achievements));
+    statsButton_.setText(Str::T(Str::Stats));
     settingsButton_.setText(Str::T(Str::Settings));
     exitButton_.setText(Str::T(Str::ExitGame));
 }
@@ -22934,24 +23002,20 @@ void MainMenuScene::refreshLabels() {
 void MainMenuScene::onEnter() {
     nextScene_ = SceneId::None;
     elapsed_ = 0.f;
-    lastCx_  = -1.f;   // ⭐ 重置，保证下次进来重新算位置
+    lastCx_ = -1.f; // ⭐ 重置，保证下次进来重新算位置
     refreshLabels();
-    FocusGroup::instance().setItems({
-        &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &achievementsButton_,
-        &settingsButton_, &exitButton_
-    });
+    FocusGroup::instance().setItems({&startButton_, &levelSelectButton_, &editorButton_,
+                                     &calculatorButton_, &achievementsButton_,
+                                     &statsButton_, &settingsButton_, &exitButton_});
 }
 
 void MainMenuScene::onResume() {
     nextScene_ = SceneId::None;
-    lastCx_  = -1.f;   // ⭐ 从其他场景返回时也重新算位置（分辨率可能变了）
+    lastCx_ = -1.f; // ⭐ 从其他场景返回时也重新算位置（分辨率可能变了）
     refreshLabels();
-    FocusGroup::instance().setItems({
-        &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &achievementsButton_,
-        &settingsButton_, &exitButton_
-    });
+    FocusGroup::instance().setItems({&startButton_, &levelSelectButton_, &editorButton_,
+                                     &calculatorButton_, &achievementsButton_,
+                                     &statsButton_, &settingsButton_, &exitButton_});
 }
 
 void MainMenuScene::handleEvent(const sf::Event& event) {
@@ -22960,6 +23024,7 @@ void MainMenuScene::handleEvent(const sf::Event& event) {
     editorButton_.handleEvent(event);
     calculatorButton_.handleEvent(event);
     achievementsButton_.handleEvent(event);
+    statsButton_.handleEvent(event);
     settingsButton_.handleEvent(event);
     exitButton_.handleEvent(event);
 }
@@ -22987,6 +23052,10 @@ void MainMenuScene::update(float dt) {
         logger_->info("点击: 成就");
         nextScene_ = SceneId::Achievements;
     }
+    if (statsButton_.consumeClick()) {
+        logger_->info("点击: 成绩");
+        nextScene_ = SceneId::Stats;
+    }
     if (settingsButton_.consumeClick()) {
         logger_->info("点击: 设置");
         nextScene_ = SceneId::Settings;
@@ -22999,27 +23068,26 @@ void MainMenuScene::update(float dt) {
 
 void MainMenuScene::render(Window& window) {
     window.clear();
-    if (background_) background_->render(window.target());
+    if (background_)
+        background_->render(window.target());
 
     auto size = window.native().getSize();
     float cx = static_cast<float>(size.x) / 2.f;
     float cy = static_cast<float>(size.y) / 2.f;
 
     const float btnW = 280.f, btnH = 52.f, gap = 12.f;
-    constexpr int kCount = 7;
+    constexpr int kCount = 8;
     float totalH = btnH * kCount + gap * (kCount - 1);
     float startY = cy - totalH / 2.f;
 
-    Button* btns[kCount] = {
-        &startButton_, &levelSelectButton_, &editorButton_,
-        &calculatorButton_, &achievementsButton_,
-        &settingsButton_, &exitButton_
-    };
+    Button* btns[kCount] = {&startButton_,      &levelSelectButton_,  &editorButton_,
+                            &calculatorButton_, &achievementsButton_, &statsButton_,
+                            &settingsButton_,   &exitButton_};
 
     // ⭐ 动画结束时刻 + 窗口尺寸变化判断
     const float animEnd =
         static_cast<float>(kCount - 1) * kButtonDelay + kButtonRise + 0.1f;
-    const bool animDone    = elapsed_ > animEnd;
+    const bool animDone = elapsed_ > animEnd;
     const bool sizeChanged = (cx != lastCx_);
 
     for (int i = 0; i < kCount; ++i) {
@@ -45019,7 +45087,11 @@ TEST_CASE("试玩交接 - 空草稿也能安全地放进通道") {
 
 namespace {
 
-/// 复刻 EditorScene::loadFile 的读盘变换（\r 去掉、补到等宽）
+/// 走**真实**的编辑器读盘变换。
+///
+/// ⚠️ 这里刻意不手抄一份 —— 第一版就是手抄的，于是测试验的只是"抄得对不对"，
+/// 完全管不到 `EditorScene::loadFile` 里的真实代码。现在两个纯函数
+/// （`PlaytestRequest::normalizeLines` / `toLevelText`）由编辑器与测试共用。
 std::vector<std::string> readLikeEditor(const fs::path& path) {
     std::vector<std::string> lines;
     std::ifstream in(path);
@@ -45030,22 +45102,8 @@ std::vector<std::string> readLikeEditor(const fs::path& path) {
             line.pop_back();
         lines.push_back(line);
     }
-    std::size_t w = 0;
-    for (const auto& l : lines)
-        w = std::max(w, l.size());
-    for (auto& l : lines)
-        l.resize(w, ' ');
+    PlaytestRequest::normalizeLines(lines);
     return lines;
-}
-
-/// 复刻 EditorScene::startPlaytest 的拼接
-std::string joinLikePlaytest(const std::vector<std::string>& lines) {
-    std::string text;
-    for (const auto& line : lines) {
-        text += line;
-        text += '\n';
-    }
-    return text;
 }
 
 } // namespace
@@ -45062,7 +45120,7 @@ TEST_CASE("试玩交接 - 编辑器读过的东西一定能被关卡解析（真
         REQUIRE(!lines.empty());
 
         Level level;
-        const bool ok = level.loadFromString(joinLikePlaytest(lines));
+        const bool ok = level.loadFromString(PlaytestRequest::toLevelText(lines));
         CHECK_MESSAGE(ok, "关卡解析失败: " << entry.path().filename().string());
 
         // 尺寸要对得上（编辑器是按"最长行"算宽度的）
@@ -45099,9 +45157,83 @@ TEST_CASE("试玩交接 - 编辑器新建关卡的初始格子也能被解析") 
     CHECK(PlaytestRequest::hasPlayerSpawn(lines));
 
     Level level;
-    CHECK(level.loadFromString(joinLikePlaytest(lines)));
+    CHECK(level.loadFromString(PlaytestRequest::toLevelText(lines)));
     CHECK(level.width() == w);
     CHECK(level.height() == h);
+}
+
+// ============================================================
+// "从内存建关卡"必须与"从磁盘读关卡"**完全等价**
+// ============================================================
+//
+// 上面那条只验了"能解析"。但试玩的真正承诺是"玩到你正在改的那一份" ——
+// 如果内存路径少解析了某种元素（比如某个 spawn 容器忘了填），
+// 表现就是"试玩里少了几样东西"，而关卡从磁盘进时又是正常的。
+// 这种只在试玩时出现的差异最难查，所以直接把两份结果逐项比一遍。
+
+namespace {
+
+/// 逐项比较两个关卡：尺寸、玩家出生点、各类 spawn、以及整张瓦片网格
+void checkSameLevel(const Level& a, const Level& b) {
+    REQUIRE(a.width() == b.width());
+    REQUIRE(a.height() == b.height());
+
+    CHECK(a.playerSpawn().x == doctest::Approx(b.playerSpawn().x));
+    CHECK(a.playerSpawn().y == doctest::Approx(b.playerSpawn().y));
+
+    // 逐格比瓦片字符与实体性 —— 比单看几个 spawn 更能抓住"漏解析某元素"
+    int diffTiles = 0;
+    int diffSolid = 0;
+    for (int y = 0; y < a.height(); ++y) {
+        for (int x = 0; x < a.width(); ++x) {
+            if (a.tileAt(x, y) != b.tileAt(x, y))
+                ++diffTiles;
+            if (a.isSolid(x, y) != b.isSolid(x, y))
+                ++diffSolid;
+        }
+    }
+    CHECK(diffTiles == 0);
+    CHECK(diffSolid == 0);
+
+    // 各类 spawn 一一对应
+    CHECK(a.enemySpawns().size() == b.enemySpawns().size());
+    CHECK(a.patrolSpawns().size() == b.patrolSpawns().size());
+    CHECK(a.flyerSpawns().size() == b.flyerSpawns().size());
+    CHECK(a.jumperSpawns().size() == b.jumperSpawns().size());
+    CHECK(a.coinSpawns().size() == b.coinSpawns().size());
+    CHECK(a.keySpawns().size() == b.keySpawns().size());
+    CHECK(a.doorSpawns().size() == b.doorSpawns().size());
+    CHECK(a.spikeSpawns().size() == b.spikeSpawns().size());
+    CHECK(a.checkpointSpawns().size() == b.checkpointSpawns().size());
+    CHECK(a.jumpPadSpawns().size() == b.jumpPadSpawns().size());
+    CHECK(a.movingPlatformSpawns().size() == b.movingPlatformSpawns().size());
+    CHECK(a.verticalPlatformSpawns().size() == b.verticalPlatformSpawns().size());
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 内存路径与磁盘路径得到同一个关卡（真实关卡文件）") {
+    const fs::path dir = fs::path(PROJECT_ROOT) / "assets" / "levels";
+    REQUIRE(fs::is_directory(dir));
+
+    int checked = 0;
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".txt")
+            continue;
+
+        // 磁盘路径：GameScene::loadLevel 走的就是这个
+        Level fromDisk;
+        REQUIRE(fromDisk.loadFromFile(entry.path().string()));
+
+        // 内存路径：编辑器 → 试玩
+        const auto lines = readLikeEditor(entry.path());
+        Level fromMemory;
+        REQUIRE(fromMemory.loadFromString(PlaytestRequest::toLevelText(lines)));
+
+        checkSameLevel(fromDisk, fromMemory);
+        ++checked;
+    }
+    CHECK(checked >= 5);
 }
 
 ===== ./tests/test_resource_manager.cpp =====

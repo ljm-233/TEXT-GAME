@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,6 +36,33 @@ public:
 
     bool has() const { return pending_.has_value(); }
     void clear() { pending_.reset(); }
+
+    /// 编辑器内存里的关卡行 → 关卡文本（逐行拼接、每行末尾补 '\n'）。
+    ///
+    /// ⚠️ **编辑器与测试必须调这一个函数**。测试里手抄一份转换的话，
+    /// 它验证的只是"抄得对不对"——而真正会出错的是生产代码那一份。
+    /// （第一版测试就是这么写的，做完才发现它根本管不到
+    /// `EditorScene::startPlaytest` 里的拼接。）
+    static std::string toLevelText(const std::vector<std::string>& lines) {
+        std::string text;
+        for (const auto& line : lines) {
+            text += line;
+            text += '\n';
+        }
+        return text;
+    }
+
+    /// 把读到的行补成**等宽矩形**（编辑器按最长行算宽度）。
+    ///
+    /// 单独抽出来同样是为了让测试能验真实实现：磁盘上的关卡文件可以长短不一，
+    /// 而 `Level` 的解析是按矩形网格做的。
+    static void normalizeLines(std::vector<std::string>& lines) {
+        std::size_t w = 0;
+        for (const auto& l : lines)
+            w = std::max(w, l.size());
+        for (auto& l : lines)
+            l.resize(w, ' ');
+    }
 
     /// 这份草稿能不能试玩 —— 至少要有一个玩家出生点 'P'。
     ///
