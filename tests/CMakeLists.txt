@@ -28,10 +28,17 @@ add_executable(unit_tests
 )
 
 # 只有 doctest.h 需要额外加路径；游戏源码的 include 路径、
-# PROJECT_ROOT / PROJECT_VERSION / BUILD_DATE、SFML / OpenGL / XInput
+# PROJECT_VERSION / BUILD_DATE、SFML / OpenGL / XInput
 # 全部由 text_game_core 的 PUBLIC 传递过来。
 target_include_directories(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
+)
+
+# 测试要读源码树（分层测试扫 include/ 与 src/，关卡测试读 assets/levels/），
+# 所以 PROJECT_ROOT 由**测试自己**定义 —— 库那边在打包构建里刻意不带它，
+# 免得把构建机路径编进发出去的二进制。
+target_compile_definitions(unit_tests PRIVATE
+    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 # ⭐ 不再手写源文件清单，直接链 text_game_core。

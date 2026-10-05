@@ -2,6 +2,17 @@
 #include "platform.h"
 #include <filesystem>
 
+// PROJECT_ROOT 是**开发时**的兜底：万一可执行文件旁边没有 assets/，就回退到源码树。
+//
+// ⚠️ 打包构建刻意**不带**这个宏（见 CMakeLists 里的 BUNDLE_RUNTIME_DEPS 分支）：
+//    带了就等于把构建机的绝对路径编进发出去的二进制里 —— makepkg 会直接报
+//    「软件包含有对 $srcdir 的引用」，而且那个路径在用户机器上根本不存在，
+//    真回退过去只会得到一堆静默失败。
+//    所以没这个宏时不要回退到任何绝对路径，按打包模式走（用户数据进 XDG）。
+#ifndef PROJECT_ROOT
+#  define PROJECT_ROOT ""
+#endif
+
 // 管理资源目录：
 //   - 开发模式（项目目录里有 assets/）：所有目录在项目里
 //   - 打包模式（可执行文件旁边有 assets/）：资源跟着可执行文件，用户数据在 XDG 目录
@@ -16,22 +27,23 @@ public:
 
         const fs::path execDir = Platform::executableDir();
         const fs::path resRoot = resourceRootFor(execDir);
+        const fs::path devRoot{PROJECT_ROOT};
 
-        // 判定模式：资源根旁边有没有 assets/
-        bool packaged = fs::exists(resRoot / "assets");
-
-        if (packaged) {
-            configDir_ = Platform::userConfigDir();
-            cacheDir_ = Platform::userCacheDir();
-            tempDir_ = Platform::userTempDir();
-            savesDir_ = Platform::userDataDir() / "saves";
-            wallpaperDir_ = resRoot / "wallpaper";
-            assetsDir_ = resRoot / "assets";
+        if (fs::exists(resRoot / "assets")) {
+            // 打包模式
+            layoutForPackaged(resRoot);
             mode_ = "packaged";
-        } else {
-            // 开发模式
-            layoutUnder(fs::path(PROJECT_ROOT));
+        } else if (!devRoot.empty()) {
+            // 开发模式：从源码树直接跑
+            layoutUnder(devRoot);
             mode_ = "development";
+        } else {
+            // 打包构建、却没在可执行文件旁边找到资源。
+            // 这里**不能**去建一个构建机的路径：用户数据照旧进 XDG，资源仍指向
+            // 可执行文件旁边（找不到就是找不到）。mode 单列出来，
+            // 装配日志里一眼能看出是哪种情况。
+            layoutForPackaged(resRoot);
+            mode_ = "packaged-no-assets";
         }
 
         createAll();
@@ -86,9 +98,25 @@ private:
         assetsDir_ = root / "assets";
     }
 
+    /// 打包模式的布局：资源跟着可执行文件，用户数据进 XDG 目录
+    void layoutForPackaged(const std::filesystem::path& resRoot) {
+        configDir_ = Platform::userConfigDir();
+        cacheDir_ = Platform::userCacheDir();
+        tempDir_ = Platform::userTempDir();
+        savesDir_ = Platform::userDataDir() / "saves";
+        wallpaperDir_ = resRoot / "wallpaper";
+        assetsDir_ = resRoot / "assets";
+    }
+
     void createAll() {
-        for (auto& d :
-             {configDir_, cacheDir_, tempDir_, savesDir_, wallpaperDir_, assetsDir_}) {
+        // 只建**用户数据**目录。
+        //
+        // assets/ 与 wallpaper/ 归发行包所有，不该由这里凭空造出来 ——
+        // 造出来的空 assets/ 会让下次启动误判成「打包模式」（判定就是看
+        // 这个目录在不在），于是资源没了却一路走到加载失败。
+        // 开发/测试模式下这两个目录本来就在（源码树/沙箱），
+        // 测试要造假数据时自己 create_directories 就行。
+        for (auto& d : {configDir_, cacheDir_, tempDir_, savesDir_}) {
             std::error_code ec;
             std::filesystem::create_directories(d, ec);
         }
