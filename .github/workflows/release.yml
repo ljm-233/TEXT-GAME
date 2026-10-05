@@ -126,8 +126,8 @@ jobs:
           test -x "$BIN"
 
           echo "== 布局 =="
-          test -f "$APP/Contents/MacOS/assets/font.ttf" \
-            || { echo "assets 不在可执行文件旁边，Paths 会退回开发模式"; exit 1; }
+          test -f "$APP/Contents/Resources/assets/font.ttf" \
+            || { echo "assets 不在 Contents/Resources/，Paths 会退回开发模式"; exit 1; }
 
           count=$(ls "$FW"/*.dylib 2>/dev/null | wc -l)
           echo "包内 dylib 数量: $count"

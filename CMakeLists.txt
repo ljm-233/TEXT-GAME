@@ -319,6 +319,12 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
     #    封条就盖不住它们了。所以这两条 install 规则必须在 install(CODE) 前面
     #    —— 文件里的顺序就是执行顺序。
     #
+    # ⚠️ 目标必须是 Contents/Resources/，不能是 Contents/MacOS/。
+    #    放 MacOS/ 里 codesign 会把那些目录当成嵌套代码去验签，直接失败：
+    #      code object is not signed at all
+    #      In subcomponent: .../Contents/MacOS/wallpaper/CREDITS.md
+    #    Paths::resourceRootFor() 就是为这个布局加的。
+    #
     # bundle 目录名 = <OUTPUT_NAME>.app（MACOSX_BUNDLE_BUNDLE_NAME 只写进
     # Info.plist，不影响目录名），所以从 target 属性取，不写死。
     # 写死过一次 TEXT-GAME.app，结果包里凭空多出一个只装资源的空 bundle。
@@ -327,10 +333,10 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
         set(_tg_out_name text_game)
     endif()
     install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets/"
-            DESTINATION "${_tg_out_name}.app/Contents/MacOS/assets"
+            DESTINATION "${_tg_out_name}.app/Contents/Resources/assets"
             COMPONENT Runtime)
     install(DIRECTORY "${CMAKE_SOURCE_DIR}/wallpaper/"
-            DESTINATION "${_tg_out_name}.app/Contents/MacOS/wallpaper"
+            DESTINATION "${_tg_out_name}.app/Contents/Resources/wallpaper"
             COMPONENT Runtime)
 
     install(CODE [[

@@ -14,19 +14,19 @@ public:
     Paths() {
         namespace fs = std::filesystem;
 
-        fs::path execDir = Platform::executableDir();
+        const fs::path execDir = Platform::executableDir();
+        const fs::path resRoot = resourceRootFor(execDir);
 
-        // 判定模式：可执行文件旁边有没有 assets/
-        bool packaged = fs::exists(execDir / "assets");
+        // 判定模式：资源根旁边有没有 assets/
+        bool packaged = fs::exists(resRoot / "assets");
 
         if (packaged) {
-            assetRoot_ = execDir;
             configDir_ = Platform::userConfigDir();
             cacheDir_ = Platform::userCacheDir();
             tempDir_ = Platform::userTempDir();
             savesDir_ = Platform::userDataDir() / "saves";
-            wallpaperDir_ = execDir / "wallpaper";
-            assetsDir_ = execDir / "assets";
+            wallpaperDir_ = resRoot / "wallpaper";
+            assetsDir_ = resRoot / "assets";
             mode_ = "packaged";
         } else {
             // 开发模式
@@ -44,9 +44,27 @@ public:
     /// 存档目录。有了这个构造函数，测试可以造一个只属于自己的沙箱。
     explicit Paths(const std::filesystem::path& root) {
         layoutUnder(root);
-        assetRoot_ = root;
         mode_ = "test";
         createAll();
+    }
+
+    /// 资源根目录：平常就是可执行文件所在目录。
+    ///
+    /// macOS 的 .app 是个例外 —— 可执行文件在 <X>.app/Contents/MacOS/，
+    /// 而资源按 macOS 的规矩放在 <X>.app/Contents/Resources/。
+    ///
+    /// 资源**不能**塞进 Contents/MacOS/：codesign 给 bundle 盖章时会把那里的
+    /// 目录当成嵌套代码去验签，直接报 "code object is not signed at all"
+    /// （实际报在 wallpaper/CREDITS.md 上），签名失败、包都做不出来。
+    ///
+    /// 纯函数，所以能直接单元测试 —— 见 tests/test_config_seeding.cpp。
+    static std::filesystem::path resourceRootFor(
+            const std::filesystem::path& execDir) {
+        if (execDir.filename() == "MacOS" &&
+            execDir.parent_path().filename() == "Contents") {
+            return execDir.parent_path() / "Resources";
+        }
+        return execDir;
     }
 
     const std::filesystem::path& configDir() const { return configDir_; }
@@ -76,7 +94,6 @@ private:
         }
     }
 
-    std::filesystem::path assetRoot_;
     std::filesystem::path configDir_;
     std::filesystem::path cacheDir_;
     std::filesystem::path tempDir_;

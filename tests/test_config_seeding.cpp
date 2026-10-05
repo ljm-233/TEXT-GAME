@@ -136,3 +136,28 @@ TEST_CASE("配置播种 - 只播一次（第二次解析不会重写）") {
 
     CHECK(box.readConfig() == first + "ui_scale=1.250000\n");
 }
+
+// ============================================================
+// 资源根目录
+// ============================================================
+
+TEST_CASE("Paths::resourceRootFor - 平常就是可执行文件所在目录") {
+    using std::filesystem::path;
+
+    CHECK(Paths::resourceRootFor("/opt/text-game") == path("/opt/text-game"));
+    CHECK(Paths::resourceRootFor("C:/games/text-game") == path("C:/games/text-game"));
+
+    // 只有 Contents/MacOS 才特殊，单独一个 MacOS 不算
+    CHECK(Paths::resourceRootFor("/tmp/MacOS") == path("/tmp/MacOS"));
+    CHECK(Paths::resourceRootFor("/tmp/Contents/bin") == path("/tmp/Contents/bin"));
+}
+
+TEST_CASE("Paths::resourceRootFor - macOS bundle 里指到 Contents/Resources") {
+    using std::filesystem::path;
+
+    // .app 里可执行文件在 Contents/MacOS/，资源按 macOS 的规矩在 Contents/Resources/。
+    // 塞进 Contents/MacOS/ 会让 codesign 把那些目录当成嵌套代码去验签
+    // （"code object is not signed at all"），签名失败、包都做不出来。
+    CHECK(Paths::resourceRootFor("/tmp/text_game.app/Contents/MacOS") ==
+          path("/tmp/text_game.app/Contents/Resources"));
+}
