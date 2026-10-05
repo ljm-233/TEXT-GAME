@@ -1,2893 +1,200 @@
 
-===== ./include/config/settings_codec.h =====
-#pragma once
-#include <string>
-
-// 把「设置文本」编码成可分享/可粘贴的短码。
-//
-// 设置文本就是若干行 "key=value"（与 config 文件同格式）。
-// 格式：TS1:<base64(rle(text))>  —— 与关卡分享码同一套思路，只是前缀不同：
-// 前缀必须区分开，否则一段设置文本会被关卡那边当成关卡去解（反之亦然）。
-//
-// 为什么不直接复用 LevelCodec：关卡 RLE 用「<计数><字符>」定界，前提是
-// 关卡字符集里没有数字；设置文本里数字满地都是（fps_limit=144），
-// 那个前提不成立。这里的 RLE 多一个 ':' 分隔符，见 .cpp 顶部。
-namespace SettingsCodec {
-
-/// 把「设置文本」编码成可分享/可粘贴的短码。
-std::string encode(const std::string& settingsText);
-
-/// 解不开 / 前缀不对 / 长度不对 一律返回**空串**（不要抛异常）。
-std::string decode(const std::string& code);
-
-/// 只做格式与可解性校验。
-bool isValid(const std::string& code);
-
-} // namespace SettingsCodec
-
-===== ./include/scene/settings_tab_id.h =====
-#pragma once
-#include <optional>
-#include <string>
-#include <vector>
-
-/// 设置页的身份与归属。
-///
-/// 把这个枚举和"哪一页管哪些键"的表从 SettingsScene 里抽出来，是因为有**三处**
-/// 需要它，而且必须完全一致：
-///   1. SettingsScene 自己：建 Tab 按钮、分发事件与渲染
-///   2. 「恢复本页默认」：把本页的键从配置里删掉（默认值只存在于读取处，
-///      删掉之后自然回落 —— 见 Config::resetKeys）
-///   3. 冒烟测试：点某一页的控件，只能改这一页的键。以前控件靠数字下标引用，
-///      搬一行就可能"点这个改了那个"，而且完全不报错
-///
-/// ⚠️ 顺序变了要同步 SettingsScene 的 tabLabels 与逐项 setText
-///    （那里有 static_assert 挡着数量，但挡不住顺序）。
-enum class SettingsTab {
-    Display = 0,
-    Interface,
-    Wallpaper,
-    Graphics,
-    Audio,
-    Controls,
-    Game,
-    Console,
-    Advanced,
-};
-
-/// Tab 总数。
-///
-/// ⚠️ **刻意不放进枚举**：放进去了每个 switch 都得补一个 `case Count:`
-///    才能过 -Wswitch，而那只是噪音 —— 更糟的是它会让"加了新 Tab 却忘了
-///    处理"这个错误**不再报警**（因为 Count 把 switch 补全了）。
-///    独立常量 + 穷尽 switch 才是对的组合。
-inline constexpr int kSettingsTabCount = 9;
-
-/// Tab 按钮上的文字（返回 Str 常量，随语言切换）
-const char* settingsTabLabel(SettingsTab t);
-
-/// 这一页负责哪些配置键（用于「恢复本页默认」与归属检查）
-const std::vector<const char*>& keysForTab(SettingsTab t);
-
-/// 这个键归哪一页；找不到返回 nullopt
-std::optional<SettingsTab> tabForKey(const std::string& key);
-
-/// **有意**不属于任何设置页的键。
-///
-/// 存在的意义是让"忘了归类"和"有意不归类"能被区分开 ——
-/// 否则测试只能二者都不报，或者把有意的也一起报成错。
-/// 目前只有窗口几何状态：那是窗口逻辑自己写的，不是用户能设的东西。
-const std::vector<const char*>& unownedKeys();
-
-===== ./include/scene/tabs/advanced_tab.h =====
-#pragma once
-#include "button.h"
-#include "log/logger.h"
-#include "multi_row.h"
-#include "paths.h"
-#include "preferences.h"
-#include "text_input.h"
-#include "toggle_row.h"
-
-#include <SFML/Graphics.hpp>
-#include <memory>
-#include <vector>
-
-/// 设置里的「高级」页：日志、调试浮层，以及"打开配置目录 / 导出导入设置"。
-///
-/// 0.3.8 新建，把原先散在三处的开发向设置收拢到一页：
-///   - 日志级别（原来在「显示」—— 跟显示毫无关系）
-///   - 日志轮转 / 保留（原来在「其他」—— 跟日志级别隔了两个页）
-///   - 显示碰撞盒（原来在「画面」—— 它是调试用的，不是画面效果）
-///
-/// 这一页的东西**普通玩家基本不需要动**，所以放在最后一页，
-/// 并在页内加了说明（见 refreshLabels）。
-class AdvancedTab {
-public:
-    AdvancedTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
-                std::shared_ptr<Logger> logger, std::shared_ptr<Paths> paths);
-
-    void loadFromPrefs();
-    void handleEvent(const sf::Event& ev);
-    void update();
-
-    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
-
-    void refreshLabels();
-    void refreshSelection();
-    void registerFocus(std::vector<Button*>& out);
-    bool anyEditing() const;
-
-    /// 导入设置成功后要求重启一次。
-    ///
-    /// 沿用「恢复默认设置」的既有行为：把场景切到 Exit（关窗口退出），
-    /// 下次启动读新配置生效 —— 因为有一堆设置在启动阶段就固化了
-    /// （分辨率、着色器、字体缩放…），逐个热更新既啰嗦又容易漏。
-    bool consumeRestartRequest();
-
-    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
-    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
-    void reapply();
-
-private:
-    void applyLogRotation();
-    void doExport();
-    void doImport();
-
-    const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-    std::shared_ptr<Logger> logger_;
-    std::shared_ptr<Paths> paths_;
-
-    // ===== 状态 =====
-    int logLevel_ = 2; // Info 的枚举值由 LogLevel 决定，loadFromPrefs 里覆盖
-    int logRotateIdx_ = 0;
-    int logKeepIdx_ = 1;
-    bool showColliders_ = false;
-
-    bool restartRequested_ = false;
-    std::string status_; // 上一次操作的结果，画在页尾
-
-    // ===== 控件 =====
-    std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    std::vector<std::unique_ptr<MultiRow>> multiRows_;
-
-    ToggleRow* rowColliders_ = nullptr;
-    MultiRow* rowLogLevel_ = nullptr;
-    MultiRow* rowLogRotate_ = nullptr;
-    MultiRow* rowLogKeep_ = nullptr;
-
-    std::unique_ptr<Button> openConfigButton_;
-    std::unique_ptr<Button> openLogButton_;
-    std::unique_ptr<Button> exportButton_;
-    std::unique_ptr<Button> importButton_;
-
-    std::unique_ptr<TextInput> codeInput_;
-
-    sf::Text labelLog_;
-    sf::Text labelOpen_;
-    sf::Text labelShare_;
-    sf::Text labelCode_;
-    sf::Text hintText_;
-    sf::Text statusText_;
-};
-
-===== ./include/scene/tabs/console_tab.h =====
-#pragma once
-#include "multi_row.h"
-#include "preferences.h"
-#include "slider.h"
-#include "toggle_row.h"
-
-#include <SFML/Graphics.hpp>
-#include <memory>
-#include <vector>
-
-/// 设置里的「控制台」页：游戏内控制台的外观与行为。
-///
-/// 0.3.8 从「界面」页里独立出来 —— 那页本来堆了 19 个控件（界面本身的外观
-/// 只占一半，剩下全是控制台的），谁想调字号得先在"界面"里翻半天。
-///
-/// ⚠️ 控件用**具名指针**而不是 `multiRows_[9]` 这种下标存。
-///    以前那一页有 13 个 multiRow 靠数字下标引用，动一行就得把所有下标
-///    重排一遍，而且排错了不报错、只是"点了这个改了那个"。
-class ConsoleTab {
-public:
-    ConsoleTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
-
-    void loadFromPrefs();
-    void handleEvent(const sf::Event& ev);
-    void update();
-
-    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
-
-    void refreshLabels();
-    void refreshSelection();
-    void registerFocus(std::vector<Button*>& out);
-    bool anyEditing() const;
-
-    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
-    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
-    void reapply();
-
-private:
-    void applyFont();
-    void applyHistory();
-    void applyLineHeight();
-    void applyPrompt();
-
-    const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-
-    // ===== 状态 =====
-    int fontSize_ = 18;
-    int historyLines_ = 200;
-    int lineHeight_ = 26;
-    int promptIdx_ = 0;
-    bool autoScroll_ = true;
-    bool blinkCursor_ = true;
-    int mask_ = 160;
-    int panelAlpha_ = 220;
-
-    // ===== 控件 =====
-    std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    std::vector<std::unique_ptr<MultiRow>> multiRows_;
-
-    ToggleRow* rowAutoScroll_ = nullptr;
-    ToggleRow* rowBlink_ = nullptr;
-
-    MultiRow* rowFont_ = nullptr;
-    MultiRow* rowHistory_ = nullptr;
-    MultiRow* rowLineHeight_ = nullptr;
-    MultiRow* rowPrompt_ = nullptr;
-
-    std::unique_ptr<Slider> maskSlider_;
-    std::unique_ptr<Slider> panelAlphaSlider_;
-
-    sf::Text labelMask_;
-    sf::Text labelPanelAlpha_;
-};
-
-===== ./include/scene/tabs/controls_tab.h =====
-#pragma once
-#include "button.h"
-#include "infrastructure/keybindings.h"
-#include "preferences.h"
-#include "slider.h"
-#include "toggle_row.h"
-
-#include <SFML/Graphics.hpp>
-#include <memory>
-#include <vector>
-
-/// 设置里的「操作」页：键盘键位 + 手柄。
-///
-/// 0.3.8 由「按键」页扩成 —— 手柄开关、手柄振动开关、振动强度原先挂在
-/// 「音频」页里，纯粹因为"振动"听起来像触觉/声音。它们跟音频没有任何关系，
-/// 玩家找"手柄设置"时也不会去音频页翻。
-class ControlsTab {
-public:
-    ControlsTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
-
-    void loadFromPrefs();
-    void handleEvent(const sf::Event& ev);
-    void update();
-
-    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
-
-    void refreshLabels();
-    void refreshSelection();
-    void registerFocus(std::vector<Button*>& out);
-    bool anyEditing() const;
-
-    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
-    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
-    void reapply();
-
-private:
-    void refreshBindingText();
-    void applyResetKeys();
-    void applyGamepad();
-    void applyGamepadVibration();
-
-    const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-
-    // ===== 键位 =====
-    std::vector<std::unique_ptr<Button>> keyBindingButtons_;
-    std::vector<std::unique_ptr<sf::Text>> keyLabels_;
-    int listeningAction_ = -1; ///< >=0 表示正在等用户按下一个键
-
-    std::unique_ptr<Button> resetKeysButton_;
-    sf::Text hintText_;
-
-    // ===== 手柄 =====
-    bool gamepadEnabled_ = true;
-    bool gamepadVibrationEnabled_ = true;
-    float gamepadVibrationIntensity_ = 1.0f;
-
-    std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    ToggleRow* rowGamepad_ = nullptr;
-    ToggleRow* rowVibration_ = nullptr;
-    std::unique_ptr<Slider> vibrationSlider_;
-    sf::Text labelVibrationIntensity_;
-};
-
-===== ./include/scene/tabs/game_tab.h =====
-#pragma once
-#include "multi_row.h"
-#include "preferences.h"
-#include "text_input.h"
-#include "toggle_row.h"
-
-#include <SFML/Graphics.hpp>
-#include <memory>
-#include <vector>
-
-/// 设置里的「游戏」页：跟玩法本身有关的设置（而不是画面/界面）。
-///
-/// 0.3.8 新建。以前「初始生命」「关卡开场」挂在「画面」页里 —— 它们确实
-/// 影响画面，但玩家找它们时想的是"玩法"，不是"渲染"；「玩家名」则被丢在
-/// 大杂烩的「其他」页。
-class GameTab {
-public:
-    GameTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
-
-    void loadFromPrefs();
-    void handleEvent(const sf::Event& ev);
-    void update();
-
-    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
-
-    void refreshLabels();
-    void refreshSelection();
-    void registerFocus(std::vector<Button*>& out);
-    bool anyEditing() const;
-
-    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
-    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
-    void reapply();
-
-private:
-    void applyInitialLives();
-
-    const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-
-    // ===== 状态 =====
-    int initialLives_ = 1;
-    bool levelIntroEnabled_ = true;
-
-    // ===== 控件 =====
-    std::vector<std::unique_ptr<ToggleRow>> toggles_;
-    std::vector<std::unique_ptr<MultiRow>> multiRows_;
-
-    ToggleRow* rowLevelIntro_ = nullptr;
-    MultiRow* rowLives_ = nullptr;
-
-    std::unique_ptr<TextInput> playerNameInput_;
-    sf::Text labelPlayerName_;
-};
-
-===== ./src/config/keys.cpp =====
-#include "config/keys.h"
-
-namespace ConfigKey {
-namespace {
-const std::vector<const char*> kAll = {
-    ConfigKey::kUiScale,
-    ConfigKey::kFontScale,
-    ConfigKey::kTheme,
-    ConfigKey::kButtonCorner,
-    ConfigKey::kButtonOutline,
-    ConfigKey::kAnimationEnabled,
-    ConfigKey::kAnimationSpeedIndex,
-    ConfigKey::kLanguage,
-    ConfigKey::kNotificationEnabled,
-    ConfigKey::kNotificationPosition,
-    ConfigKey::kShowFps,
-    ConfigKey::kFpsFormat,
-    ConfigKey::kFpsPosition,
-    ConfigKey::kShowClock,
-    ConfigKey::kClockPosition,
-    ConfigKey::kResolutionIndex,
-    ConfigKey::kFullscreen,
-    ConfigKey::kVsync,
-    ConfigKey::kFpsLimit,
-    ConfigKey::kAntiAliasing,
-    ConfigKey::kWindowMode,
-    ConfigKey::kRememberWindowSize,
-    ConfigKey::kAutoPauseOnBlur,
-    ConfigKey::kLastWindowWidth,
-    ConfigKey::kLastWindowHeight,
-    ConfigKey::kRenderScale,
-    ConfigKey::kUpscaleMode,
-    ConfigKey::kPostSaturation,
-    ConfigKey::kPostContrast,
-    ConfigKey::kPostBrightness,
-    ConfigKey::kPostGamma,
-    ConfigKey::kPostVignette,
-    ConfigKey::kPostBloomStrength,
-    ConfigKey::kPostBloomThreshold,
-    ConfigKey::kPostChromatic,
-    ConfigKey::kPostGrain,
-    ConfigKey::kPostScanline,
-    ConfigKey::kPostDither,
-    ConfigKey::kParallax,
-    ConfigKey::kParticles,
-    ConfigKey::kPseudo3d,
-    ConfigKey::kScreenShake,
-    ConfigKey::kPlayerAnimation,
-    ConfigKey::kAudioMasterVolume,
-    ConfigKey::kAudioSoundEnabled,
-    ConfigKey::kAudioSoundVolume,
-    ConfigKey::kAudioBgmEnabled,
-    ConfigKey::kAudioBgmVolume,
-    ConfigKey::kLogLevel,
-    ConfigKey::kLogRotate,
-    ConfigKey::kLogKeep,
-    ConfigKey::kGamepadEnabled,
-    ConfigKey::kGamepadVibrationEnabled,
-    ConfigKey::kGamepadVibrationIntensity,
-    ConfigKey::kKeyLeft,
-    ConfigKey::kKeyRight,
-    ConfigKey::kKeyJump,
-    ConfigKey::kKeyPause,
-    ConfigKey::kKeyRestart,
-    ConfigKey::kCurrentWallpaper,
-    ConfigKey::kInitialLives,
-    ConfigKey::kLevelIntro,
-    ConfigKey::kPlayerName,
-    ConfigKey::kShowColliders,
-    ConfigKey::kConsoleAutoScroll,
-    ConfigKey::kConsoleBlinkCursor,
-    ConfigKey::kConsoleFontSize,
-    ConfigKey::kConsoleHistoryLines,
-    ConfigKey::kConsoleLineHeight,
-    ConfigKey::kConsoleMask,
-    ConfigKey::kConsolePanelAlpha,
-    ConfigKey::kConsolePrompt,
-    ConfigKey::kUiSoundEnabled,
-    ConfigKey::kNotificationDuration,
-    ConfigKey::kParticleDensity,
-    ConfigKey::kShakeIntensity,
-};
-} // namespace
-
-const std::vector<const char*>& allKeys() {
-    return kAll;
-}
-
-} // namespace ConfigKey
-
-===== ./src/config/portable_keys.cpp =====
-#include "config/keys.h"
-
-#include <algorithm>
-#include <array>
-#include <string>
-
-namespace ConfigKey {
-namespace {
-
-// 可以跨机器搬运的键。
-//
-// 加新键时问自己一句：**这个值换一台机器还成立吗？**
-// 跟显示器、显卡、窗口系统绑定的答案都是"不成立"。
-constexpr std::array kPortable = {
-    // 界面外观
-    kTheme,
-    kButtonCorner,
-    kButtonOutline,
-    kAnimationEnabled,
-    kAnimationSpeedIndex,
-    kNotificationEnabled,
-    kNotificationPosition,
-    kLanguage,
-    // 屏幕上的浮层
-    kShowFps,
-    kFpsFormat,
-    kFpsPosition,
-    kShowClock,
-    kClockPosition,
-    // 渲染质量
-    kRenderScale,
-    kUpscaleMode,
-    kPostSaturation,
-    kPostContrast,
-    kPostBrightness,
-    kPostGamma,
-    kPostVignette,
-    kPostBloomStrength,
-    kPostBloomThreshold,
-    kPostChromatic,
-    kPostGrain,
-    kPostScanline,
-    kPostDither,
-    // 特效开关
-    kParallax,
-    kParticles,
-    kPseudo3d,
-    kScreenShake,
-    kPlayerAnimation,
-    // 音频
-    kAudioMasterVolume,
-    kAudioSoundEnabled,
-    kAudioSoundVolume,
-    kAudioBgmEnabled,
-    kAudioBgmVolume,
-    kUiSoundEnabled,
-    // 观感强度（换台机器同样成立）
-    kNotificationDuration,
-    kParticleDensity,
-    kShakeIntensity,
-    // 手柄与键位（个人习惯，跟机器无关）
-    kGamepadEnabled,
-    kGamepadVibrationEnabled,
-    kGamepadVibrationIntensity,
-    kKeyLeft,
-    kKeyRight,
-    kKeyJump,
-    kKeyPause,
-    kKeyRestart,
-    // 玩法
-    kInitialLives,
-    kLevelIntro,
-    kPlayerName,
-    // 控制台外观
-    kConsoleAutoScroll,
-    kConsoleBlinkCursor,
-    kConsoleFontSize,
-    kConsoleHistoryLines,
-    kConsoleLineHeight,
-    kConsoleMask,
-    kConsolePanelAlpha,
-    kConsolePrompt,
-    // 日志与调试（导入别人的日志级别只是多打点日志，无害）
-    kLogLevel,
-    kLogRotate,
-    kLogKeep,
-    kShowColliders,
-};
-
-// 下面这批**故意不在**名单里，理由逐条写清楚，
-// 免得以后有人看到"少了个键"就顺手加回去：
-//
-//   kResolutionIndex / kFullscreen / kWindowMode
-//       跟这台机器的显示器与窗口系统绑定。导入别人的值可能开出一个
-//       超出屏幕、或者当前显示器不支持的窗口 —— 严重时游戏起不来。
-//   kVsync / kFpsLimit / kAntiAliasing
-//       跟显卡与显示器绑定（CLAUDE.md 的默认值表里专门列过这一条：
-//       0.3.1~0.3.3 把开发机的 vsync=false + fps_limit=0 原样发出去，
-//       新用户默认不锁帧、显卡满载空转）。
-//   kUiScale / kFontScale
-//       按屏幕尺寸与 DPI 调的。换台机器照搬可能让整个设置界面
-//       大到点不到、或者小到看不清 —— 而设置界面正是用户用来改回来的地方。
-//   kRememberWindowSize / kLastWindowWidth / kLastWindowHeight
-//       纯本机窗口状态，没有跨机器语义。
-//   kCurrentWallpaper
-//       个人口味，而且换台机器那个文件名很可能不存在。壁纸本身是
-//       内容不是设置，跟着分享码走只会让人以为"设置坏了"。
-
-} // namespace
-
-bool isPortable(const std::string& key) {
-    return std::any_of(kPortable.begin(), kPortable.end(),
-                       [&key](const char* k) { return key == k; });
-}
-
-int portableKeyCount() {
-    return static_cast<int>(kPortable.size());
-}
-
-} // namespace ConfigKey
-
-===== ./src/config/settings_codec.cpp =====
-#include "settings_codec.h"
-
-#include <cctype>
-#include <cstdint>
-#include <string>
-
-// 分享码：TS1:<base64(rle(设置文本))>
-//
-// 这里刻意不依赖 LevelCodec：两个格式的 RLE 不同（见下），而且分成两个
-// namespace 后各自的容错策略可以独立演进，不会因为改一个动了另一个。
-
-namespace {
-
-// ============ RLE ============
-// 格式：<count>:<char>
-//
-// ⚠️ 关卡那边是「<count><char>」——靠"关卡字符集里没有数字"才能定界。
-// 设置文本里数字是常态（fps_limit=144 / volume=80），沿用那个格式立刻歧义：
-// "144" 后面到底还有没有字符？所以这里显式插一个 ':' 当分隔符，读法是
-// "先读计数、再读一个 ':'、最后无条件收下一个字节" —— 字符本身是不是数字
-// 都不影响解析。
-//
-// 文本里出现 ':' 也无所谓：它只会作为"分隔符之后的那一个字节"被原样收下。
-//
-// count 有单段上限、总量也有上限：分享码是**别人粘贴进来的不可信输入**，
-// 一个几百字节的码靠 RLE 能要求解码出几个 G —— 上限让最坏情况有界，
-// 超了就按"解不开"返回空串。
-
-constexpr long kMaxRunLength = 100000;                    // 单段上限
-// 第一个操作数就用 size_t：否则乘法在 unsigned 里算完再拓宽，
-// 值一大就悄悄溢出（clang-tidy 的 implicit-widening 就是抓这个）
-constexpr std::size_t kMaxDecodedSize = std::size_t{4} * 1024 * 1024;
-
-std::string rleEncode(const std::string& s) {
-    std::string out;
-    std::size_t i = 0;
-    while (i < s.size()) {
-        const char c = s[i];
-        std::size_t j = i;
-        while (j < s.size() && s[j] == c)
-            ++j;
-        out += std::to_string(j - i);
-        out += ':';
-        out += c;
-        i = j;
-    }
-    return out;
-}
-
-std::string rleDecode(const std::string& s) {
-    std::string out;
-    std::size_t i = 0;
-    while (i < s.size()) {
-        // 计数位：必须是数字，否则这段长度字段已经坏了
-        if (!std::isdigit(static_cast<unsigned char>(s[i])))
-            return {};
-        long n = 0;
-        while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
-            n = n * 10 + (s[i] - '0');
-            ++i;
-            if (n > kMaxRunLength)
-                return {}; // 荒谬的计数，别去分配
-        }
-        // 分隔符：没有它说明长度字段被截断（或根本是别的格式）
-        if (i >= s.size() || s[i] != ':')
-            return {};
-        ++i;
-        if (i >= s.size())
-            return {}; // ':' 之后没有字符
-        const char c = s[i];
-        ++i;
-
-        if (n <= 0)
-            return {}; // "0:x" 语法合法但产不出字符，一律当坏码
-        if (out.size() + static_cast<std::size_t>(n) > kMaxDecodedSize)
-            return {};
-        out.append(static_cast<std::size_t>(n), c);
-    }
-    return out;
-}
-
-// ============ Base64 ============
-const char* kB64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string b64Encode(const std::string& in) {
-    std::string out;
-    out.reserve((in.size() + 2) / 3 * 4);
-    std::size_t i = 0;
-    while (i + 2 < in.size()) {
-        std::uint32_t v = (std::uint8_t)in[i] << 16 | (std::uint8_t)in[i + 1] << 8 |
-                          (std::uint8_t)in[i + 2];
-        out += kB64[(v >> 18) & 0x3F];
-        out += kB64[(v >> 12) & 0x3F];
-        out += kB64[(v >> 6) & 0x3F];
-        out += kB64[v & 0x3F];
-        i += 3;
-    }
-    if (i < in.size()) {
-        std::uint32_t v = (std::uint8_t)in[i] << 16;
-        if (i + 1 < in.size())
-            v |= (std::uint8_t)in[i + 1] << 8;
-        out += kB64[(v >> 18) & 0x3F];
-        out += kB64[(v >> 12) & 0x3F];
-        out += (i + 1 < in.size()) ? kB64[(v >> 6) & 0x3F] : '=';
-        out += '=';
-    }
-    return out;
-}
-
-int b64Val(char c) {
-    if (c >= 'A' && c <= 'Z')
-        return c - 'A';
-    if (c >= 'a' && c <= 'z')
-        return c - 'a' + 26;
-    if (c >= '0' && c <= '9')
-        return c - '0' + 52;
-    if (c == '+')
-        return 62;
-    if (c == '/')
-        return 63;
-    return -1; // '=' 在调用处提前收尾，其余一律非法
-}
-
-std::string b64Decode(const std::string& in) {
-    std::string out;
-    std::uint32_t buf = 0;
-    int bits = 0;
-    for (char c : in) {
-        if (c == '=')
-            break; // 与 LevelCodec 一致：补位之后的内容不再看
-        int v = b64Val(c);
-        if (v < 0)
-            return {};
-        buf = (buf << 6) | static_cast<std::uint32_t>(v);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out += static_cast<char>((buf >> bits) & 0xFF);
-        }
-    }
-    return out;
-}
-
-} // namespace
-
-namespace SettingsCodec {
-
-// TS1: 是设置分享码；TG1: 归关卡（LevelCodec），两边不能互相认领
-constexpr const char* kPrefix = "TS1:";
-constexpr std::size_t kPrefixLen = 4;
-
-std::string encode(const std::string& settingsText) {
-    return std::string(kPrefix) + b64Encode(rleEncode(settingsText));
-}
-
-std::string decode(const std::string& code) {
-    if (code.size() < kPrefixLen)
-        return {};
-    if (code.compare(0, kPrefixLen, kPrefix) != 0)
-        return {};
-
-    // 粘贴来源（聊天软件、论坛）常把长码折行、塞空格，先丢掉这些空白。
-    // 设置文本本身在 base64 里面，不受影响 —— 所以这里丢空白是安全的。
-    std::string clean;
-    for (std::size_t i = kPrefixLen; i < code.size(); ++i) {
-        const char c = code[i];
-        if (!std::isspace(static_cast<unsigned char>(c)))
-            clean += c;
-    }
-
-    const std::string rle = b64Decode(clean);
-    if (rle.empty())
-        return {}; // 空 base64 / 混了非法字符
-    return rleDecode(rle);
-}
-
-bool isValid(const std::string& code) {
-    // 唯一权威判定就是 decode：分成两套逻辑迟早会出现"isValid 说行、
-    // decode 却解不出"的静默矛盾。
-    return !decode(code).empty();
-}
-
-} // namespace SettingsCodec
-
-===== ./src/scene/settings_tab_id.cpp =====
-#include "scene/settings_tab_id.h"
-
-#include "config/keys.h"
-#include "utils/text_strings.h"
-
-#include <algorithm>
-
-namespace {
-
-// 「恢复本页默认」的做法是**把这些键从配置里删掉**，而不是往配置里写一份默认值 ——
-// 默认值只存在于读取处（`prefs_->getInt(key, default)`），删掉之后自然回落。
-// 好处是默认值永远只有一个定义，不会出现"这里改了那里没改"。
-//
-// ⚠️ 新加配置键时**必须**归到某一页，否则 tests/test_settings_tabs.cpp 会报出来
-//    （"有键没归属"正是这次重做要消灭的问题：日志级别曾经在「显示」、
-//      轮转保留在「其他」，同一个功能劈成两半）。
-const std::vector<const char*> kDisplayKeys = {
-    ConfigKey::kResolutionIndex,    ConfigKey::kFullscreen,
-    ConfigKey::kWindowMode,         ConfigKey::kVsync,
-    ConfigKey::kFpsLimit,           ConfigKey::kAntiAliasing,
-    ConfigKey::kRememberWindowSize, ConfigKey::kAutoPauseOnBlur,
-};
-
-const std::vector<const char*> kInterfaceKeys = {
-    ConfigKey::kTheme,
-    ConfigKey::kUiScale,
-    ConfigKey::kFontScale,
-    ConfigKey::kLanguage,
-    ConfigKey::kButtonCorner,
-    ConfigKey::kButtonOutline,
-    ConfigKey::kAnimationEnabled,
-    ConfigKey::kAnimationSpeedIndex,
-    ConfigKey::kNotificationEnabled,
-    ConfigKey::kNotificationPosition,
-    ConfigKey::kNotificationDuration,
-    ConfigKey::kShowFps,
-    ConfigKey::kFpsFormat,
-    ConfigKey::kFpsPosition,
-    ConfigKey::kShowClock,
-    ConfigKey::kClockPosition,
-};
-
-const std::vector<const char*> kWallpaperKeys = {
-    ConfigKey::kCurrentWallpaper,
-};
-
-const std::vector<const char*> kGraphicsKeys = {
-    ConfigKey::kRenderScale,        ConfigKey::kUpscaleMode,
-    ConfigKey::kPostSaturation,     ConfigKey::kPostContrast,
-    ConfigKey::kPostBrightness,     ConfigKey::kPostGamma,
-    ConfigKey::kPostVignette,       ConfigKey::kPostBloomStrength,
-    ConfigKey::kPostBloomThreshold, ConfigKey::kPostChromatic,
-    ConfigKey::kPostGrain,          ConfigKey::kPostScanline,
-    ConfigKey::kPostDither,         ConfigKey::kParallax,
-    ConfigKey::kParticles,          ConfigKey::kParticleDensity,
-    ConfigKey::kPseudo3d,           ConfigKey::kScreenShake,
-    ConfigKey::kShakeIntensity,     ConfigKey::kPlayerAnimation,
-};
-
-const std::vector<const char*> kAudioKeys = {
-    ConfigKey::kAudioMasterVolume, ConfigKey::kAudioSoundEnabled,
-    ConfigKey::kAudioSoundVolume,  ConfigKey::kAudioBgmEnabled,
-    ConfigKey::kAudioBgmVolume,    ConfigKey::kUiSoundEnabled,
-};
-
-const std::vector<const char*> kControlsKeys = {
-    ConfigKey::kKeyLeft,
-    ConfigKey::kKeyRight,
-    ConfigKey::kKeyJump,
-    ConfigKey::kKeyPause,
-    ConfigKey::kKeyRestart,
-    ConfigKey::kGamepadEnabled,
-    ConfigKey::kGamepadVibrationEnabled,
-    ConfigKey::kGamepadVibrationIntensity,
-};
-
-const std::vector<const char*> kGameKeys = {
-    ConfigKey::kInitialLives,
-    ConfigKey::kLevelIntro,
-    ConfigKey::kPlayerName,
-};
-
-const std::vector<const char*> kConsoleKeys = {
-    ConfigKey::kConsoleAutoScroll, ConfigKey::kConsoleBlinkCursor,
-    ConfigKey::kConsoleFontSize,   ConfigKey::kConsoleHistoryLines,
-    ConfigKey::kConsoleLineHeight, ConfigKey::kConsoleMask,
-    ConfigKey::kConsolePanelAlpha, ConfigKey::kConsolePrompt,
-};
-
-const std::vector<const char*> kAdvancedKeys = {
-    ConfigKey::kLogLevel,
-    ConfigKey::kLogRotate,
-    ConfigKey::kLogKeep,
-    ConfigKey::kShowColliders,
-};
-
-} // namespace
-
-// 不在任何一页的键。目前只有窗口几何状态 —— 它由窗口逻辑自己写，
-// 不是用户能"设置"的东西，所以不该出现在设置界面里，也不需要"恢复默认"。
-// 注意它**故意放在匿名 namespace 外面**：测试要拿它区分
-// "忘了归类"（报错）与"有意不归类"（放行）。
-const std::vector<const char*>& unownedKeys() {
-    static const std::vector<const char*> kUnowned = {
-        ConfigKey::kLastWindowWidth,
-        ConfigKey::kLastWindowHeight,
-    };
-    return kUnowned;
-}
-
-const char* settingsTabLabel(SettingsTab t) {
-    switch (t) {
-    case SettingsTab::Display:
-        return Str::TabDisplay;
-    case SettingsTab::Interface:
-        return Str::TabInterface;
-    case SettingsTab::Wallpaper:
-        return Str::LabelWallpaper;
-    case SettingsTab::Graphics:
-        return Str::TabGraphics;
-    case SettingsTab::Audio:
-        return Str::TabAudioLog;
-    case SettingsTab::Controls:
-        return Str::TabControls;
-    case SettingsTab::Game:
-        return Str::TabGame;
-    case SettingsTab::Console:
-        return Str::TabConsole;
-    case SettingsTab::Advanced:
-        return Str::TabAdvanced;
-    default:
-        return "";
-    }
-}
-
-const std::vector<const char*>& keysForTab(SettingsTab t) {
-    switch (t) {
-    case SettingsTab::Display:
-        return kDisplayKeys;
-    case SettingsTab::Interface:
-        return kInterfaceKeys;
-    case SettingsTab::Wallpaper:
-        return kWallpaperKeys;
-    case SettingsTab::Graphics:
-        return kGraphicsKeys;
-    case SettingsTab::Audio:
-        return kAudioKeys;
-    case SettingsTab::Controls:
-        return kControlsKeys;
-    case SettingsTab::Game:
-        return kGameKeys;
-    case SettingsTab::Console:
-        return kConsoleKeys;
-    case SettingsTab::Advanced:
-        return kAdvancedKeys;
-    default:
-        return unownedKeys();
-    }
-}
-
-std::optional<SettingsTab> tabForKey(const std::string& key) {
-    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
-        const auto t = static_cast<SettingsTab>(i);
-        const auto& keys = keysForTab(t);
-        if (std::find(keys.begin(), keys.end(), key) != keys.end())
-            return t;
-    }
-    return std::nullopt;
-}
-
-===== ./src/scene/tabs/advanced_tab.cpp =====
-#include "tabs/advanced_tab.h"
-
-#include "config/keys.h"
-#include "config/settings_codec.h"
-#include "core/platform.h"
-#include "log/rotation.h"
-#include "ui_scale.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-
-#include <SFML/Window/Clipboard.hpp>
-
-#include <algorithm>
-#include <functional>
-#include <string>
-
-namespace {
-
-constexpr float kRowH = 50.f;
-
-const LogLevel kLevels[] = {LogLevel::Trace, LogLevel::Debug, LogLevel::Info,
-                            LogLevel::Warn, LogLevel::Error};
-constexpr int kLevelCount = 5;
-const char* kLevelLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
-
-// 展示用的标签。档位取值范围本身由日志层维护（log/rotation.h 是权威来源），
-// UI 只保留展示标签 —— 两边各存一份档位表迟早漂移。
-const char* kRotateLabels[] = {"无限", "1MB", "5MB", "10MB"};
-static_assert(kLogRotationSteps == 4, "标签表必须与日志层的档位数一致");
-
-int indexOfLevel(int l) {
-    for (int i = 0; i < kLevelCount; ++i)
-        if (static_cast<int>(kLevels[i]) == l)
-            return i;
-    return 2; // Info
-}
-
-} // namespace
-
-AdvancedTab::AdvancedTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
-                         std::shared_ptr<Logger> logger, std::shared_ptr<Paths> paths)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        logger_(std::move(logger)),
-        paths_(std::move(paths)),
-        labelLog_(font, sf::String(), scaledFontSize(18)),
-        labelOpen_(font, sf::String(), scaledFontSize(20)),
-        labelShare_(font, sf::String(), scaledFontSize(20)),
-        labelCode_(font, sf::String(), scaledFontSize(18)),
-        hintText_(font, sf::String(), scaledFontSize(16)),
-        statusText_(font, sf::String(), scaledFontSize(18)) {
-    auto softColor = sf::Color(180, 180, 200);
-    hintText_.setFillColor(softColor);
-    labelCode_.setFillColor(softColor);
-    statusText_.setFillColor(sf::Color(150, 220, 150));
-
-    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
-        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
-        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
-                                            sf::Vector2f{86.f, 40.f}, 18);
-        row->onButton = std::move(on);
-        row->offButton = std::move(off);
-        toggles_.push_back(std::move(row));
-        return toggles_.back().get();
-    };
-    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
-        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
-        multiRows_.push_back(std::move(row));
-        return multiRows_.back().get();
-    };
-
-    rowLogLevel_ = addMulti(Str::LabelLogLevel, [this](int i) {
-        logLevel_ = static_cast<int>(kLevels[i]);
-        refreshSelection();
-        prefs_->setInt(ConfigKey::kLogLevel, logLevel_);
-    });
-    for (int i = 0; i < kLevelCount; ++i)
-        rowLogLevel_->addButton(std::make_unique<Button>(kLevelLabels[i], font_,
-                                                         sf::Vector2f{0.f, 0.f},
-                                                         sf::Vector2f{86.f, 40.f}, 18));
-
-    rowLogRotate_ = addMulti(Str::LabelLogRotate, [this](int i) {
-        logRotateIdx_ = i;
-        refreshSelection();
-        applyLogRotation();
-    });
-    for (int i = 0; i < kLogRotationSteps; ++i)
-        rowLogRotate_->addButton(std::make_unique<Button>(kRotateLabels[i], font_,
-                                                          sf::Vector2f{0.f, 0.f},
-                                                          sf::Vector2f{86.f, 40.f}, 18));
-
-    rowLogKeep_ = addMulti(Str::LabelLogKeep, [this](int i) {
-        logKeepIdx_ = i;
-        refreshSelection();
-        applyLogRotation();
-    });
-    for (int i = 0; i < kLogRotationSteps; ++i)
-        rowLogKeep_->addButton(std::make_unique<Button>(
-            std::to_string(logRotationKeepAt(i)), font_, sf::Vector2f{0.f, 0.f},
-            sf::Vector2f{86.f, 40.f}, 18));
-
-    rowColliders_ = addToggle(Str::LabelShowColliders, [this](bool v) {
-        showColliders_ = v;
-        refreshSelection();
-        prefs_->setBool(ConfigKey::kShowColliders, v);
-    });
-
-    openConfigButton_ =
-        std::make_unique<Button>(Str::ButtonOpenConfigDir, font_, sf::Vector2f{0.f, 0.f},
-                                 sf::Vector2f{190.f, 40.f}, 17);
-    openLogButton_ =
-        std::make_unique<Button>(Str::ButtonOpenLogDir, font_, sf::Vector2f{0.f, 0.f},
-                                 sf::Vector2f{190.f, 40.f}, 17);
-    exportButton_ =
-        std::make_unique<Button>(Str::ButtonExportSettings, font_, sf::Vector2f{0.f, 0.f},
-                                 sf::Vector2f{150.f, 40.f}, 17);
-    importButton_ =
-        std::make_unique<Button>(Str::ButtonImportSettings, font_, sf::Vector2f{0.f, 0.f},
-                                 sf::Vector2f{150.f, 40.f}, 17);
-
-    // 分享码最长能到几千字符（60 多项设置 base64 之后），maxLength 给足。
-    // 框里显示的就是当前可导出的码 / 待导入的码，剪贴板只是方便路径。
-    codeInput_ = std::make_unique<TextInput>(font_, sf::Vector2f{0.f, 0.f},
-                                             sf::Vector2f{420.f, 40.f},
-                                             Str::ShareCodePlaceholder, 15, 8192);
-
-    loadFromPrefs();
-    refreshLabels();
-    refreshSelection();
-}
-
-void AdvancedTab::loadFromPrefs() {
-    logLevel_ = prefs_->getInt(ConfigKey::kLogLevel, static_cast<int>(LogLevel::Info));
-    logRotateIdx_ = clampLogRotationIndex(prefs_->getInt(ConfigKey::kLogRotate, 0));
-    logKeepIdx_ = clampLogKeepIndex(prefs_->getInt(ConfigKey::kLogKeep, 1));
-    showColliders_ = prefs_->getBool(ConfigKey::kShowColliders, false);
-}
-
-void AdvancedTab::applyLogRotation() {
-    logger_->setRotation(logRotationSizeAt(logRotateIdx_),
-                         logRotationKeepAt(logKeepIdx_));
-    prefs_->setInt(ConfigKey::kLogRotate, logRotateIdx_);
-    prefs_->setInt(ConfigKey::kLogKeep, logKeepIdx_);
-}
-
-void AdvancedTab::doExport() {
-    const std::string code = SettingsCodec::encode(prefs_->exportPortable());
-    if (code.empty()) {
-        status_ = Str::T(Str::ShareExportFailed);
-        return;
-    }
-    codeInput_->setText(code);
-
-    // 剪贴板是"顺手"路径：某些环境（无剪贴板服务）拿不到也无所谓，
-    // 文本框里已经有码，用户可以自己选中复制。
-    sf::Clipboard::setString(sf::String::fromUtf8(code.begin(), code.end()));
-
-    status_ = std::string(Str::T(Str::ShareExported)) + " (" +
-              std::to_string(ConfigKey::portableKeyCount()) + ")";
-}
-
-void AdvancedTab::doImport() {
-    const std::string decoded = SettingsCodec::decode(codeInput_->text());
-    if (decoded.empty()) {
-        status_ = Str::T(Str::ShareImportInvalid);
-        return;
-    }
-
-    const int applied = prefs_->applyPortable(decoded);
-    if (applied <= 0) {
-        // 码本身是合法的，但里面一条可携带的键都没有 —— 多半是把别的
-        // 游戏的码或者空设置码粘进来了，说清楚比"导入成功 0 项"友好
-        status_ = Str::T(Str::ShareImportEmpty);
-        return;
-    }
-
-    status_ = std::string(Str::T(Str::ShareImported)) + " " + std::to_string(applied) +
-              " " + Str::T(Str::ShareImportedUnit);
-    // 一批设置在启动阶段就固化了（分辨率、字体缩放、着色器…），
-    // 和「恢复默认设置」一样走"退出后下次启动生效"。
-    restartRequested_ = true;
-
-    // 把界面上的选中态同步到刚导入的值
-    loadFromPrefs();
-    refreshSelection();
-}
-
-bool AdvancedTab::consumeRestartRequest() {
-    const bool r = restartRequested_;
-    restartRequested_ = false;
-    return r;
-}
-
-void AdvancedTab::refreshLabels() {
-    for (auto& row : toggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
-    for (auto& row : multiRows_)
-        row->refreshLabel();
-
-    labelLog_.setString(toSf(Str::T(Str::LabelAdvancedLog)));
-    labelOpen_.setString(toSf(Str::T(Str::LabelAdvancedFiles)));
-    labelShare_.setString(toSf(Str::T(Str::LabelShareSettings)));
-    hintText_.setString(toSf(Str::T(Str::HintAdvanced)));
-    codeInput_->setPlaceholder(Str::ShareCodePlaceholder);
-    if (status_.empty())
-        labelCode_.setString(toSf(Str::T(Str::LabelShareCode)));
-}
-
-void AdvancedTab::refreshSelection() {
-    if (rowColliders_) {
-        rowColliders_->currentValue = showColliders_;
-        rowColliders_->onButton->setSelected(showColliders_);
-        rowColliders_->offButton->setSelected(!showColliders_);
-    }
-    if (rowLogLevel_)
-        rowLogLevel_->setSelected(indexOfLevel(logLevel_));
-    if (rowLogRotate_)
-        rowLogRotate_->setSelected(logRotateIdx_);
-    if (rowLogKeep_)
-        rowLogKeep_->setSelected(logKeepIdx_);
-}
-
-void AdvancedTab::handleEvent(const sf::Event& ev) {
-    for (auto& row : toggles_) {
-        row->onButton->handleEvent(ev);
-        row->offButton->handleEvent(ev);
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            btn->handleEvent(ev);
-    openConfigButton_->handleEvent(ev);
-    openLogButton_->handleEvent(ev);
-    exportButton_->handleEvent(ev);
-    importButton_->handleEvent(ev);
-    codeInput_->handleEvent(ev);
-}
-
-void AdvancedTab::update() {
-    for (auto& row : toggles_) {
-        if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(true);
-            return;
-        }
-        if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(false);
-            return;
-        }
-    }
-    for (auto& row : multiRows_) {
-        for (size_t i = 0; i < row->buttons.size(); ++i) {
-            if (row->buttons[i]->consumeClick()) {
-                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
-                    row->onSelected(static_cast<int>(i));
-                return;
-            }
-        }
-    }
-
-    if (openConfigButton_->consumeClick()) {
-        const bool ok = Platform::openDirectory(paths_->configDir());
-        status_ = ok ? Str::T(Str::ShareOpenedDir) : Str::T(Str::ShareOpenDirFailed);
-    }
-    if (openLogButton_->consumeClick()) {
-        // 日志就落在配置目录里（log/bootstrap.cpp 用的 configDir()/app.log）
-        const bool ok = Platform::openDirectory(paths_->configDir());
-        status_ = ok ? Str::T(Str::ShareOpenedDir) : Str::T(Str::ShareOpenDirFailed);
-    }
-    if (exportButton_->consumeClick())
-        doExport();
-    if (importButton_->consumeClick())
-        doImport();
-}
-
-void AdvancedTab::registerFocus(std::vector<Button*>& out) {
-    for (auto& row : toggles_) {
-        out.push_back(row->onButton.get());
-        out.push_back(row->offButton.get());
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            out.push_back(btn.get());
-    out.push_back(openConfigButton_.get());
-    out.push_back(openLogButton_.get());
-    out.push_back(exportButton_.get());
-    out.push_back(importButton_.get());
-}
-
-bool AdvancedTab::anyEditing() const {
-    return codeInput_ && codeInput_->isFocused();
-}
-
-float AdvancedTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
-                          float startY) {
-    float y = startY;
-
-    auto drawToggle = [&](ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
-        y += kRowH;
-    };
-    auto drawMulti = [&](MultiRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
-            row.buttons[i]->render(target);
-        }
-        y += kRowH;
-    };
-
-    // 页首说明：这一页是给排查问题用的，普通玩家不用动
-    hintText_.setPosition({contentX, y});
-    target.draw(hintText_);
-    y += 30.f;
-
-    if (rowLogLevel_)
-        drawMulti(*rowLogLevel_);
-    if (rowLogRotate_)
-        drawMulti(*rowLogRotate_);
-    if (rowLogKeep_)
-        drawMulti(*rowLogKeep_);
-    if (rowColliders_)
-        drawToggle(*rowColliders_);
-
-    // ---- 打开目录 ----
-    if (openConfigButton_ && openLogButton_) {
-        labelOpen_.setPosition({contentX, y + 8.f});
-        target.draw(labelOpen_);
-        openConfigButton_->setPosition({ctrlX, y});
-        openLogButton_->setPosition({ctrlX + 200.f, y});
-        openConfigButton_->render(target);
-        openLogButton_->render(target);
-        y += kRowH;
-    }
-
-    // ---- 导出 / 导入 ----
-    if (exportButton_ && importButton_) {
-        labelShare_.setPosition({contentX, y + 8.f});
-        target.draw(labelShare_);
-        exportButton_->setPosition({ctrlX, y});
-        importButton_->setPosition({ctrlX + 160.f, y});
-        exportButton_->render(target);
-        importButton_->render(target);
-        y += kRowH;
-    }
-
-    // ---- 分享码文本框 ----
-    if (codeInput_) {
-        labelCode_.setPosition({contentX, y + 8.f});
-        target.draw(labelCode_);
-        codeInput_->setPosition({ctrlX, y});
-        codeInput_->setSize({420.f, 40.f});
-        codeInput_->render(target);
-        y += kRowH + 6.f;
-    }
-
-    // ---- 上次操作的结果 ----
-    if (!status_.empty()) {
-        statusText_.setString(toSf(status_));
-        statusText_.setPosition({contentX, y});
-        target.draw(statusText_);
-        y += 30.f;
-    }
-
-    return y + 20.f;
-}
-
-void AdvancedTab::reapply() {
-    loadFromPrefs();
-    applyLogRotation(); // 日志轮转要立刻作用到 Logger 上
-    refreshSelection();
-}
-
-===== ./src/scene/tabs/console_tab.cpp =====
-#include "tabs/console_tab.h"
-
-#include "config/keys.h"
-#include "ui_scale.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-
-#include <algorithm>
-
-namespace {
-
-constexpr float kRowH = 50.f;
-
-const int kFonts[] = {14, 18, 22, 26};
-constexpr int kFontCount = 4;
-const char* kFontLabels[] = {"小", "中", "大", "特大"};
-
-const int kHistory[] = {50, 100, 200, 500};
-constexpr int kHistoryCount = 4;
-
-const int kLineHeights[] = {20, 26, 32};
-constexpr int kLineHeightCount = 3;
-const char* kLineHeightLabels[] = {"紧凑", "正常", "宽松"};
-
-const char* kPromptLabels[] = {">", "$", "λ", "❯"};
-constexpr int kPromptCount = 4;
-
-int indexOfFont(int f) {
-    for (int i = 0; i < kFontCount; ++i)
-        if (kFonts[i] == f)
-            return i;
-    return 1;
-}
-int indexOfHistory(int n) {
-    for (int i = 0; i < kHistoryCount; ++i)
-        if (kHistory[i] == n)
-            return i;
-    return 2;
-}
-int indexOfLineHeight(int h) {
-    for (int i = 0; i < kLineHeightCount; ++i)
-        if (kLineHeights[i] == h)
-            return i;
-    return 1;
-}
-int indexOfPrompt(int i) {
-    return (i < 0 || i >= kPromptCount) ? 0 : i;
-}
-
-} // namespace
-
-ConsoleTab::ConsoleTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        labelMask_(font, sf::String(), scaledFontSize(20)),
-        labelPanelAlpha_(font, sf::String(), scaledFontSize(20)) {
-    auto labelColor = sf::Color(230, 230, 230);
-    labelMask_.setFillColor(labelColor);
-    labelPanelAlpha_.setFillColor(labelColor);
-
-    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
-        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
-        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
-                                            sf::Vector2f{86.f, 40.f}, 18);
-        row->onButton = std::move(on);
-        row->offButton = std::move(off);
-        toggles_.push_back(std::move(row));
-        return toggles_.back().get();
-    };
-    // ⚠️ 返回的是裸指针，但它是**堆上那个对象**的地址，缓存下来是安全的：
-    //    vector 扩容搬的是 unique_ptr 本身，指向的 MultiRow 不会跟着动。
-    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
-        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
-        multiRows_.push_back(std::move(row));
-        return multiRows_.back().get();
-    };
-
-    rowFont_ = addMulti(Str::LabelConsoleFont, [this](int i) {
-        fontSize_ = kFonts[i];
-        refreshSelection();
-        applyFont();
-    });
-    for (int i = 0; i < kFontCount; ++i)
-        rowFont_->addButton(std::make_unique<Button>(
-            kFontLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-
-    rowHistory_ = addMulti(Str::LabelConsoleHistory, [this](int i) {
-        historyLines_ = kHistory[i];
-        refreshSelection();
-        applyHistory();
-    });
-    for (int i = 0; i < kHistoryCount; ++i)
-        rowHistory_->addButton(std::make_unique<Button>(std::to_string(kHistory[i]),
-                                                        font_, sf::Vector2f{0.f, 0.f},
-                                                        sf::Vector2f{86.f, 40.f}, 18));
-
-    rowLineHeight_ = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
-        lineHeight_ = kLineHeights[i];
-        refreshSelection();
-        applyLineHeight();
-    });
-    for (int i = 0; i < kLineHeightCount; ++i)
-        rowLineHeight_->addButton(std::make_unique<Button>(kLineHeightLabels[i], font_,
-                                                           sf::Vector2f{0.f, 0.f},
-                                                           sf::Vector2f{86.f, 40.f}, 18));
-
-    rowPrompt_ = addMulti(Str::LabelConsolePrompt, [this](int i) {
-        promptIdx_ = i;
-        refreshSelection();
-        applyPrompt();
-    });
-    rowPrompt_->stepX = 70.f;
-    for (int i = 0; i < kPromptCount; ++i)
-        rowPrompt_->addButton(std::make_unique<Button>(kPromptLabels[i], font_,
-                                                       sf::Vector2f{0.f, 0.f},
-                                                       sf::Vector2f{60.f, 40.f}, 18));
-
-    rowAutoScroll_ = addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
-        autoScroll_ = v;
-        refreshSelection();
-        prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
-    });
-    rowBlink_ = addToggle(Str::LabelConsoleBlink, [this](bool v) {
-        blinkCursor_ = v;
-        refreshSelection();
-        prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
-    });
-
-    maskSlider_ =
-        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(mask_),
-                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    maskSlider_->setDefaultValue(160.f);
-
-    panelAlphaSlider_ =
-        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(panelAlpha_),
-                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    panelAlphaSlider_->setDefaultValue(220.f);
-
-    loadFromPrefs();
-    refreshLabels();
-    refreshSelection();
-}
-
-void ConsoleTab::loadFromPrefs() {
-    fontSize_ = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
-    historyLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
-    lineHeight_ = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
-    promptIdx_ = indexOfPrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
-    autoScroll_ = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
-    blinkCursor_ = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
-    mask_ = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
-    panelAlpha_ = std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
-
-    maskSlider_->setValue(static_cast<float>(mask_));
-    panelAlphaSlider_->setValue(static_cast<float>(panelAlpha_));
-}
-
-void ConsoleTab::applyFont() {
-    prefs_->setInt(ConfigKey::kConsoleFontSize, fontSize_);
-}
-void ConsoleTab::applyHistory() {
-    prefs_->setInt(ConfigKey::kConsoleHistoryLines, historyLines_);
-}
-void ConsoleTab::applyLineHeight() {
-    prefs_->setInt(ConfigKey::kConsoleLineHeight, lineHeight_);
-}
-void ConsoleTab::applyPrompt() {
-    prefs_->setInt(ConfigKey::kConsolePrompt, promptIdx_);
-}
-
-void ConsoleTab::refreshLabels() {
-    for (auto& row : toggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
-    for (auto& row : multiRows_)
-        row->refreshLabel();
-
-    labelMask_.setString(toSf(Str::T(Str::LabelConsoleMask)));
-    labelPanelAlpha_.setString(toSf(Str::T(Str::LabelConsolePanelAlpha)));
-}
-
-void ConsoleTab::refreshSelection() {
-    auto setToggle = [](ToggleRow* row, bool v) {
-        if (!row)
-            return;
-        row->currentValue = v;
-        row->onButton->setSelected(v);
-        row->offButton->setSelected(!v);
-    };
-    setToggle(rowAutoScroll_, autoScroll_);
-    setToggle(rowBlink_, blinkCursor_);
-
-    if (rowFont_)
-        rowFont_->setSelected(indexOfFont(fontSize_));
-    if (rowHistory_)
-        rowHistory_->setSelected(indexOfHistory(historyLines_));
-    if (rowLineHeight_)
-        rowLineHeight_->setSelected(indexOfLineHeight(lineHeight_));
-    if (rowPrompt_)
-        rowPrompt_->setSelected(promptIdx_);
-}
-
-void ConsoleTab::handleEvent(const sf::Event& ev) {
-    for (auto& row : toggles_) {
-        row->onButton->handleEvent(ev);
-        row->offButton->handleEvent(ev);
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            btn->handleEvent(ev);
-    maskSlider_->handleEvent(ev);
-    panelAlphaSlider_->handleEvent(ev);
-}
-
-void ConsoleTab::update() {
-    for (auto& row : toggles_) {
-        if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(true);
-            return;
-        }
-        if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(false);
-            return;
-        }
-    }
-    for (auto& row : multiRows_) {
-        for (size_t i = 0; i < row->buttons.size(); ++i) {
-            if (row->buttons[i]->consumeClick()) {
-                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
-                    row->onSelected(static_cast<int>(i));
-                return;
-            }
-        }
-    }
-    if (maskSlider_->consumeChanged()) {
-        mask_ = static_cast<int>(maskSlider_->value());
-        prefs_->setInt(ConfigKey::kConsoleMask, mask_);
-    }
-    if (panelAlphaSlider_->consumeChanged()) {
-        panelAlpha_ = static_cast<int>(panelAlphaSlider_->value());
-        prefs_->setInt(ConfigKey::kConsolePanelAlpha, panelAlpha_);
-    }
-}
-
-void ConsoleTab::registerFocus(std::vector<Button*>& out) {
-    for (auto& row : toggles_) {
-        out.push_back(row->onButton.get());
-        out.push_back(row->offButton.get());
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            out.push_back(btn.get());
-}
-
-bool ConsoleTab::anyEditing() const {
-    if (maskSlider_ && maskSlider_->isEditing())
-        return true;
-    if (panelAlphaSlider_ && panelAlphaSlider_->isEditing())
-        return true;
-    return false;
-}
-
-float ConsoleTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
-                         float startY) {
-    float y = startY;
-
-    auto drawToggle = [&](ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
-        y += kRowH;
-    };
-    auto drawMulti = [&](MultiRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
-            row.buttons[i]->render(target);
-        }
-        y += kRowH;
-    };
-    auto drawSlider = [&](sf::Text& label, Slider& slider) {
-        label.setPosition({contentX, y + 4.f});
-        target.draw(label);
-        slider.setPosition({ctrlX, y + 4.f});
-        slider.render(target);
-        y += kRowH;
-    };
-
-    drawSlider(labelMask_, *maskSlider_);
-    drawSlider(labelPanelAlpha_, *panelAlphaSlider_);
-    if (rowFont_)
-        drawMulti(*rowFont_);
-    if (rowHistory_)
-        drawMulti(*rowHistory_);
-    if (rowLineHeight_)
-        drawMulti(*rowLineHeight_);
-    if (rowAutoScroll_)
-        drawToggle(*rowAutoScroll_);
-    if (rowBlink_)
-        drawToggle(*rowBlink_);
-    if (rowPrompt_)
-        drawMulti(*rowPrompt_);
-
-    return y;
-}
-
-void ConsoleTab::reapply() {
-    // 控制台外观在打开控制台时读，没有需要即时改的全局状态
-    loadFromPrefs();
-    refreshSelection();
-}
-
-===== ./src/scene/tabs/controls_tab.cpp =====
-#include "tabs/controls_tab.h"
-
-#include "config/keys.h"
-#include "focus_group.h"
-#include "infrastructure/gamepad.h"
-#include "sound_manager.h"
-#include "ui_scale.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-
-#include <functional>
-
-namespace {
-
-constexpr float kRowH = 50.f;
-
-/// 动作 → 配置键。
-///
-/// ⚠️ 以前这里是裸字面量 `"key_left"`，违反项目自己的约定
-///    （CLAUDE.md 关键约定 #6：键名必须走 keys.h 常量）。
-///    字面量打错字不会报错，只会**静默回退默认键位** ——
-///    用户改完键位重启发现白改了，还找不到原因。
-const char* prefKeyOf(KeyBindings::Action a) {
-    switch (a) {
-    case KeyBindings::MoveLeft:
-        return ConfigKey::kKeyLeft;
-    case KeyBindings::MoveRight:
-        return ConfigKey::kKeyRight;
-    case KeyBindings::Jump:
-        return ConfigKey::kKeyJump;
-    case KeyBindings::Pause:
-        return ConfigKey::kKeyPause;
-    case KeyBindings::Restart:
-        return ConfigKey::kKeyRestart;
-    default:
-        return nullptr;
-    }
-}
-
-} // namespace
-
-ControlsTab::ControlsTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        hintText_(font, sf::String(), scaledFontSize(14)),
-        labelVibrationIntensity_(font, sf::String(), scaledFontSize(20)) {
-    for (int i = 0; i < KeyBindings::Count; ++i) {
-        auto btn = std::make_unique<Button>(
-            KeyBindings::keyToString(
-                KeyBindings::instance().get(static_cast<KeyBindings::Action>(i))),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 40.f}, 18);
-        keyBindingButtons_.push_back(std::move(btn));
-
-        auto label = std::make_unique<sf::Text>(font, sf::String(), scaledFontSize(20));
-        label->setFillColor(sf::Color(230, 230, 230));
-        keyLabels_.push_back(std::move(label));
-    }
-
-    hintText_.setFillColor(sf::Color(180, 180, 200));
-    labelVibrationIntensity_.setFillColor(sf::Color(230, 230, 230));
-
-    resetKeysButton_ =
-        std::make_unique<Button>(Str::ButtonResetKeys, font_, sf::Vector2f{0.f, 0.f},
-                                 sf::Vector2f{180.f, 40.f}, 18);
-
-    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
-        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
-        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
-                                            sf::Vector2f{86.f, 40.f}, 18);
-        row->onButton = std::move(on);
-        row->offButton = std::move(off);
-        toggles_.push_back(std::move(row));
-        return toggles_.back().get();
-    };
-
-    rowGamepad_ = addToggle(Str::LabelGamepad, [this](bool v) {
-        gamepadEnabled_ = v;
-        refreshSelection();
-        applyGamepad();
-    });
-    rowVibration_ = addToggle(Str::LabelGamepadVibration, [this](bool v) {
-        gamepadVibrationEnabled_ = v;
-        refreshSelection();
-        applyGamepadVibration();
-    });
-
-    vibrationSlider_ =
-        std::make_unique<Slider>(font_, 0.f, 100.f, gamepadVibrationIntensity_ * 100.f,
-                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    vibrationSlider_->setDefaultValue(100.f);
-
-    loadFromPrefs();
-    refreshLabels();
-    refreshSelection();
-}
-
-void ControlsTab::loadFromPrefs() {
-    gamepadEnabled_ = prefs_->getBool(ConfigKey::kGamepadEnabled, true);
-    gamepadVibrationEnabled_ = prefs_->getBool(ConfigKey::kGamepadVibrationEnabled, true);
-    gamepadVibrationIntensity_ =
-        static_cast<float>(prefs_->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0));
-}
-
-void ControlsTab::applyGamepad() {
-    prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
-    FocusGroup::instance().setEnabled(gamepadEnabled_);
-}
-
-void ControlsTab::applyGamepadVibration() {
-    prefs_->setBool(ConfigKey::kGamepadVibrationEnabled, gamepadVibrationEnabled_);
-    Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
-}
-
-void ControlsTab::applyResetKeys() {
-    KeyBindings::instance().resetToDefaults();
-    // 必须把 5 个键都落盘 —— 只重置内存里的表，重启又会读回旧键位
-    for (int i = 0; i < KeyBindings::Count; ++i) {
-        const auto act = static_cast<KeyBindings::Action>(i);
-        if (const char* k = prefKeyOf(act))
-            prefs_->setInt(k, static_cast<int>(KeyBindings::instance().get(act)));
-    }
-    listeningAction_ = -1;
-    refreshLabels();
-}
-
-void ControlsTab::refreshBindingText() {
-    if (listeningAction_ >= 0)
-        return; // 正在监听时不覆盖提示文字
-    for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
-        const auto act = static_cast<KeyBindings::Action>(i);
-        keyBindingButtons_[i]->setText(
-            KeyBindings::keyToString(KeyBindings::instance().get(act)));
-    }
-}
-
-void ControlsTab::handleEvent(const sf::Event& ev) {
-    // 监听中：按下的下一个键就是新绑定
-    if (listeningAction_ >= 0) {
-        if (const auto* kp = ev.getIf<sf::Event::KeyPressed>()) {
-            if (kp->code == sf::Keyboard::Key::Escape) {
-                listeningAction_ = -1;
-                refreshBindingText();
-                return;
-            }
-            const auto act = static_cast<KeyBindings::Action>(listeningAction_);
-            KeyBindings::instance().set(act, kp->code);
-            if (const char* k = prefKeyOf(act))
-                prefs_->setInt(k, static_cast<int>(kp->code));
-
-            listeningAction_ = -1;
-            refreshBindingText();
-            return;
-        }
-        return; // 监听中不转发其它事件
-    }
-
-    for (auto& b : keyBindingButtons_)
-        b->handleEvent(ev);
-    resetKeysButton_->handleEvent(ev);
-    for (auto& row : toggles_) {
-        row->onButton->handleEvent(ev);
-        row->offButton->handleEvent(ev);
-    }
-    vibrationSlider_->handleEvent(ev);
-}
-
-void ControlsTab::update() {
-    if (listeningAction_ < 0) {
-        for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
-            if (keyBindingButtons_[i]->consumeClick()) {
-                listeningAction_ = i;
-                keyBindingButtons_[i]->setText(Str::T(Str::KeyPressNew));
-                return;
-            }
-        }
-        if (resetKeysButton_->consumeClick()) {
-            applyResetKeys();
-            SoundManager::instance().playClick();
-            return;
-        }
-    }
-
-    for (auto& row : toggles_) {
-        if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(true);
-            return;
-        }
-        if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(false);
-            return;
-        }
-    }
-
-    if (vibrationSlider_->consumeChanged()) {
-        gamepadVibrationIntensity_ = vibrationSlider_->value() / 100.f;
-        Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
-        prefs_->setDouble(ConfigKey::kGamepadVibrationIntensity,
-                          gamepadVibrationIntensity_);
-    }
-}
-
-void ControlsTab::refreshLabels() {
-    for (int i = 0; i < static_cast<int>(keyLabels_.size()); ++i) {
-        const auto act = static_cast<KeyBindings::Action>(i);
-        keyLabels_[i]->setString(toSf(Str::T(KeyBindings::actionName(act))));
-    }
-    hintText_.setString(toSf(Str::T(Str::KeyBindHint)));
-    resetKeysButton_->setText(Str::T(Str::ButtonResetKeys));
-    labelVibrationIntensity_.setString(toSf(Str::T(Str::LabelVibrationIntensity)));
-
-    for (auto& row : toggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
-
-    if (listeningAction_ >= 0)
-        keyBindingButtons_[listeningAction_]->setText(Str::T(Str::KeyPressNew));
-    else
-        refreshBindingText();
-}
-
-void ControlsTab::refreshSelection() {
-    auto setRow = [](ToggleRow* row, bool v) {
-        if (!row)
-            return;
-        row->currentValue = v;
-        row->onButton->setSelected(v);
-        row->offButton->setSelected(!v);
-    };
-    setRow(rowGamepad_, gamepadEnabled_);
-    setRow(rowVibration_, gamepadVibrationEnabled_);
-    vibrationSlider_->setValue(gamepadVibrationIntensity_ * 100.f);
-}
-
-void ControlsTab::registerFocus(std::vector<Button*>& out) {
-    for (auto& b : keyBindingButtons_)
-        out.push_back(b.get());
-    out.push_back(resetKeysButton_.get());
-    for (auto& row : toggles_) {
-        out.push_back(row->onButton.get());
-        out.push_back(row->offButton.get());
-    }
-}
-
-bool ControlsTab::anyEditing() const {
-    return vibrationSlider_ && vibrationSlider_->isEditing();
-}
-
-float ControlsTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
-                          float startY) {
-    float y = startY;
-
-    // ---- 键位 ----
-    for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
-        keyLabels_[i]->setPosition({contentX, y + 8.f});
-        target.draw(*keyLabels_[i]);
-        keyBindingButtons_[i]->setPosition({ctrlX, y});
-        keyBindingButtons_[i]->render(target);
-        y += kRowH;
-    }
-
-    hintText_.setPosition({contentX, y + 8.f});
-    target.draw(hintText_);
-    y += 34.f;
-
-    // ---- 恢复默认按键 ----
-    resetKeysButton_->setPosition({ctrlX, y});
-    resetKeysButton_->render(target);
-    y += kRowH + 6.f;
-
-    // ---- 手柄 ----
-    auto drawToggle = [&](ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
-        y += kRowH;
-    };
-
-    if (rowGamepad_)
-        drawToggle(*rowGamepad_);
-    if (rowVibration_)
-        drawToggle(*rowVibration_);
-
-    // 振动强度
-    labelVibrationIntensity_.setPosition({contentX, y + 4.f});
-    target.draw(labelVibrationIntensity_);
-    vibrationSlider_->setPosition({ctrlX, y + 4.f});
-    vibrationSlider_->render(target);
-    y += kRowH;
-
-    return y + 20.f;
-}
-
-void ControlsTab::reapply() {
-    loadFromPrefs();
-    // 键位也要回到默认 —— 只删配置不改内存里的表，界面还是旧键位
-    KeyBindings::instance().resetToDefaults();
-    applyGamepad();
-    applyGamepadVibration();
-    refreshLabels();
-    refreshSelection();
-}
-
-===== ./src/scene/tabs/game_tab.cpp =====
-#include "tabs/game_tab.h"
-
-#include "config/keys.h"
-#include "ui_scale.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-
-#include <functional>
-
-namespace {
-
-constexpr float kRowH = 50.f;
-
-const int kLives[] = {1, 3, 5, 10, 100};
-constexpr int kLivesCount = 5;
-
-int indexOfLives(int lives) {
-    for (int i = 0; i < kLivesCount; ++i)
-        if (kLives[i] == lives)
-            return i;
-    return 0;
-}
-
-} // namespace
-
-GameTab::GameTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        labelPlayerName_(font, sf::String(), scaledFontSize(20)) {
-    labelPlayerName_.setFillColor(sf::Color(230, 230, 230));
-
-    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
-        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
-        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
-                                            sf::Vector2f{86.f, 40.f}, 18);
-        row->onButton = std::move(on);
-        row->offButton = std::move(off);
-        toggles_.push_back(std::move(row));
-        return toggles_.back().get();
-    };
-    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
-        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
-        multiRows_.push_back(std::move(row));
-        return multiRows_.back().get();
-    };
-
-    // 初始生命：给整局游戏定个难度基调，所以放在「游戏」页而不是画面页
-    rowLives_ = addMulti(Str::LabelInitialLives, [this](int i) {
-        initialLives_ = kLives[i];
-        refreshSelection();
-        applyInitialLives();
-    });
-    for (int i = 0; i < kLivesCount; ++i)
-        rowLives_->addButton(std::make_unique<Button>(std::to_string(kLives[i]), font_,
-                                                      sf::Vector2f{0.f, 0.f},
-                                                      sf::Vector2f{86.f, 40.f}, 18));
-
-    rowLevelIntro_ = addToggle(Str::LabelLevelIntro, [this](bool v) {
-        levelIntroEnabled_ = v;
-        refreshSelection();
-        prefs_->setBool(ConfigKey::kLevelIntro, v);
-    });
-
-    playerNameInput_ = std::make_unique<TextInput>(font_, sf::Vector2f{0.f, 0.f},
-                                                   sf::Vector2f{240.f, 40.f},
-                                                   Str::PlayerNamePlaceholder, 18, 16);
-    playerNameInput_->setText(prefs_->get(ConfigKey::kPlayerName, ""));
-    playerNameInput_->setOnChanged(
-        [this](const std::string& s) { prefs_->set(ConfigKey::kPlayerName, s); });
-
-    loadFromPrefs();
-    refreshLabels();
-    refreshSelection();
-}
-
-void GameTab::loadFromPrefs() {
-    initialLives_ = prefs_->getInt(ConfigKey::kInitialLives, 1);
-    levelIntroEnabled_ = prefs_->getBool(ConfigKey::kLevelIntro, true);
-}
-
-void GameTab::applyInitialLives() {
-    prefs_->setInt(ConfigKey::kInitialLives, initialLives_);
-}
-
-void GameTab::refreshLabels() {
-    for (auto& row : toggles_) {
-        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
-        row->onButton->setText(Str::T(Str::On));
-        row->offButton->setText(Str::T(Str::Off));
-    }
-    for (auto& row : multiRows_)
-        row->refreshLabel();
-    labelPlayerName_.setString(toSf(Str::T(Str::LabelPlayerName)));
-}
-
-void GameTab::refreshSelection() {
-    if (rowLevelIntro_) {
-        rowLevelIntro_->currentValue = levelIntroEnabled_;
-        rowLevelIntro_->onButton->setSelected(levelIntroEnabled_);
-        rowLevelIntro_->offButton->setSelected(!levelIntroEnabled_);
-    }
-    if (rowLives_)
-        rowLives_->setSelected(indexOfLives(initialLives_));
-}
-
-void GameTab::handleEvent(const sf::Event& ev) {
-    for (auto& row : toggles_) {
-        row->onButton->handleEvent(ev);
-        row->offButton->handleEvent(ev);
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            btn->handleEvent(ev);
-    if (playerNameInput_)
-        playerNameInput_->handleEvent(ev);
-}
-
-void GameTab::update() {
-    for (auto& row : toggles_) {
-        if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(true);
-            return;
-        }
-        if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged)
-                row->onChanged(false);
-            return;
-        }
-    }
-    for (auto& row : multiRows_) {
-        for (size_t i = 0; i < row->buttons.size(); ++i) {
-            if (row->buttons[i]->consumeClick()) {
-                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
-                    row->onSelected(static_cast<int>(i));
-                return;
-            }
-        }
-    }
-}
-
-void GameTab::registerFocus(std::vector<Button*>& out) {
-    for (auto& row : toggles_) {
-        out.push_back(row->onButton.get());
-        out.push_back(row->offButton.get());
-    }
-    for (auto& row : multiRows_)
-        for (auto& btn : row->buttons)
-            out.push_back(btn.get());
-    // 玩家名输入框不是 Button，不参与几何导航（Tab 键 / 鼠标点进去）
-}
-
-bool GameTab::anyEditing() const {
-    return playerNameInput_ && playerNameInput_->isFocused();
-}
-
-float GameTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
-                      float startY) {
-    float y = startY;
-
-    auto drawToggle = [&](ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
-        y += kRowH;
-    };
-    auto drawMulti = [&](MultiRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
-            row.buttons[i]->render(target);
-        }
-        y += kRowH;
-    };
-
-    if (rowLives_)
-        drawMulti(*rowLives_);
-    if (rowLevelIntro_)
-        drawToggle(*rowLevelIntro_);
-
-    // 玩家名
-    labelPlayerName_.setPosition({contentX, y + 8.f});
-    target.draw(labelPlayerName_);
-    if (playerNameInput_) {
-        playerNameInput_->setPosition({ctrlX, y});
-        playerNameInput_->setSize({240.f, 40.f});
-        playerNameInput_->render(target);
-    }
-    y += kRowH;
-
-    return y;
-}
-
-void GameTab::reapply() {
-    // 玩法项在进入关卡时才读，没有需要即时改的全局状态
-    loadFromPrefs();
-    refreshSelection();
-}
-
-===== ./tests/test_platform.cpp =====
+===== ./tests/test_settings_share.cpp =====
 #include "doctest.h"
-#include "core/platform.h"
+#include "config/keys.h"
+#include "config/preferences.h"
+#include "core/resource_manager.h"
+#include "config/settings_codec.h"
+#include "core/paths.h"
 
 #include <filesystem>
+#include <fstream>
+#include <memory>
 #include <string>
 
-// Platform::openDirectory 的真实行为会去启动文件管理器，没有 DISPLAY 的环境
-// 根本测不了（而且不该在单测里弹窗）。能测的只有「参数不合法就直接返回 false、
-// 连外部命令都不去执行」这条分支 —— 它恰好也是唯一不依赖桌面会话的一条。
+// 设置分享码的**端到端往返**。
+//
+// test_settings_codec 只管编解码本身（文本进去、文本出来），
+// test_settings_tabs 只管"键归哪一页"。这两条都绿了，仍然可能出这种事：
+// 导出把该带的键漏了、或者把**不该带的**键也带上了。
+//
+// 后者是真的会伤人的：把别人（或另一台机器）的 resolution_index / window_mode
+// 导进来，可能开出一个当前显示器放不下、甚至起不来的窗口 ——
+// 而设置界面正是用户用来改回去的地方。所以这条测试盯的是白名单边界。
 
 namespace fs = std::filesystem;
 
-TEST_CASE("Platform::openDirectory 目录不存在时返回 false") {
-    // 名字带随机后缀，保证在正常的 TMPDIR 下不存在
-    const fs::path missing =
-        fs::temp_directory_path() / "text-game-绝对不存在的目录-9f3c1a";
-    const bool exists = fs::exists(missing);
-    REQUIRE_FALSE(exists);
-
-    const bool opened = Platform::openDirectory(missing);
-    CHECK_FALSE(opened);
-}
-
-TEST_CASE("Platform::openDirectory 空路径与文件返回 false") {
-    const bool empty = Platform::openDirectory(fs::path{});
-    CHECK_FALSE(empty);
-
-    // 传目录以外的东西也一律拒绝，不去执行外部命令
-    const fs::path file = fs::temp_directory_path() / "text-game-not-a-dir-9f3c1a";
-    const bool isDir = fs::is_directory(file);
-    REQUIRE_FALSE(isDir);
-    const bool opened = Platform::openDirectory(file);
-    CHECK_FALSE(opened);
-}
-
-===== ./tests/test_settings_codec.cpp =====
-#include "doctest.h"
-#include "settings_codec.h"
-
-#include <string>
-
-// 设置分享码编解码（TS1:<base64(rle(设置文本))>）。
-//
-// 全程纯字符串处理，不碰 SFML、不碰 GL，所以这个文件在无 DISPLAY 下也能跑。
-//
-// 与关卡分享码（LevelCodec）最本质的差别在 RLE：设置文本里**数字是常态**
-// （fps_limit=144），关卡那套「<计数><字符>」的定界前提在这里直接不成立。
-// 所以下面专门钉了数字相关的用例 —— 只拿 "key=value" 的普通文本测往返，
-// 是抓不住"数字被当成计数吃掉"这类静默损坏的。
-
 namespace {
 
-/// 一份像样的设置文本：多行、带数字、含注释行与空行
-const char* kSampleSettings = "# 画面\n"
-                              "resolution_index=2\n"
-                              "vsync=true\n"
-                              "fps_limit=144\n"
-                              "\n"
-                              "volume=80\n"
-                              "player_name=Test\n";
-
-/// 模拟从聊天软件里粘贴：码被折行、被塞进空格和制表符
-std::string messUp(const std::string& code) {
-    std::string messy;
-    for (std::size_t i = 0; i < code.size(); ++i) {
-        if (i == 10 || i == 25)
-            messy += '\n';
-        if (i == 15)
-            messy += ' ';
-        if (i == 30)
-            messy += '\t';
-        messy += code[i];
-    }
-    return messy;
-}
-
-} // namespace
-
-// ============================================================
-// 往返一致性
-// ============================================================
-
-TEST_CASE("设置分享码 - 编解码往返不改变设置文本") {
-    const std::string original = kSampleSettings;
-
-    const std::string code = SettingsCodec::encode(original);
-
-    const bool hasPrefix = code.rfind("TS1:", 0) == 0; // 用的是设置前缀
-    CHECK(hasPrefix);
-    CHECK(SettingsCodec::decode(code) == original);
-}
-
-TEST_CASE("设置分享码 - 数字不会被 RLE 当成计数吃掉") {
-    // ⚠️ 这一组是重点：关卡那套 RLE 在这里会把 "144" 解释成计数，
-    //    于是设了 144 帧的玩家导入后拿到别的值，而且一路不报错。
-    const char* cases[] = {
-        "0",                        // 单个数字
-        "144",                      // 纯数字串
-        "111111111",                // 一长串相同数字
-        "fps_limit=144\nvolume=80", // 真实设置行
-        "k=1\nk2=22\nk3=333",       // 越来越多的数字
-        "=:=:",                     // 分隔符本身出现在文本里
-        ":::",                      // 全是分隔符
-    };
-
-    for (const char* c : cases) {
-        const std::string original = c;
-        CAPTURE(original);
-        CHECK(SettingsCodec::decode(SettingsCodec::encode(original)) == original);
-    }
-}
-
-TEST_CASE("设置分享码 - 含中文与换行的设置文本能往返") {
-    const std::string original = "player_name=小明\n"
-                                 "# 语言\n"
-                                 "language=简体中文\n"
-                                 "note=换行\n也在值里面\n";
-
-    const std::string code = SettingsCodec::encode(original);
-
-    CHECK(SettingsCodec::decode(code) == original);
-    CHECK(SettingsCodec::isValid(code));
-}
-
-TEST_CASE("设置分享码 - 码里的换行与空格会被忽略") {
-    const std::string original = kSampleSettings;
-    const std::string code = SettingsCodec::encode(original);
-
-    // 折行/空格只影响码本身，设置在 base64 里面，必须原样回来
-    CHECK(SettingsCodec::decode(messUp(code)) == original);
-}
-
-// ============================================================
-// 空输入与非法输入
-// ============================================================
-
-TEST_CASE("设置分享码 - 空输入与只有前缀都安全") {
-    const std::string emptyCode = SettingsCodec::encode("");
-    CHECK(emptyCode == "TS1:"); // 编码确定：空文本就是一个空壳码
-
-    CHECK(SettingsCodec::decode("").empty());
-    CHECK(SettingsCodec::decode("TS1:").empty());
-    CHECK_FALSE(SettingsCodec::isValid("TS1:"));
-
-    // 空文本的码与"解不开"长得一样 —— 与 LevelCodec 的取舍一致：
-    // 空设置本来也没有导入的意义，宁可当成坏码。
-    CHECK(SettingsCodec::decode(SettingsCodec::encode("")).empty());
-}
-
-TEST_CASE("设置分享码 - 前缀不对时一概不认") {
-    const char* bad[] = {
-        "TS1", // 比前缀还短
-        "XXXX:abcd",
-        "ts1:abcd", // 大小写敏感
-        "TS2:abcd",
-        " TG1:abcd",    // 前面带空白
-        "TG1:MToxYQ==", // 关卡分享码：设置这边不能去认领
-    };
-
-    for (const char* c : bad) {
-        CAPTURE(c);
-        CHECK(SettingsCodec::decode(c).empty());
-    }
-
-    // 反过来也必须成立：设置码不能长成关卡码的样子，否则 TG1 那边会误收
-    const std::string settingsCode = SettingsCodec::encode(kSampleSettings);
-    const bool looksLikeLevel = settingsCode.rfind("TG1:", 0) == 0;
-    CHECK_FALSE(looksLikeLevel);
-}
-
-TEST_CASE("设置分享码 - base64 里混入非法字符时拒绝") {
-    const char* bad[] = {
-        "TS1:!!!!",
-        "TS1:abcd!!!!", // 前面合法、后面混入非法字符
-        "TS1:####",           "TS1:****",
-        "TS1:中文不是base64", // 非 ASCII 字节同样非法
-    };
-
-    for (const char* c : bad) {
-        CAPTURE(c);
-        CHECK(SettingsCodec::decode(c).empty());
-        CHECK_FALSE(SettingsCodec::isValid(c));
-    }
-}
-
-TEST_CASE("设置分享码 - 被截断的码不会被当成有效设置") {
-    const std::string original = kSampleSettings;
-    const std::string code = SettingsCodec::encode(original);
-
-    // 砍一半之后要么解不出、要么解出来跟原文不一样 —— 总之不能"看起来成功"
-    const std::string half = code.substr(0, code.size() / 2);
-    CHECK(SettingsCodec::decode(half) != original);
-
-    // 只留前缀同样是失败的
-    CHECK(SettingsCodec::decode(code.substr(0, 4)).empty());
-}
-
-TEST_CASE("设置分享码 - RLE 长度字段损坏时安全拒绝") {
-    // 下面这些都是"前缀对 + base64 合法"，坏在 RLE 语法上。
-    // 字符串都写在注释里，方便手算核对。
-    const char* bad[] = {
-        "TS1:OTk5OTk5OTk5OTp4", // "9999999999:x" —— 计数远超上限
-        "TS1:MDp4",             // "0:x" —— 计数为 0，产不出字符
-        "TS1:MTAwMDAxOng=",     // "100001:x" —— 刚过单段上限
-        "TS1:YWJj",             // "abc" —— 开头就不是计数
-        "TS1:MTI6",             // "12:" —— ':' 后面没有字符（被截断）
-        "TS1:MTJ4",             // "12x" —— 缺 ':' 分隔符（关卡旧格式）
-        "TS1:MWE=",             // "1a" —— 关卡旧格式，这里不接受
-    };
-
-    for (const char* c : bad) {
-        CAPTURE(c);
-        CHECK(SettingsCodec::decode(c).empty());
-        CHECK_FALSE(SettingsCodec::isValid(c));
-    }
-}
-
-TEST_CASE("设置分享码 - 超长输入不崩且能往返") {
-    // 40 万字符：既有能压的重复段，也有几乎压不动的数字交替段
-    std::string big;
-    big.reserve(400000);
-    for (int i = 0; i < 20000; ++i) {
-        big += "key=value\n";
-        big += "0123456789";
-    }
-
-    const std::string code = SettingsCodec::encode(big);
-
-    const bool hasPrefix = code.rfind("TS1:", 0) == 0;
-    CHECK(hasPrefix);
-    CHECK(SettingsCodec::decode(code) == big);
-}
-
-TEST_CASE("设置分享码 - isValid 与 decode 的结论一致") {
-    const char* samples[] = {
-        "",          // 空
-        "TS1:",      // 只有前缀
-        "XXXX:abcd", // 前缀不对
-        "TS1:!!!!",  // base64 非法
-        "TS1:YWJj",  // base64 合法但不是 RLE
-        "TS1:MDp4",  // RLE 计数为 0
-    };
-
-    for (const char* c : samples) {
-        CAPTURE(c);
-        const bool valid = SettingsCodec::isValid(c);
-        const bool decodable = !SettingsCodec::decode(c).empty();
-        CHECK(valid == decodable);
-    }
-
-    // 好码两边都必须认
-    const std::string good = SettingsCodec::encode(kSampleSettings);
-    const bool goodValid = SettingsCodec::isValid(good);
-    const bool goodDecodable = !SettingsCodec::decode(good).empty();
-    CHECK(goodValid);
-    CHECK(goodDecodable);
-}
-
-===== ./tests/test_settings_tabs.cpp =====
-#include "doctest.h"
-#include "config/keys.h"
-#include "scene/settings_tab_id.h"
-
-#include <algorithm>
-#include <set>
-#include <string>
-
-// 设置页的「归属」检查。
-//
-// 0.3.8 重做设置系统时最典型的翻车是：新加了一个配置键、却忘了归到某一页，
-// 或者归错了页 —— 这两种都是**完全静默**的（界面上根本看不到那个键，
-// 或者它出现在一个没人会去找的地方）。这两条测试把它变成会红的。
-
-TEST_CASE("设置归属 - 每个配置键都恰好属于一页") {
-    std::vector<std::string> unowned;
-    std::vector<std::string> duplicated;
-
-    const auto& deliberatelyUnowned = unownedKeys();
-    for (const char* key : ConfigKey::allKeys()) {
-        int hits = 0;
-        for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
-            const auto& keys = keysForTab(static_cast<SettingsTab>(i));
-            if (std::find(keys.begin(), keys.end(), std::string(key)) != keys.end())
-                ++hits;
-        }
-        const bool onUnownedList =
-            std::find(deliberatelyUnowned.begin(), deliberatelyUnowned.end(),
-                      std::string(key)) != deliberatelyUnowned.end();
-        if (hits == 0 && !onUnownedList)
-            unowned.push_back(key);
-        else if (hits > 1)
-            duplicated.push_back(key);
-        else if (hits == 1 && onUnownedList)
-            duplicated.push_back(key); // 又归类又说"不归类"，矛盾
-    }
-
-    // 有键不属于任何一页：要么忘了归类，要么它就该在「高级」页
-    CHECK_MESSAGE(
-        unowned.empty(), "这些键没有归属的设置页：" << [&] {
-            std::string s;
-            for (const auto& k : unowned)
-                s += "\n      " + k;
-            return s;
-        }());
-
-    // 同一个键被两页认领：两边都会显示它，改一处另一处不同步
-    CHECK_MESSAGE(
-        duplicated.empty(), "这些键被多个设置页同时认领：" << [&] {
-            std::string s;
-            for (const auto& k : duplicated)
-                s += "\n      " + k;
-            return s;
-        }());
-}
-
-TEST_CASE("设置归属 - 表里不能有 keys.h 里不存在的键（防拼错）") {
-    std::set<std::string> known;
-    for (const char* key : ConfigKey::allKeys())
-        known.insert(key);
-
-    std::vector<std::string> typos;
-    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
-        for (const char* key : keysForTab(static_cast<SettingsTab>(i)))
-            if (known.count(key) == 0)
-                typos.push_back(key);
-    }
-
-    // 归属表里写了一个不存在的键名，那一条「恢复本页默认」就是空操作，
-    // 而且永远不会有任何提示
-    CHECK_MESSAGE(
-        typos.empty(), "归属表里有 keys.h 里不存在的键：" << [&] {
-            std::string s;
-            for (const auto& k : typos)
-                s += "\n      " + k;
-            return s;
-        }());
-}
-
-TEST_CASE("设置归属 - tabForKey 与 keysForTab 互为逆运算") {
-    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
-        const auto t = static_cast<SettingsTab>(i);
-        for (const char* key : keysForTab(t))
-            CHECK(tabForKey(key) == std::optional<SettingsTab>(t));
-    }
-    CHECK(tabForKey("这个键不存在") == std::nullopt);
-}
-
-TEST_CASE("设置归属 - 每页都有非空标签，且不重名") {
-    std::set<std::string> labels;
-    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
-        const char* label = settingsTabLabel(static_cast<SettingsTab>(i));
-        CHECK(label != nullptr);
-        const bool nonEmpty = label && *label != '\0';
-        CHECK(nonEmpty);
-        if (nonEmpty)
-            labels.insert(label);
-    }
-    // 两页同名的话，Tab 栏上会出现两个一模一样的按钮，用户根本分不清
-    CHECK(labels.size() == static_cast<std::size_t>(kSettingsTabCount));
-}
-
-TEST_CASE("设置归属 - 机器绑定的键不出现在可携带白名单里") {
-    // 这条把「导入别人的设置」的安全边界钉住：分辨率/窗口模式/ui_scale 这些
-    // 一旦被导入，可能开出用户根本用不了的窗口，而设置界面正是他改回来的地方。
-    const char* kForbidden[] = {
-        ConfigKey::kResolutionIndex,
-        ConfigKey::kFullscreen,
-        ConfigKey::kWindowMode,
-        ConfigKey::kVsync,
-        ConfigKey::kFpsLimit,
-        ConfigKey::kAntiAliasing,
-        ConfigKey::kUiScale,
-        ConfigKey::kFontScale,
-        ConfigKey::kRememberWindowSize,
-        ConfigKey::kCurrentWallpaper,
-    };
-    for (const char* key : kForbidden) {
-        const bool portable = ConfigKey::isPortable(key);
-        CHECK_MESSAGE(!portable, "这个键不该可携带：" << key);
-    }
-
-    // 反过来，观感/音量类的键必须在白名单里（否则导出等于什么都没导）
-    const char* kMustBePortable[] = {
-        ConfigKey::kTheme,   ConfigKey::kAudioMasterVolume, ConfigKey::kPostSaturation,
-        ConfigKey::kKeyJump, ConfigKey::kInitialLives,      ConfigKey::kUiSoundEnabled,
-    };
-    for (const char* key : kMustBePortable) {
-        const bool portable = ConfigKey::isPortable(key);
-        CHECK_MESSAGE(portable, "这个键应该可携带：" << key);
-    }
-
-    CHECK(ConfigKey::portableKeyCount() > 0);
-    CHECK(ConfigKey::portableKeyCount() < static_cast<int>(ConfigKey::allKeys().size()));
-}
-
-===== ./tools/settings_smoke.cpp =====
-// 设置页冒烟测试（**需要 DISPLAY，手动跑**）。
-//
-//   ./build/release/settings_smoke
-//
-// 为什么不放进 tests/：每页都要真的渲染一次才能知道按钮在哪（点击是按坐标判定
-// 的），而渲染要 sf::Font / sf::RenderTexture —— 都是 GlResource，
-// 没有 DISPLAY 时构造就 SIGABRT。tests/ 有"无 DISPLAY 也必须全绿"的硬要求。
-//
-// 它守的是这次重做最要紧的那条不变量：
-//
-//   **点某一页的控件，只能改这一页的键。**
-//
-// 以前各页的控件靠 `toggles_[7]` / `multiRows_[12]` 这种数字下标引用，
-// 搬一行就要重排全部下标，排错了不报错 —— 只是"点了这个改了那个"。
-// 0.3.8 把下标全换成具名指针，同时用这个工具把结果钉住：
-// 逐页、逐个可聚焦控件点过去，比对点击前后配置键的差集。
-#include "button.h"
-#include "config/keys.h"
-#include "config/preferences.h"
-#include "config/runtime_config.h"
-#include "core/paths.h"
-#include "core/resource_manager.h"
-#include "log/logger.h"
-#include "scene/settings_tab_id.h"
-#include "scene/tabs/advanced_tab.h"
-#include "scene/tabs/audio_tab.h"
-#include "scene/tabs/console_tab.h"
-#include "scene/tabs/controls_tab.h"
-#include "scene/tabs/display_tab.h"
-#include "scene/tabs/game_tab.h"
-#include "scene/tabs/graphics_tab.h"
-#include "scene/tabs/interface_tab.h"
-#include "scene/tabs/wallpaper_tab.h"
-#include "ui/background.h"
-#include "ui/window.h"
-#include "wallpaper/wallpaper_library.h"
-#include "wallpaper/wallpaper_loader.h"
-
-#include <SFML/Graphics.hpp>
-
-#include <algorithm>
-#include <filesystem>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <set>
-#include <string>
-#include <vector>
-
-namespace {
-
-int failures = 0;
-
-void check(bool ok, const std::string& what) {
-    std::cout << (ok ? "  PASS  " : "  FAIL  ") << what << "\n";
-    if (!ok)
-        ++failures;
-}
-
-/// 一页的统一门面：9 个 Tab 类型各不相同，但测试只关心这四个动作
-struct Page {
-    std::function<float(sf::RenderTarget&, float, float, float)> render;
-    std::function<void(const sf::Event&)> handleEvent;
-    std::function<void()> update;
-    std::function<void(std::vector<Button*>&)> registerFocus;
-};
-
-/// 造出某一页（每次调用新建一份，各页之间互不影响）
-Page makePage(SettingsTab tab, const sf::Font& font, std::shared_ptr<Preferences> prefs,
-              std::shared_ptr<RuntimeConfig> runtime, std::shared_ptr<Window> window,
-              std::shared_ptr<Background> background,
-              std::shared_ptr<WallpaperLibrary> lib,
-              std::shared_ptr<WallpaperLoader> loader, std::shared_ptr<Logger> logger,
-              std::shared_ptr<Paths> paths);
-
-/// 把按钮的点击模拟成"在按钮中心按下 + 松开"，然后跑一次本页 update()
-void clickButton(Button& b, Page& page) {
-    const auto pos = b.position();
-    const auto size = b.size();
-    const sf::Vector2i at{static_cast<int>(pos.x + size.x * 0.5f),
-                          static_cast<int>(pos.y + size.y * 0.5f)};
-
-    sf::Event press(sf::Event::MouseButtonPressed{sf::Mouse::Button::Left, at});
-    sf::Event release(sf::Event::MouseButtonReleased{sf::Mouse::Button::Left, at});
-    page.handleEvent(press);
-    page.handleEvent(release);
-    page.update();
-}
-
-std::set<std::string> keySet(const Preferences& p) {
-    const auto v = p.keys();
-    return {v.begin(), v.end()};
-}
-
-struct Sandbox {
-    std::filesystem::path root;
+/// 一个只属于自己的配置沙箱（不碰真实存档）
+struct Cfg {
+    fs::path root;
     std::unique_ptr<Paths> paths;
     std::unique_ptr<ResourceManager> resources;
     std::shared_ptr<Preferences> prefs;
-    std::shared_ptr<RuntimeConfig> runtime;
 
-    explicit Sandbox(const std::string& tag) {
-        root = std::filesystem::temp_directory_path() / ("textgame_sett_smoke_" + tag);
+    explicit Cfg(const std::string& tag) {
+        static int counter = 0;
+        root = fs::temp_directory_path() /
+               ("textgame_share_" + tag + "_" + std::to_string(++counter));
         std::error_code ec;
-        std::filesystem::remove_all(root, ec);
+        fs::remove_all(root, ec);
         paths = std::make_unique<Paths>(root);
         resources = std::make_unique<ResourceManager>(*paths);
         prefs = std::make_shared<Preferences>(*paths, *resources);
-        runtime = std::make_shared<RuntimeConfig>(*paths, *resources);
     }
-    ~Sandbox() {
-        // ⚠️ 顺序要紧：Config 析构会 flush 一次，得赶在删目录之前放掉它，
-        //    否则收尾时会刷一堆"无法写入"
+    ~Cfg() {
+        // 先放掉 Config（析构会 flush），再删目录
         prefs.reset();
-        runtime.reset();
         paths.reset();
         resources.reset();
         std::error_code ec;
-        std::filesystem::remove_all(root, ec);
-    }
-
-    /// AdvancedTab 要 shared_ptr<Paths>（打开配置/日志目录用）；不转移所有权
-    std::shared_ptr<Paths> paths_shared() {
-        return std::shared_ptr<Paths>(paths.get(), [](Paths*) {});
+        fs::remove_all(root, ec);
     }
 };
 
-Page makePage(SettingsTab tab, const sf::Font& font, std::shared_ptr<Preferences> prefs,
-              std::shared_ptr<RuntimeConfig> runtime, std::shared_ptr<Window> window,
-              std::shared_ptr<Background> background,
-              std::shared_ptr<WallpaperLibrary> lib,
-              std::shared_ptr<WallpaperLoader> loader, std::shared_ptr<Logger> logger,
-              std::shared_ptr<Paths> paths) {
-    Page page;
-    switch (tab) {
-    case SettingsTab::Display: {
-        auto t = std::make_shared<DisplayTab>(font, prefs, runtime, window);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Interface: {
-        auto t = std::make_shared<InterfaceTab>(font, prefs, window);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Wallpaper: {
-        auto t = std::make_shared<WallpaperTab>(font, prefs, background, lib, loader);
-        page.render = [t](sf::RenderTarget& tg, float cx, float, float y) {
-            return t->render(tg, cx, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Graphics: {
-        auto t = std::make_shared<GraphicsTab>(font, prefs, window);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Audio: {
-        auto t = std::make_shared<AudioTab>(font, prefs, window);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Controls: {
-        auto t = std::make_shared<ControlsTab>(font, prefs);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Game: {
-        auto t = std::make_shared<GameTab>(font, prefs);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Console: {
-        auto t = std::make_shared<ConsoleTab>(font, prefs);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    case SettingsTab::Advanced: {
-        auto t = std::make_shared<AdvancedTab>(font, prefs, logger, paths);
-        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
-            return t->render(tg, cx, ctrl, y);
-        };
-        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
-        page.update = [t] { t->update(); };
-        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
-        break;
-    }
-    default:
-        break;
-    }
-    return page;
-}
-
-bool belongsTo(SettingsTab tab, const std::string& key) {
-    const auto& keys = keysForTab(tab);
-    return std::find(keys.begin(), keys.end(), key) != keys.end();
+/// 走一遍完整链路：导出 → 编码 → 解码 → 应用到另一份配置
+void share(const Cfg& from, Cfg& to) {
+    const std::string code = SettingsCodec::encode(from.prefs->exportPortable());
+    REQUIRE(!code.empty());
+    const std::string decoded = SettingsCodec::decode(code);
+    REQUIRE(!decoded.empty());
+    to.prefs->applyPortable(decoded);
 }
 
 } // namespace
 
-int main() {
-    // 提供一个 GL 上下文（Font / RenderTexture 都要）
-    sf::RenderWindow window(sf::VideoMode({640, 400}), "settings_smoke");
-    window.setVisible(false);
+TEST_CASE("设置分享 - 观感/音量/玩法类键能完整往返") {
+    Cfg a("a");
+    Cfg b("b");
 
-    sf::Font font;
-    if (!font.openFromFile("assets/font.ttf")) {
-        std::cout << "加载字体失败，跳过\n";
-        return 2;
-    }
+    a.prefs->set(ConfigKey::kTheme, "2");
+    a.prefs->setDouble(ConfigKey::kAudioMasterVolume, 0.42);
+    a.prefs->setInt(ConfigKey::kInitialLives, 5);
+    a.prefs->setBool(ConfigKey::kParallax, false);
+    a.prefs->setInt(ConfigKey::kKeyJump, 42);
+    a.prefs->set(ConfigKey::kLanguage, "ja");
 
-    auto logger = std::make_shared<Logger>(LogLevel::Error);
-    Sandbox box("main");
+    share(a, b);
 
-    // 各页构造要 Window（DisplayTab 改分辨率、AudioTab 读音量都要它）
-    auto win = std::make_shared<Window>(640, 400, "settings_smoke_inner");
+    CHECK(b.prefs->get(ConfigKey::kTheme, "?") == "2");
+    CHECK(b.prefs->getDouble(ConfigKey::kAudioMasterVolume, -1.0) ==
+          doctest::Approx(0.42));
+    CHECK(b.prefs->getInt(ConfigKey::kInitialLives, -1) == 5);
+    CHECK(b.prefs->getBool(ConfigKey::kParallax, true) == false);
+    CHECK(b.prefs->getInt(ConfigKey::kKeyJump, -1) == 42);
+    CHECK(b.prefs->get(ConfigKey::kLanguage, "?") == "ja");
+}
 
-    auto lib = std::make_shared<WallpaperLibrary>();
-    lib->scan("wallpaper");
-    auto loader = std::make_shared<WallpaperLoader>();
-    auto background = std::make_shared<Background>(*lib, *loader, "", 640, 400, logger);
+TEST_CASE("设置分享 - 跟机器绑定的键**不会**被带走") {
+    Cfg a("a");
+    Cfg b("b");
 
-    // 每一页：都点一遍，看它改了哪些键
-    for (int i = 0; i < kSettingsTabCount; ++i) {
-        const auto tab = static_cast<SettingsTab>(i);
-        const std::string name = settingsTabLabel(tab);
+    // 先把目标配置里的这些键设成"本机自己的值"
+    b.prefs->setInt(ConfigKey::kResolutionIndex, 1);
+    b.prefs->set(ConfigKey::kWindowMode, "1");
+    b.prefs->setBool(ConfigKey::kVsync, true);
+    b.prefs->setDouble(ConfigKey::kUiScale, 1.0);
 
-        std::cout << "\n--- " << name << " ---\n";
+    // 来源机器上是另一套（分辨率 7、独占全屏、关垂直同步、UI 缩放 1.75）
+    a.prefs->setInt(ConfigKey::kResolutionIndex, 7);
+    a.prefs->set(ConfigKey::kWindowMode, "2");
+    a.prefs->setBool(ConfigKey::kVsync, false);
+    a.prefs->setDouble(ConfigKey::kUiScale, 1.75);
+    // ⚠️ 必须至少有一个**可携带**的键，否则 exportPortable() 就是空串、
+    //    编出来的码也解不开 —— 那样这条用例会因为"码是空的"而失败，
+    //    而不是因为它想验的东西
+    a.prefs->set(ConfigKey::kTheme, "1");
 
-        Page page = makePage(tab, font, box.prefs, box.runtime, win, background, lib,
-                             loader, logger, box.paths_shared());
-        if (!page.render) {
-            check(false, "这一页没造出来");
-            continue;
-        }
+    share(a, b);
 
-        std::vector<Button*> items;
-        page.registerFocus(items);
+    // 一条都不许被改 —— 这正是白名单存在的理由
+    CHECK(b.prefs->getInt(ConfigKey::kResolutionIndex, -1) == 1);
+    CHECK(b.prefs->get(ConfigKey::kWindowMode, "?") == "1");
+    CHECK(b.prefs->getBool(ConfigKey::kVsync, false) == true);
+    CHECK(b.prefs->getDouble(ConfigKey::kUiScale, -1.0) == doctest::Approx(1.0));
+}
 
-        // 先渲染一次：按钮位置是渲染时落定的，而点击按坐标判定
-        sf::RenderTexture rt(sf::Vector2u{1280, 720});
-        rt.clear(sf::Color::Black);
-        page.render(rt, 240.f, 480.f, 50.f);
-        rt.display();
-        // ⚠️ registerFocus 是**追加**语义（各页都是 out.push_back）。
-        //    第二次必须传一个空 vector —— 传同一个会让列表翻倍，
-        //    而"跳过最后 4 个动作按钮"就会跟着错位，
-        //    结果是**真的去打开文件管理器**（这个坑踩过一次）。
-        std::vector<Button*> laidOut;
-        page.registerFocus(laidOut);
-        items = laidOut;
+TEST_CASE("设置分享 - 导出的文本里本来就不含机器绑定的键") {
+    Cfg a("a");
+    a.prefs->setInt(ConfigKey::kResolutionIndex, 3);
+    a.prefs->setBool(ConfigKey::kFullscreen, true);
+    a.prefs->set(ConfigKey::kCurrentWallpaper, "x.jpg");
+    a.prefs->set(ConfigKey::kTheme, "1");
 
-        check(!items.empty(),
-              name + " 有可聚焦控件（" + std::to_string(items.size()) + " 个）");
+    const std::string text = a.prefs->exportPortable();
 
-        // 「高级」页最后 4 个是动作按钮（打开目录 / 导出 / 导入），点了有副作用
-        // （真的去启动文件管理器、写剪贴板），这里跳过它们。
-        // 它们不写配置，归属检查对它们本来也没有意义。
-        std::size_t clickable = items.size();
-        if (tab == SettingsTab::Advanced && clickable >= 4)
-            clickable -= 4;
+    // 连"发出去"这一步都不该包含它们：别人拿到码也无从还原
+    CHECK(text.find(ConfigKey::kResolutionIndex) == std::string::npos);
+    CHECK(text.find(ConfigKey::kFullscreen) == std::string::npos);
+    CHECK(text.find(ConfigKey::kCurrentWallpaper) == std::string::npos);
+    CHECK(text.find(ConfigKey::kUiScale) == std::string::npos);
+    // 而观感类的要在
+    CHECK(text.find(ConfigKey::kTheme) != std::string::npos);
+}
 
-        std::set<std::string> violations;
-        for (std::size_t k = 0; k < clickable; ++k) {
-            const auto before = keySet(*box.prefs);
-            clickButton(*items[k], page);
-            const auto after = keySet(*box.prefs);
+TEST_CASE("设置分享 - 粘贴别人的码不会改坏本机的窗口设置") {
+    Cfg b("b");
+    b.prefs->setInt(ConfigKey::kResolutionIndex, 1);
+    // 先把"本机自己的"缩放设上，才验得出外来值**没有**覆盖它
+    b.prefs->setDouble(ConfigKey::kUiScale, 1.0);
+    b.prefs->setDouble(ConfigKey::kFontScale, 1.0);
 
-            for (const auto& key : after) {
-                if (before.count(key))
-                    continue; // 已存在的键（值可能变了，但归属不变）
-                if (!belongsTo(tab, key))
-                    violations.insert(key);
-            }
-        }
+    // 手工构造一段"恶意/外来"的文本：混着可携带与不可携带的键
+    const std::string evil = "resolution_index=99\n"
+                             "window_mode=2\n"
+                             "fullscreen=true\n"
+                             "vsync=false\n"
+                             "ui_scale=3.0\n"
+                             "font_scale=3.0\n"
+                             "current_wallpaper=不存在的图.jpg\n"
+                             "theme=1\n" // 只有这一条应当生效
+                             "乱写的一行没有等号\n"
+                             "=没有键名\n"
+                             "unknown_key=1\n";
 
-        if (violations.empty()) {
-            check(true, name + " 的控件只改了本页的键");
-        } else {
-            std::string list;
-            for (const auto& k : violations)
-                list += " " + k;
-            check(false, name + " 的控件改了不属于本页的键：" + list);
-        }
-    }
+    const int applied = b.prefs->applyPortable(evil);
 
-    std::cout << (failures == 0 ? "\n全部通过\n"
-                                : "\n失败 " + std::to_string(failures) + " 条\n");
-    return failures == 0 ? 0 : 1;
+    CHECK(applied == 1); // 只有 theme
+    CHECK(b.prefs->getInt(ConfigKey::kResolutionIndex, -1) == 1);
+    CHECK(b.prefs->getBool(ConfigKey::kFullscreen, false) == false);
+    CHECK(b.prefs->getBool(ConfigKey::kVsync, true) == true);
+    CHECK(b.prefs->getDouble(ConfigKey::kUiScale, -1.0) == doctest::Approx(1.0));
+    CHECK(b.prefs->getDouble(ConfigKey::kFontScale, -1.0) == doctest::Approx(1.0));
+    CHECK(b.prefs->get(ConfigKey::kCurrentWallpaper, "?") == "?");
+    CHECK(b.prefs->get(ConfigKey::kTheme, "?") == "1");
+}
+
+TEST_CASE("设置分享 - 分享码损坏 / 不是本游戏的码时安全失败") {
+    Cfg b("b");
+    b.prefs->set(ConfigKey::kTheme, "2");
+
+    // 关卡分享码（TG1:）不能被当成设置码
+    CHECK(SettingsCodec::decode("TG1:AAAA").empty());
+    // 乱码
+    CHECK(SettingsCodec::decode("TS1:!!!not base64!!!").empty());
+    // 空
+    CHECK(SettingsCodec::decode("").empty());
+
+    // 解不开时调用方什么都不做，现有设置原样保留
+    const std::string decoded = SettingsCodec::decode("TS1:!!!not base64!!!");
+    CHECK(decoded.empty());
+    CHECK(b.prefs->applyPortable(decoded) == 0);
+    CHECK(b.prefs->get(ConfigKey::kTheme, "?") == "2");
+}
+
+TEST_CASE("设置分享 - 值里带 = 或空格的项不会把后面的行吃掉") {
+    Cfg a("a");
+    Cfg b("b");
+
+    // 玩家名是最可能含 '=' 与空格的字段
+    a.prefs->set(ConfigKey::kPlayerName, "a = b c");
+    a.prefs->set(ConfigKey::kTheme, "1");
+
+    share(a, b);
+
+    CHECK(b.prefs->get(ConfigKey::kPlayerName, "?") == "a = b c");
+    CHECK(b.prefs->get(ConfigKey::kTheme, "?") == "1");
 }
 
 ===== ./.github/workflows/build.yml =====
@@ -8259,6 +5566,32 @@ public:
     explicit RuntimeConfig(const Paths& p, const ResourceManager& r)
           : Config(p, r, "runtime.conf") {}
 };
+===== ./include/config/settings_codec.h =====
+#pragma once
+#include <string>
+
+// 把「设置文本」编码成可分享/可粘贴的短码。
+//
+// 设置文本就是若干行 "key=value"（与 config 文件同格式）。
+// 格式：TS1:<base64(rle(text))>  —— 与关卡分享码同一套思路，只是前缀不同：
+// 前缀必须区分开，否则一段设置文本会被关卡那边当成关卡去解（反之亦然）。
+//
+// 为什么不直接复用 LevelCodec：关卡 RLE 用「<计数><字符>」定界，前提是
+// 关卡字符集里没有数字；设置文本里数字满地都是（fps_limit=144），
+// 那个前提不成立。这里的 RLE 多一个 ':' 分隔符，见 .cpp 顶部。
+namespace SettingsCodec {
+
+/// 把「设置文本」编码成可分享/可粘贴的短码。
+std::string encode(const std::string& settingsText);
+
+/// 解不开 / 前缀不对 / 长度不对 一律返回**空串**（不要抛异常）。
+std::string decode(const std::string& code);
+
+/// 只做格式与可解性校验。
+bool isValid(const std::string& code);
+
+} // namespace SettingsCodec
+
 ===== ./include/core/achievement.h =====
 #pragma once
 #include <filesystem>
@@ -11477,6 +8810,153 @@ private:
     float contentTotalH_ = 0.f; // 上一帧内容底部 y
 };
 
+===== ./include/scene/settings_tab_id.h =====
+#pragma once
+#include <optional>
+#include <string>
+#include <vector>
+
+/// 设置页的身份与归属。
+///
+/// 把这个枚举和"哪一页管哪些键"的表从 SettingsScene 里抽出来，是因为有**三处**
+/// 需要它，而且必须完全一致：
+///   1. SettingsScene 自己：建 Tab 按钮、分发事件与渲染
+///   2. 「恢复本页默认」：把本页的键从配置里删掉（默认值只存在于读取处，
+///      删掉之后自然回落 —— 见 Config::resetKeys）
+///   3. 冒烟测试：点某一页的控件，只能改这一页的键。以前控件靠数字下标引用，
+///      搬一行就可能"点这个改了那个"，而且完全不报错
+///
+/// ⚠️ 顺序变了要同步 SettingsScene 的 tabLabels 与逐项 setText
+///    （那里有 static_assert 挡着数量，但挡不住顺序）。
+enum class SettingsTab {
+    Display = 0,
+    Interface,
+    Wallpaper,
+    Graphics,
+    Audio,
+    Controls,
+    Game,
+    Console,
+    Advanced,
+};
+
+/// Tab 总数。
+///
+/// ⚠️ **刻意不放进枚举**：放进去了每个 switch 都得补一个 `case Count:`
+///    才能过 -Wswitch，而那只是噪音 —— 更糟的是它会让"加了新 Tab 却忘了
+///    处理"这个错误**不再报警**（因为 Count 把 switch 补全了）。
+///    独立常量 + 穷尽 switch 才是对的组合。
+inline constexpr int kSettingsTabCount = 9;
+
+/// Tab 按钮上的文字（返回 Str 常量，随语言切换）
+const char* settingsTabLabel(SettingsTab t);
+
+/// 这一页负责哪些配置键（用于「恢复本页默认」与归属检查）
+const std::vector<const char*>& keysForTab(SettingsTab t);
+
+/// 这个键归哪一页；找不到返回 nullopt
+std::optional<SettingsTab> tabForKey(const std::string& key);
+
+/// **有意**不属于任何设置页的键。
+///
+/// 存在的意义是让"忘了归类"和"有意不归类"能被区分开 ——
+/// 否则测试只能二者都不报，或者把有意的也一起报成错。
+/// 目前只有窗口几何状态：那是窗口逻辑自己写的，不是用户能设的东西。
+const std::vector<const char*>& unownedKeys();
+
+===== ./include/scene/tabs/advanced_tab.h =====
+#pragma once
+#include "button.h"
+#include "log/logger.h"
+#include "multi_row.h"
+#include "paths.h"
+#include "preferences.h"
+#include "text_input.h"
+#include "toggle_row.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+/// 设置里的「高级」页：日志、调试浮层，以及"打开配置目录 / 导出导入设置"。
+///
+/// 0.3.8 新建，把原先散在三处的开发向设置收拢到一页：
+///   - 日志级别（原来在「显示」—— 跟显示毫无关系）
+///   - 日志轮转 / 保留（原来在「其他」—— 跟日志级别隔了两个页）
+///   - 显示碰撞盒（原来在「画面」—— 它是调试用的，不是画面效果）
+///
+/// 这一页的东西**普通玩家基本不需要动**，所以放在最后一页，
+/// 并在页内加了说明（见 refreshLabels）。
+class AdvancedTab {
+public:
+    AdvancedTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                std::shared_ptr<Logger> logger, std::shared_ptr<Paths> paths);
+
+    void loadFromPrefs();
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const;
+
+    /// 导入设置成功后要求重启一次。
+    ///
+    /// 沿用「恢复默认设置」的既有行为：把场景切到 Exit（关窗口退出），
+    /// 下次启动读新配置生效 —— 因为有一堆设置在启动阶段就固化了
+    /// （分辨率、着色器、字体缩放…），逐个热更新既啰嗦又容易漏。
+    bool consumeRestartRequest();
+
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
+private:
+    void applyLogRotation();
+    void doExport();
+    void doImport();
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+    std::shared_ptr<Logger> logger_;
+    std::shared_ptr<Paths> paths_;
+
+    // ===== 状态 =====
+    int logLevel_ = 2; // Info 的枚举值由 LogLevel 决定，loadFromPrefs 里覆盖
+    int logRotateIdx_ = 0;
+    int logKeepIdx_ = 1;
+    bool showColliders_ = false;
+
+    bool restartRequested_ = false;
+    std::string status_; // 上一次操作的结果，画在页尾
+
+    // ===== 控件 =====
+    std::vector<std::unique_ptr<ToggleRow>> toggles_;
+    std::vector<std::unique_ptr<MultiRow>> multiRows_;
+
+    ToggleRow* rowColliders_ = nullptr;
+    MultiRow* rowLogLevel_ = nullptr;
+    MultiRow* rowLogRotate_ = nullptr;
+    MultiRow* rowLogKeep_ = nullptr;
+
+    std::unique_ptr<Button> openConfigButton_;
+    std::unique_ptr<Button> openLogButton_;
+    std::unique_ptr<Button> exportButton_;
+    std::unique_ptr<Button> importButton_;
+
+    std::unique_ptr<TextInput> codeInput_;
+
+    sf::Text labelLog_;
+    sf::Text labelOpen_;
+    sf::Text labelShare_;
+    sf::Text labelCode_;
+    sf::Text hintText_;
+    sf::Text statusText_;
+};
+
 ===== ./include/scene/tabs/audio_tab.h =====
 #pragma once
 #include "preferences.h"
@@ -11553,6 +9033,147 @@ private:
     void applyBGM();
     void applyUiSound();
 };
+===== ./include/scene/tabs/console_tab.h =====
+#pragma once
+#include "multi_row.h"
+#include "preferences.h"
+#include "slider.h"
+#include "toggle_row.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+/// 设置里的「控制台」页：游戏内控制台的外观与行为。
+///
+/// 0.3.8 从「界面」页里独立出来 —— 那页本来堆了 19 个控件（界面本身的外观
+/// 只占一半，剩下全是控制台的），谁想调字号得先在"界面"里翻半天。
+///
+/// ⚠️ 控件用**具名指针**而不是 `multiRows_[9]` 这种下标存。
+///    以前那一页有 13 个 multiRow 靠数字下标引用，动一行就得把所有下标
+///    重排一遍，而且排错了不报错、只是"点了这个改了那个"。
+class ConsoleTab {
+public:
+    ConsoleTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
+
+    void loadFromPrefs();
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const;
+
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
+private:
+    void applyFont();
+    void applyHistory();
+    void applyLineHeight();
+    void applyPrompt();
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+
+    // ===== 状态 =====
+    int fontSize_ = 18;
+    int historyLines_ = 200;
+    int lineHeight_ = 26;
+    int promptIdx_ = 0;
+    bool autoScroll_ = true;
+    bool blinkCursor_ = true;
+    int mask_ = 160;
+    int panelAlpha_ = 220;
+
+    // ===== 控件 =====
+    std::vector<std::unique_ptr<ToggleRow>> toggles_;
+    std::vector<std::unique_ptr<MultiRow>> multiRows_;
+
+    ToggleRow* rowAutoScroll_ = nullptr;
+    ToggleRow* rowBlink_ = nullptr;
+
+    MultiRow* rowFont_ = nullptr;
+    MultiRow* rowHistory_ = nullptr;
+    MultiRow* rowLineHeight_ = nullptr;
+    MultiRow* rowPrompt_ = nullptr;
+
+    std::unique_ptr<Slider> maskSlider_;
+    std::unique_ptr<Slider> panelAlphaSlider_;
+
+    sf::Text labelMask_;
+    sf::Text labelPanelAlpha_;
+};
+
+===== ./include/scene/tabs/controls_tab.h =====
+#pragma once
+#include "button.h"
+#include "infrastructure/keybindings.h"
+#include "preferences.h"
+#include "slider.h"
+#include "toggle_row.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+/// 设置里的「操作」页：键盘键位 + 手柄。
+///
+/// 0.3.8 由「按键」页扩成 —— 手柄开关、手柄振动开关、振动强度原先挂在
+/// 「音频」页里，纯粹因为"振动"听起来像触觉/声音。它们跟音频没有任何关系，
+/// 玩家找"手柄设置"时也不会去音频页翻。
+class ControlsTab {
+public:
+    ControlsTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
+
+    void loadFromPrefs();
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const;
+
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
+private:
+    void refreshBindingText();
+    void applyResetKeys();
+    void applyGamepad();
+    void applyGamepadVibration();
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+
+    // ===== 键位 =====
+    std::vector<std::unique_ptr<Button>> keyBindingButtons_;
+    std::vector<std::unique_ptr<sf::Text>> keyLabels_;
+    int listeningAction_ = -1; ///< >=0 表示正在等用户按下一个键
+
+    std::unique_ptr<Button> resetKeysButton_;
+    sf::Text hintText_;
+
+    // ===== 手柄 =====
+    bool gamepadEnabled_ = true;
+    bool gamepadVibrationEnabled_ = true;
+    float gamepadVibrationIntensity_ = 1.0f;
+
+    std::vector<std::unique_ptr<ToggleRow>> toggles_;
+    ToggleRow* rowGamepad_ = nullptr;
+    ToggleRow* rowVibration_ = nullptr;
+    std::unique_ptr<Slider> vibrationSlider_;
+    sf::Text labelVibrationIntensity_;
+};
+
 ===== ./include/scene/tabs/display_tab.h =====
 #pragma once
 #include "preferences.h"
@@ -11617,6 +9238,62 @@ private:
     void applyAntiAliasing();
     void applyFpsLimit();
 };
+===== ./include/scene/tabs/game_tab.h =====
+#pragma once
+#include "multi_row.h"
+#include "preferences.h"
+#include "text_input.h"
+#include "toggle_row.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+/// 设置里的「游戏」页：跟玩法本身有关的设置（而不是画面/界面）。
+///
+/// 0.3.8 新建。以前「初始生命」「关卡开场」挂在「画面」页里 —— 它们确实
+/// 影响画面，但玩家找它们时想的是"玩法"，不是"渲染"；「玩家名」则被丢在
+/// 大杂烩的「其他」页。
+class GameTab {
+public:
+    GameTab(const sf::Font& font, std::shared_ptr<Preferences> prefs);
+
+    void loadFromPrefs();
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const;
+
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
+private:
+    void applyInitialLives();
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+
+    // ===== 状态 =====
+    int initialLives_ = 1;
+    bool levelIntroEnabled_ = true;
+
+    // ===== 控件 =====
+    std::vector<std::unique_ptr<ToggleRow>> toggles_;
+    std::vector<std::unique_ptr<MultiRow>> multiRows_;
+
+    ToggleRow* rowLevelIntro_ = nullptr;
+    MultiRow* rowLives_ = nullptr;
+
+    std::unique_ptr<TextInput> playerNameInput_;
+    sf::Text labelPlayerName_;
+};
+
 ===== ./include/scene/tabs/graphics_tab.h =====
 #pragma once
 #include "preferences.h"
@@ -14054,6 +11731,404 @@ void registerConfig(Container& container) {
             *container.require<ResourceManager>("resources"));
     });
 }
+
+===== ./src/config/keys.cpp =====
+#include "config/keys.h"
+
+namespace ConfigKey {
+namespace {
+const std::vector<const char*> kAll = {
+    ConfigKey::kUiScale,
+    ConfigKey::kFontScale,
+    ConfigKey::kTheme,
+    ConfigKey::kButtonCorner,
+    ConfigKey::kButtonOutline,
+    ConfigKey::kAnimationEnabled,
+    ConfigKey::kAnimationSpeedIndex,
+    ConfigKey::kLanguage,
+    ConfigKey::kNotificationEnabled,
+    ConfigKey::kNotificationPosition,
+    ConfigKey::kShowFps,
+    ConfigKey::kFpsFormat,
+    ConfigKey::kFpsPosition,
+    ConfigKey::kShowClock,
+    ConfigKey::kClockPosition,
+    ConfigKey::kResolutionIndex,
+    ConfigKey::kFullscreen,
+    ConfigKey::kVsync,
+    ConfigKey::kFpsLimit,
+    ConfigKey::kAntiAliasing,
+    ConfigKey::kWindowMode,
+    ConfigKey::kRememberWindowSize,
+    ConfigKey::kAutoPauseOnBlur,
+    ConfigKey::kLastWindowWidth,
+    ConfigKey::kLastWindowHeight,
+    ConfigKey::kRenderScale,
+    ConfigKey::kUpscaleMode,
+    ConfigKey::kPostSaturation,
+    ConfigKey::kPostContrast,
+    ConfigKey::kPostBrightness,
+    ConfigKey::kPostGamma,
+    ConfigKey::kPostVignette,
+    ConfigKey::kPostBloomStrength,
+    ConfigKey::kPostBloomThreshold,
+    ConfigKey::kPostChromatic,
+    ConfigKey::kPostGrain,
+    ConfigKey::kPostScanline,
+    ConfigKey::kPostDither,
+    ConfigKey::kParallax,
+    ConfigKey::kParticles,
+    ConfigKey::kPseudo3d,
+    ConfigKey::kScreenShake,
+    ConfigKey::kPlayerAnimation,
+    ConfigKey::kAudioMasterVolume,
+    ConfigKey::kAudioSoundEnabled,
+    ConfigKey::kAudioSoundVolume,
+    ConfigKey::kAudioBgmEnabled,
+    ConfigKey::kAudioBgmVolume,
+    ConfigKey::kLogLevel,
+    ConfigKey::kLogRotate,
+    ConfigKey::kLogKeep,
+    ConfigKey::kGamepadEnabled,
+    ConfigKey::kGamepadVibrationEnabled,
+    ConfigKey::kGamepadVibrationIntensity,
+    ConfigKey::kKeyLeft,
+    ConfigKey::kKeyRight,
+    ConfigKey::kKeyJump,
+    ConfigKey::kKeyPause,
+    ConfigKey::kKeyRestart,
+    ConfigKey::kCurrentWallpaper,
+    ConfigKey::kInitialLives,
+    ConfigKey::kLevelIntro,
+    ConfigKey::kPlayerName,
+    ConfigKey::kShowColliders,
+    ConfigKey::kConsoleAutoScroll,
+    ConfigKey::kConsoleBlinkCursor,
+    ConfigKey::kConsoleFontSize,
+    ConfigKey::kConsoleHistoryLines,
+    ConfigKey::kConsoleLineHeight,
+    ConfigKey::kConsoleMask,
+    ConfigKey::kConsolePanelAlpha,
+    ConfigKey::kConsolePrompt,
+    ConfigKey::kUiSoundEnabled,
+    ConfigKey::kNotificationDuration,
+    ConfigKey::kParticleDensity,
+    ConfigKey::kShakeIntensity,
+};
+} // namespace
+
+const std::vector<const char*>& allKeys() {
+    return kAll;
+}
+
+} // namespace ConfigKey
+
+===== ./src/config/portable_keys.cpp =====
+#include "config/keys.h"
+
+#include <algorithm>
+#include <array>
+#include <string>
+
+namespace ConfigKey {
+namespace {
+
+// 可以跨机器搬运的键。
+//
+// 加新键时问自己一句：**这个值换一台机器还成立吗？**
+// 跟显示器、显卡、窗口系统绑定的答案都是"不成立"。
+constexpr std::array kPortable = {
+    // 界面外观
+    kTheme,
+    kButtonCorner,
+    kButtonOutline,
+    kAnimationEnabled,
+    kAnimationSpeedIndex,
+    kNotificationEnabled,
+    kNotificationPosition,
+    kLanguage,
+    // 屏幕上的浮层
+    kShowFps,
+    kFpsFormat,
+    kFpsPosition,
+    kShowClock,
+    kClockPosition,
+    // 渲染质量
+    kRenderScale,
+    kUpscaleMode,
+    kPostSaturation,
+    kPostContrast,
+    kPostBrightness,
+    kPostGamma,
+    kPostVignette,
+    kPostBloomStrength,
+    kPostBloomThreshold,
+    kPostChromatic,
+    kPostGrain,
+    kPostScanline,
+    kPostDither,
+    // 特效开关
+    kParallax,
+    kParticles,
+    kPseudo3d,
+    kScreenShake,
+    kPlayerAnimation,
+    // 音频
+    kAudioMasterVolume,
+    kAudioSoundEnabled,
+    kAudioSoundVolume,
+    kAudioBgmEnabled,
+    kAudioBgmVolume,
+    kUiSoundEnabled,
+    // 观感强度（换台机器同样成立）
+    kNotificationDuration,
+    kParticleDensity,
+    kShakeIntensity,
+    // 手柄与键位（个人习惯，跟机器无关）
+    kGamepadEnabled,
+    kGamepadVibrationEnabled,
+    kGamepadVibrationIntensity,
+    kKeyLeft,
+    kKeyRight,
+    kKeyJump,
+    kKeyPause,
+    kKeyRestart,
+    // 玩法
+    kInitialLives,
+    kLevelIntro,
+    kPlayerName,
+    // 控制台外观
+    kConsoleAutoScroll,
+    kConsoleBlinkCursor,
+    kConsoleFontSize,
+    kConsoleHistoryLines,
+    kConsoleLineHeight,
+    kConsoleMask,
+    kConsolePanelAlpha,
+    kConsolePrompt,
+    // 日志与调试（导入别人的日志级别只是多打点日志，无害）
+    kLogLevel,
+    kLogRotate,
+    kLogKeep,
+    kShowColliders,
+};
+
+// 下面这批**故意不在**名单里，理由逐条写清楚，
+// 免得以后有人看到"少了个键"就顺手加回去：
+//
+//   kResolutionIndex / kFullscreen / kWindowMode
+//       跟这台机器的显示器与窗口系统绑定。导入别人的值可能开出一个
+//       超出屏幕、或者当前显示器不支持的窗口 —— 严重时游戏起不来。
+//   kVsync / kFpsLimit / kAntiAliasing
+//       跟显卡与显示器绑定（CLAUDE.md 的默认值表里专门列过这一条：
+//       0.3.1~0.3.3 把开发机的 vsync=false + fps_limit=0 原样发出去，
+//       新用户默认不锁帧、显卡满载空转）。
+//   kUiScale / kFontScale
+//       按屏幕尺寸与 DPI 调的。换台机器照搬可能让整个设置界面
+//       大到点不到、或者小到看不清 —— 而设置界面正是用户用来改回来的地方。
+//   kRememberWindowSize / kLastWindowWidth / kLastWindowHeight
+//       纯本机窗口状态，没有跨机器语义。
+//   kCurrentWallpaper
+//       个人口味，而且换台机器那个文件名很可能不存在。壁纸本身是
+//       内容不是设置，跟着分享码走只会让人以为"设置坏了"。
+
+} // namespace
+
+bool isPortable(const std::string& key) {
+    return std::any_of(kPortable.begin(), kPortable.end(),
+                       [&key](const char* k) { return key == k; });
+}
+
+int portableKeyCount() {
+    return static_cast<int>(kPortable.size());
+}
+
+} // namespace ConfigKey
+
+===== ./src/config/settings_codec.cpp =====
+#include "settings_codec.h"
+
+#include <cctype>
+#include <cstdint>
+#include <string>
+
+// 分享码：TS1:<base64(rle(设置文本))>
+//
+// 这里刻意不依赖 LevelCodec：两个格式的 RLE 不同（见下），而且分成两个
+// namespace 后各自的容错策略可以独立演进，不会因为改一个动了另一个。
+
+namespace {
+
+// ============ RLE ============
+// 格式：<count>:<char>
+//
+// ⚠️ 关卡那边是「<count><char>」——靠"关卡字符集里没有数字"才能定界。
+// 设置文本里数字是常态（fps_limit=144 / volume=80），沿用那个格式立刻歧义：
+// "144" 后面到底还有没有字符？所以这里显式插一个 ':' 当分隔符，读法是
+// "先读计数、再读一个 ':'、最后无条件收下一个字节" —— 字符本身是不是数字
+// 都不影响解析。
+//
+// 文本里出现 ':' 也无所谓：它只会作为"分隔符之后的那一个字节"被原样收下。
+//
+// count 有单段上限、总量也有上限：分享码是**别人粘贴进来的不可信输入**，
+// 一个几百字节的码靠 RLE 能要求解码出几个 G —— 上限让最坏情况有界，
+// 超了就按"解不开"返回空串。
+
+constexpr long kMaxRunLength = 100000;                    // 单段上限
+// 第一个操作数就用 size_t：否则乘法在 unsigned 里算完再拓宽，
+// 值一大就悄悄溢出（clang-tidy 的 implicit-widening 就是抓这个）
+constexpr std::size_t kMaxDecodedSize = std::size_t{4} * 1024 * 1024;
+
+std::string rleEncode(const std::string& s) {
+    std::string out;
+    std::size_t i = 0;
+    while (i < s.size()) {
+        const char c = s[i];
+        std::size_t j = i;
+        while (j < s.size() && s[j] == c)
+            ++j;
+        out += std::to_string(j - i);
+        out += ':';
+        out += c;
+        i = j;
+    }
+    return out;
+}
+
+std::string rleDecode(const std::string& s) {
+    std::string out;
+    std::size_t i = 0;
+    while (i < s.size()) {
+        // 计数位：必须是数字，否则这段长度字段已经坏了
+        if (!std::isdigit(static_cast<unsigned char>(s[i])))
+            return {};
+        long n = 0;
+        while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
+            n = n * 10 + (s[i] - '0');
+            ++i;
+            if (n > kMaxRunLength)
+                return {}; // 荒谬的计数，别去分配
+        }
+        // 分隔符：没有它说明长度字段被截断（或根本是别的格式）
+        if (i >= s.size() || s[i] != ':')
+            return {};
+        ++i;
+        if (i >= s.size())
+            return {}; // ':' 之后没有字符
+        const char c = s[i];
+        ++i;
+
+        if (n <= 0)
+            return {}; // "0:x" 语法合法但产不出字符，一律当坏码
+        if (out.size() + static_cast<std::size_t>(n) > kMaxDecodedSize)
+            return {};
+        out.append(static_cast<std::size_t>(n), c);
+    }
+    return out;
+}
+
+// ============ Base64 ============
+const char* kB64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+std::string b64Encode(const std::string& in) {
+    std::string out;
+    out.reserve((in.size() + 2) / 3 * 4);
+    std::size_t i = 0;
+    while (i + 2 < in.size()) {
+        std::uint32_t v = (std::uint8_t)in[i] << 16 | (std::uint8_t)in[i + 1] << 8 |
+                          (std::uint8_t)in[i + 2];
+        out += kB64[(v >> 18) & 0x3F];
+        out += kB64[(v >> 12) & 0x3F];
+        out += kB64[(v >> 6) & 0x3F];
+        out += kB64[v & 0x3F];
+        i += 3;
+    }
+    if (i < in.size()) {
+        std::uint32_t v = (std::uint8_t)in[i] << 16;
+        if (i + 1 < in.size())
+            v |= (std::uint8_t)in[i + 1] << 8;
+        out += kB64[(v >> 18) & 0x3F];
+        out += kB64[(v >> 12) & 0x3F];
+        out += (i + 1 < in.size()) ? kB64[(v >> 6) & 0x3F] : '=';
+        out += '=';
+    }
+    return out;
+}
+
+int b64Val(char c) {
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A';
+    if (c >= 'a' && c <= 'z')
+        return c - 'a' + 26;
+    if (c >= '0' && c <= '9')
+        return c - '0' + 52;
+    if (c == '+')
+        return 62;
+    if (c == '/')
+        return 63;
+    return -1; // '=' 在调用处提前收尾，其余一律非法
+}
+
+std::string b64Decode(const std::string& in) {
+    std::string out;
+    std::uint32_t buf = 0;
+    int bits = 0;
+    for (char c : in) {
+        if (c == '=')
+            break; // 与 LevelCodec 一致：补位之后的内容不再看
+        int v = b64Val(c);
+        if (v < 0)
+            return {};
+        buf = (buf << 6) | static_cast<std::uint32_t>(v);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out += static_cast<char>((buf >> bits) & 0xFF);
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+namespace SettingsCodec {
+
+// TS1: 是设置分享码；TG1: 归关卡（LevelCodec），两边不能互相认领
+constexpr const char* kPrefix = "TS1:";
+constexpr std::size_t kPrefixLen = 4;
+
+std::string encode(const std::string& settingsText) {
+    return std::string(kPrefix) + b64Encode(rleEncode(settingsText));
+}
+
+std::string decode(const std::string& code) {
+    if (code.size() < kPrefixLen)
+        return {};
+    if (code.compare(0, kPrefixLen, kPrefix) != 0)
+        return {};
+
+    // 粘贴来源（聊天软件、论坛）常把长码折行、塞空格，先丢掉这些空白。
+    // 设置文本本身在 base64 里面，不受影响 —— 所以这里丢空白是安全的。
+    std::string clean;
+    for (std::size_t i = kPrefixLen; i < code.size(); ++i) {
+        const char c = code[i];
+        if (!std::isspace(static_cast<unsigned char>(c)))
+            clean += c;
+    }
+
+    const std::string rle = b64Decode(clean);
+    if (rle.empty())
+        return {}; // 空 base64 / 混了非法字符
+    return rleDecode(rle);
+}
+
+bool isValid(const std::string& code) {
+    // 唯一权威判定就是 decode：分成两套逻辑迟早会出现"isValid 说行、
+    // decode 却解不出"的静默矛盾。
+    return !decode(code).empty();
+}
+
+} // namespace SettingsCodec
 
 ===== ./src/core/achievement.cpp =====
 #include "achievement.h"
@@ -24893,6 +22968,562 @@ void SettingsScene::render(Window& window) {
         backButton_->render(native);
     }
 }
+===== ./src/scene/settings_tab_id.cpp =====
+#include "scene/settings_tab_id.h"
+
+#include "config/keys.h"
+#include "utils/text_strings.h"
+
+#include <algorithm>
+
+namespace {
+
+// 「恢复本页默认」的做法是**把这些键从配置里删掉**，而不是往配置里写一份默认值 ——
+// 默认值只存在于读取处（`prefs_->getInt(key, default)`），删掉之后自然回落。
+// 好处是默认值永远只有一个定义，不会出现"这里改了那里没改"。
+//
+// ⚠️ 新加配置键时**必须**归到某一页，否则 tests/test_settings_tabs.cpp 会报出来
+//    （"有键没归属"正是这次重做要消灭的问题：日志级别曾经在「显示」、
+//      轮转保留在「其他」，同一个功能劈成两半）。
+const std::vector<const char*> kDisplayKeys = {
+    ConfigKey::kResolutionIndex,    ConfigKey::kFullscreen,
+    ConfigKey::kWindowMode,         ConfigKey::kVsync,
+    ConfigKey::kFpsLimit,           ConfigKey::kAntiAliasing,
+    ConfigKey::kRememberWindowSize, ConfigKey::kAutoPauseOnBlur,
+};
+
+const std::vector<const char*> kInterfaceKeys = {
+    ConfigKey::kTheme,
+    ConfigKey::kUiScale,
+    ConfigKey::kFontScale,
+    ConfigKey::kLanguage,
+    ConfigKey::kButtonCorner,
+    ConfigKey::kButtonOutline,
+    ConfigKey::kAnimationEnabled,
+    ConfigKey::kAnimationSpeedIndex,
+    ConfigKey::kNotificationEnabled,
+    ConfigKey::kNotificationPosition,
+    ConfigKey::kNotificationDuration,
+    ConfigKey::kShowFps,
+    ConfigKey::kFpsFormat,
+    ConfigKey::kFpsPosition,
+    ConfigKey::kShowClock,
+    ConfigKey::kClockPosition,
+};
+
+const std::vector<const char*> kWallpaperKeys = {
+    ConfigKey::kCurrentWallpaper,
+};
+
+const std::vector<const char*> kGraphicsKeys = {
+    ConfigKey::kRenderScale,        ConfigKey::kUpscaleMode,
+    ConfigKey::kPostSaturation,     ConfigKey::kPostContrast,
+    ConfigKey::kPostBrightness,     ConfigKey::kPostGamma,
+    ConfigKey::kPostVignette,       ConfigKey::kPostBloomStrength,
+    ConfigKey::kPostBloomThreshold, ConfigKey::kPostChromatic,
+    ConfigKey::kPostGrain,          ConfigKey::kPostScanline,
+    ConfigKey::kPostDither,         ConfigKey::kParallax,
+    ConfigKey::kParticles,          ConfigKey::kParticleDensity,
+    ConfigKey::kPseudo3d,           ConfigKey::kScreenShake,
+    ConfigKey::kShakeIntensity,     ConfigKey::kPlayerAnimation,
+};
+
+const std::vector<const char*> kAudioKeys = {
+    ConfigKey::kAudioMasterVolume, ConfigKey::kAudioSoundEnabled,
+    ConfigKey::kAudioSoundVolume,  ConfigKey::kAudioBgmEnabled,
+    ConfigKey::kAudioBgmVolume,    ConfigKey::kUiSoundEnabled,
+};
+
+const std::vector<const char*> kControlsKeys = {
+    ConfigKey::kKeyLeft,
+    ConfigKey::kKeyRight,
+    ConfigKey::kKeyJump,
+    ConfigKey::kKeyPause,
+    ConfigKey::kKeyRestart,
+    ConfigKey::kGamepadEnabled,
+    ConfigKey::kGamepadVibrationEnabled,
+    ConfigKey::kGamepadVibrationIntensity,
+};
+
+const std::vector<const char*> kGameKeys = {
+    ConfigKey::kInitialLives,
+    ConfigKey::kLevelIntro,
+    ConfigKey::kPlayerName,
+};
+
+const std::vector<const char*> kConsoleKeys = {
+    ConfigKey::kConsoleAutoScroll, ConfigKey::kConsoleBlinkCursor,
+    ConfigKey::kConsoleFontSize,   ConfigKey::kConsoleHistoryLines,
+    ConfigKey::kConsoleLineHeight, ConfigKey::kConsoleMask,
+    ConfigKey::kConsolePanelAlpha, ConfigKey::kConsolePrompt,
+};
+
+const std::vector<const char*> kAdvancedKeys = {
+    ConfigKey::kLogLevel,
+    ConfigKey::kLogRotate,
+    ConfigKey::kLogKeep,
+    ConfigKey::kShowColliders,
+};
+
+} // namespace
+
+// 不在任何一页的键。目前只有窗口几何状态 —— 它由窗口逻辑自己写，
+// 不是用户能"设置"的东西，所以不该出现在设置界面里，也不需要"恢复默认"。
+// 注意它**故意放在匿名 namespace 外面**：测试要拿它区分
+// "忘了归类"（报错）与"有意不归类"（放行）。
+const std::vector<const char*>& unownedKeys() {
+    static const std::vector<const char*> kUnowned = {
+        ConfigKey::kLastWindowWidth,
+        ConfigKey::kLastWindowHeight,
+    };
+    return kUnowned;
+}
+
+const char* settingsTabLabel(SettingsTab t) {
+    switch (t) {
+    case SettingsTab::Display:
+        return Str::TabDisplay;
+    case SettingsTab::Interface:
+        return Str::TabInterface;
+    case SettingsTab::Wallpaper:
+        return Str::LabelWallpaper;
+    case SettingsTab::Graphics:
+        return Str::TabGraphics;
+    case SettingsTab::Audio:
+        return Str::TabAudioLog;
+    case SettingsTab::Controls:
+        return Str::TabControls;
+    case SettingsTab::Game:
+        return Str::TabGame;
+    case SettingsTab::Console:
+        return Str::TabConsole;
+    case SettingsTab::Advanced:
+        return Str::TabAdvanced;
+    default:
+        return "";
+    }
+}
+
+const std::vector<const char*>& keysForTab(SettingsTab t) {
+    switch (t) {
+    case SettingsTab::Display:
+        return kDisplayKeys;
+    case SettingsTab::Interface:
+        return kInterfaceKeys;
+    case SettingsTab::Wallpaper:
+        return kWallpaperKeys;
+    case SettingsTab::Graphics:
+        return kGraphicsKeys;
+    case SettingsTab::Audio:
+        return kAudioKeys;
+    case SettingsTab::Controls:
+        return kControlsKeys;
+    case SettingsTab::Game:
+        return kGameKeys;
+    case SettingsTab::Console:
+        return kConsoleKeys;
+    case SettingsTab::Advanced:
+        return kAdvancedKeys;
+    default:
+        return unownedKeys();
+    }
+}
+
+std::optional<SettingsTab> tabForKey(const std::string& key) {
+    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
+        const auto t = static_cast<SettingsTab>(i);
+        const auto& keys = keysForTab(t);
+        if (std::find(keys.begin(), keys.end(), key) != keys.end())
+            return t;
+    }
+    return std::nullopt;
+}
+
+===== ./src/scene/tabs/advanced_tab.cpp =====
+#include "tabs/advanced_tab.h"
+
+#include "config/keys.h"
+#include "config/settings_codec.h"
+#include "core/platform.h"
+#include "log/rotation.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <SFML/Window/Clipboard.hpp>
+
+#include <algorithm>
+#include <functional>
+#include <string>
+
+namespace {
+
+constexpr float kRowH = 50.f;
+
+const LogLevel kLevels[] = {LogLevel::Trace, LogLevel::Debug, LogLevel::Info,
+                            LogLevel::Warn, LogLevel::Error};
+constexpr int kLevelCount = 5;
+const char* kLevelLabels[] = {"Trace", "Debug", "Info", "Warn", "Error"};
+
+// 展示用的标签。档位取值范围本身由日志层维护（log/rotation.h 是权威来源），
+// UI 只保留展示标签 —— 两边各存一份档位表迟早漂移。
+const char* kRotateLabels[] = {"无限", "1MB", "5MB", "10MB"};
+static_assert(kLogRotationSteps == 4, "标签表必须与日志层的档位数一致");
+
+int indexOfLevel(int l) {
+    for (int i = 0; i < kLevelCount; ++i)
+        if (static_cast<int>(kLevels[i]) == l)
+            return i;
+    return 2; // Info
+}
+
+} // namespace
+
+AdvancedTab::AdvancedTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                         std::shared_ptr<Logger> logger, std::shared_ptr<Paths> paths)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        logger_(std::move(logger)),
+        paths_(std::move(paths)),
+        labelLog_(font, sf::String(), scaledFontSize(18)),
+        labelOpen_(font, sf::String(), scaledFontSize(20)),
+        labelShare_(font, sf::String(), scaledFontSize(20)),
+        labelCode_(font, sf::String(), scaledFontSize(18)),
+        hintText_(font, sf::String(), scaledFontSize(16)),
+        statusText_(font, sf::String(), scaledFontSize(18)) {
+    auto softColor = sf::Color(180, 180, 200);
+    hintText_.setFillColor(softColor);
+    labelCode_.setFillColor(softColor);
+    statusText_.setFillColor(sf::Color(150, 220, 150));
+
+    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
+        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
+        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        toggles_.push_back(std::move(row));
+        return toggles_.back().get();
+    };
+    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
+        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
+        multiRows_.push_back(std::move(row));
+        return multiRows_.back().get();
+    };
+
+    rowLogLevel_ = addMulti(Str::LabelLogLevel, [this](int i) {
+        logLevel_ = static_cast<int>(kLevels[i]);
+        refreshSelection();
+        prefs_->setInt(ConfigKey::kLogLevel, logLevel_);
+    });
+    for (int i = 0; i < kLevelCount; ++i)
+        rowLogLevel_->addButton(std::make_unique<Button>(kLevelLabels[i], font_,
+                                                         sf::Vector2f{0.f, 0.f},
+                                                         sf::Vector2f{86.f, 40.f}, 18));
+
+    rowLogRotate_ = addMulti(Str::LabelLogRotate, [this](int i) {
+        logRotateIdx_ = i;
+        refreshSelection();
+        applyLogRotation();
+    });
+    for (int i = 0; i < kLogRotationSteps; ++i)
+        rowLogRotate_->addButton(std::make_unique<Button>(kRotateLabels[i], font_,
+                                                          sf::Vector2f{0.f, 0.f},
+                                                          sf::Vector2f{86.f, 40.f}, 18));
+
+    rowLogKeep_ = addMulti(Str::LabelLogKeep, [this](int i) {
+        logKeepIdx_ = i;
+        refreshSelection();
+        applyLogRotation();
+    });
+    for (int i = 0; i < kLogRotationSteps; ++i)
+        rowLogKeep_->addButton(std::make_unique<Button>(
+            std::to_string(logRotationKeepAt(i)), font_, sf::Vector2f{0.f, 0.f},
+            sf::Vector2f{86.f, 40.f}, 18));
+
+    rowColliders_ = addToggle(Str::LabelShowColliders, [this](bool v) {
+        showColliders_ = v;
+        refreshSelection();
+        prefs_->setBool(ConfigKey::kShowColliders, v);
+    });
+
+    openConfigButton_ =
+        std::make_unique<Button>(Str::ButtonOpenConfigDir, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{190.f, 40.f}, 17);
+    openLogButton_ =
+        std::make_unique<Button>(Str::ButtonOpenLogDir, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{190.f, 40.f}, 17);
+    exportButton_ =
+        std::make_unique<Button>(Str::ButtonExportSettings, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{150.f, 40.f}, 17);
+    importButton_ =
+        std::make_unique<Button>(Str::ButtonImportSettings, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{150.f, 40.f}, 17);
+
+    // 分享码最长能到几千字符（60 多项设置 base64 之后），maxLength 给足。
+    // 框里显示的就是当前可导出的码 / 待导入的码，剪贴板只是方便路径。
+    codeInput_ = std::make_unique<TextInput>(font_, sf::Vector2f{0.f, 0.f},
+                                             sf::Vector2f{420.f, 40.f},
+                                             Str::ShareCodePlaceholder, 15, 8192);
+
+    loadFromPrefs();
+    refreshLabels();
+    refreshSelection();
+}
+
+void AdvancedTab::loadFromPrefs() {
+    logLevel_ = prefs_->getInt(ConfigKey::kLogLevel, static_cast<int>(LogLevel::Info));
+    logRotateIdx_ = clampLogRotationIndex(prefs_->getInt(ConfigKey::kLogRotate, 0));
+    logKeepIdx_ = clampLogKeepIndex(prefs_->getInt(ConfigKey::kLogKeep, 1));
+    showColliders_ = prefs_->getBool(ConfigKey::kShowColliders, false);
+}
+
+void AdvancedTab::applyLogRotation() {
+    logger_->setRotation(logRotationSizeAt(logRotateIdx_),
+                         logRotationKeepAt(logKeepIdx_));
+    prefs_->setInt(ConfigKey::kLogRotate, logRotateIdx_);
+    prefs_->setInt(ConfigKey::kLogKeep, logKeepIdx_);
+}
+
+void AdvancedTab::doExport() {
+    const std::string code = SettingsCodec::encode(prefs_->exportPortable());
+    if (code.empty()) {
+        status_ = Str::T(Str::ShareExportFailed);
+        return;
+    }
+    codeInput_->setText(code);
+
+    // 剪贴板是"顺手"路径：某些环境（无剪贴板服务）拿不到也无所谓，
+    // 文本框里已经有码，用户可以自己选中复制。
+    sf::Clipboard::setString(sf::String::fromUtf8(code.begin(), code.end()));
+
+    status_ = std::string(Str::T(Str::ShareExported)) + " (" +
+              std::to_string(ConfigKey::portableKeyCount()) + ")";
+}
+
+void AdvancedTab::doImport() {
+    const std::string decoded = SettingsCodec::decode(codeInput_->text());
+    if (decoded.empty()) {
+        status_ = Str::T(Str::ShareImportInvalid);
+        return;
+    }
+
+    const int applied = prefs_->applyPortable(decoded);
+    if (applied <= 0) {
+        // 码本身是合法的，但里面一条可携带的键都没有 —— 多半是把别的
+        // 游戏的码或者空设置码粘进来了，说清楚比"导入成功 0 项"友好
+        status_ = Str::T(Str::ShareImportEmpty);
+        return;
+    }
+
+    status_ = std::string(Str::T(Str::ShareImported)) + " " + std::to_string(applied) +
+              " " + Str::T(Str::ShareImportedUnit);
+    // 一批设置在启动阶段就固化了（分辨率、字体缩放、着色器…），
+    // 和「恢复默认设置」一样走"退出后下次启动生效"。
+    restartRequested_ = true;
+
+    // 把界面上的选中态同步到刚导入的值
+    loadFromPrefs();
+    refreshSelection();
+}
+
+bool AdvancedTab::consumeRestartRequest() {
+    const bool r = restartRequested_;
+    restartRequested_ = false;
+    return r;
+}
+
+void AdvancedTab::refreshLabels() {
+    for (auto& row : toggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+    for (auto& row : multiRows_)
+        row->refreshLabel();
+
+    labelLog_.setString(toSf(Str::T(Str::LabelAdvancedLog)));
+    labelOpen_.setString(toSf(Str::T(Str::LabelAdvancedFiles)));
+    labelShare_.setString(toSf(Str::T(Str::LabelShareSettings)));
+    hintText_.setString(toSf(Str::T(Str::HintAdvanced)));
+    codeInput_->setPlaceholder(Str::ShareCodePlaceholder);
+    if (status_.empty())
+        labelCode_.setString(toSf(Str::T(Str::LabelShareCode)));
+}
+
+void AdvancedTab::refreshSelection() {
+    if (rowColliders_) {
+        rowColliders_->currentValue = showColliders_;
+        rowColliders_->onButton->setSelected(showColliders_);
+        rowColliders_->offButton->setSelected(!showColliders_);
+    }
+    if (rowLogLevel_)
+        rowLogLevel_->setSelected(indexOfLevel(logLevel_));
+    if (rowLogRotate_)
+        rowLogRotate_->setSelected(logRotateIdx_);
+    if (rowLogKeep_)
+        rowLogKeep_->setSelected(logKeepIdx_);
+}
+
+void AdvancedTab::handleEvent(const sf::Event& ev) {
+    for (auto& row : toggles_) {
+        row->onButton->handleEvent(ev);
+        row->offButton->handleEvent(ev);
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
+    openConfigButton_->handleEvent(ev);
+    openLogButton_->handleEvent(ev);
+    exportButton_->handleEvent(ev);
+    importButton_->handleEvent(ev);
+    codeInput_->handleEvent(ev);
+}
+
+void AdvancedTab::update() {
+    for (auto& row : toggles_) {
+        if (row->onButton->consumeClick() && !row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(true);
+            return;
+        }
+        if (row->offButton->consumeClick() && row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(false);
+            return;
+        }
+    }
+    for (auto& row : multiRows_) {
+        for (size_t i = 0; i < row->buttons.size(); ++i) {
+            if (row->buttons[i]->consumeClick()) {
+                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
+                    row->onSelected(static_cast<int>(i));
+                return;
+            }
+        }
+    }
+
+    if (openConfigButton_->consumeClick()) {
+        const bool ok = Platform::openDirectory(paths_->configDir());
+        status_ = ok ? Str::T(Str::ShareOpenedDir) : Str::T(Str::ShareOpenDirFailed);
+    }
+    if (openLogButton_->consumeClick()) {
+        // 日志就落在配置目录里（log/bootstrap.cpp 用的 configDir()/app.log）
+        const bool ok = Platform::openDirectory(paths_->configDir());
+        status_ = ok ? Str::T(Str::ShareOpenedDir) : Str::T(Str::ShareOpenDirFailed);
+    }
+    if (exportButton_->consumeClick())
+        doExport();
+    if (importButton_->consumeClick())
+        doImport();
+}
+
+void AdvancedTab::registerFocus(std::vector<Button*>& out) {
+    for (auto& row : toggles_) {
+        out.push_back(row->onButton.get());
+        out.push_back(row->offButton.get());
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
+    out.push_back(openConfigButton_.get());
+    out.push_back(openLogButton_.get());
+    out.push_back(exportButton_.get());
+    out.push_back(importButton_.get());
+}
+
+bool AdvancedTab::anyEditing() const {
+    return codeInput_ && codeInput_->isFocused();
+}
+
+float AdvancedTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
+                          float startY) {
+    float y = startY;
+
+    auto drawToggle = [&](ToggleRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        row.onButton->setPosition({ctrlX, y});
+        row.offButton->setPosition({ctrlX + 96.f, y});
+        row.onButton->render(target);
+        row.offButton->render(target);
+        y += kRowH;
+    };
+    auto drawMulti = [&](MultiRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        for (size_t i = 0; i < row.buttons.size(); ++i) {
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->render(target);
+        }
+        y += kRowH;
+    };
+
+    // 页首说明：这一页是给排查问题用的，普通玩家不用动
+    hintText_.setPosition({contentX, y});
+    target.draw(hintText_);
+    y += 30.f;
+
+    if (rowLogLevel_)
+        drawMulti(*rowLogLevel_);
+    if (rowLogRotate_)
+        drawMulti(*rowLogRotate_);
+    if (rowLogKeep_)
+        drawMulti(*rowLogKeep_);
+    if (rowColliders_)
+        drawToggle(*rowColliders_);
+
+    // ---- 打开目录 ----
+    if (openConfigButton_ && openLogButton_) {
+        labelOpen_.setPosition({contentX, y + 8.f});
+        target.draw(labelOpen_);
+        openConfigButton_->setPosition({ctrlX, y});
+        openLogButton_->setPosition({ctrlX + 200.f, y});
+        openConfigButton_->render(target);
+        openLogButton_->render(target);
+        y += kRowH;
+    }
+
+    // ---- 导出 / 导入 ----
+    if (exportButton_ && importButton_) {
+        labelShare_.setPosition({contentX, y + 8.f});
+        target.draw(labelShare_);
+        exportButton_->setPosition({ctrlX, y});
+        importButton_->setPosition({ctrlX + 160.f, y});
+        exportButton_->render(target);
+        importButton_->render(target);
+        y += kRowH;
+    }
+
+    // ---- 分享码文本框 ----
+    if (codeInput_) {
+        labelCode_.setPosition({contentX, y + 8.f});
+        target.draw(labelCode_);
+        codeInput_->setPosition({ctrlX, y});
+        codeInput_->setSize({420.f, 40.f});
+        codeInput_->render(target);
+        y += kRowH + 6.f;
+    }
+
+    // ---- 上次操作的结果 ----
+    if (!status_.empty()) {
+        statusText_.setString(toSf(status_));
+        statusText_.setPosition({contentX, y});
+        target.draw(statusText_);
+        y += 30.f;
+    }
+
+    return y + 20.f;
+}
+
+void AdvancedTab::reapply() {
+    loadFromPrefs();
+    applyLogRotation(); // 日志轮转要立刻作用到 Logger 上
+    refreshSelection();
+}
+
 ===== ./src/scene/tabs/audio_tab.cpp =====
 #include "tabs/audio_tab.h"
 #include "utils/text_strings.h"
@@ -25146,6 +23777,641 @@ void AudioTab::reapply() {
     applySound();
     applyBGM();
     applyUiSound();
+    refreshSelection();
+}
+
+===== ./src/scene/tabs/console_tab.cpp =====
+#include "tabs/console_tab.h"
+
+#include "config/keys.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <algorithm>
+
+namespace {
+
+constexpr float kRowH = 50.f;
+
+const int kFonts[] = {14, 18, 22, 26};
+constexpr int kFontCount = 4;
+const char* kFontLabels[] = {"小", "中", "大", "特大"};
+
+const int kHistory[] = {50, 100, 200, 500};
+constexpr int kHistoryCount = 4;
+
+const int kLineHeights[] = {20, 26, 32};
+constexpr int kLineHeightCount = 3;
+const char* kLineHeightLabels[] = {"紧凑", "正常", "宽松"};
+
+const char* kPromptLabels[] = {">", "$", "λ", "❯"};
+constexpr int kPromptCount = 4;
+
+int indexOfFont(int f) {
+    for (int i = 0; i < kFontCount; ++i)
+        if (kFonts[i] == f)
+            return i;
+    return 1;
+}
+int indexOfHistory(int n) {
+    for (int i = 0; i < kHistoryCount; ++i)
+        if (kHistory[i] == n)
+            return i;
+    return 2;
+}
+int indexOfLineHeight(int h) {
+    for (int i = 0; i < kLineHeightCount; ++i)
+        if (kLineHeights[i] == h)
+            return i;
+    return 1;
+}
+int indexOfPrompt(int i) {
+    return (i < 0 || i >= kPromptCount) ? 0 : i;
+}
+
+} // namespace
+
+ConsoleTab::ConsoleTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        labelMask_(font, sf::String(), scaledFontSize(20)),
+        labelPanelAlpha_(font, sf::String(), scaledFontSize(20)) {
+    auto labelColor = sf::Color(230, 230, 230);
+    labelMask_.setFillColor(labelColor);
+    labelPanelAlpha_.setFillColor(labelColor);
+
+    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
+        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
+        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        toggles_.push_back(std::move(row));
+        return toggles_.back().get();
+    };
+    // ⚠️ 返回的是裸指针，但它是**堆上那个对象**的地址，缓存下来是安全的：
+    //    vector 扩容搬的是 unique_ptr 本身，指向的 MultiRow 不会跟着动。
+    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
+        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
+        multiRows_.push_back(std::move(row));
+        return multiRows_.back().get();
+    };
+
+    rowFont_ = addMulti(Str::LabelConsoleFont, [this](int i) {
+        fontSize_ = kFonts[i];
+        refreshSelection();
+        applyFont();
+    });
+    for (int i = 0; i < kFontCount; ++i)
+        rowFont_->addButton(std::make_unique<Button>(
+            kFontLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+
+    rowHistory_ = addMulti(Str::LabelConsoleHistory, [this](int i) {
+        historyLines_ = kHistory[i];
+        refreshSelection();
+        applyHistory();
+    });
+    for (int i = 0; i < kHistoryCount; ++i)
+        rowHistory_->addButton(std::make_unique<Button>(std::to_string(kHistory[i]),
+                                                        font_, sf::Vector2f{0.f, 0.f},
+                                                        sf::Vector2f{86.f, 40.f}, 18));
+
+    rowLineHeight_ = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
+        lineHeight_ = kLineHeights[i];
+        refreshSelection();
+        applyLineHeight();
+    });
+    for (int i = 0; i < kLineHeightCount; ++i)
+        rowLineHeight_->addButton(std::make_unique<Button>(kLineHeightLabels[i], font_,
+                                                           sf::Vector2f{0.f, 0.f},
+                                                           sf::Vector2f{86.f, 40.f}, 18));
+
+    rowPrompt_ = addMulti(Str::LabelConsolePrompt, [this](int i) {
+        promptIdx_ = i;
+        refreshSelection();
+        applyPrompt();
+    });
+    rowPrompt_->stepX = 70.f;
+    for (int i = 0; i < kPromptCount; ++i)
+        rowPrompt_->addButton(std::make_unique<Button>(kPromptLabels[i], font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{60.f, 40.f}, 18));
+
+    rowAutoScroll_ = addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
+        autoScroll_ = v;
+        refreshSelection();
+        prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
+    });
+    rowBlink_ = addToggle(Str::LabelConsoleBlink, [this](bool v) {
+        blinkCursor_ = v;
+        refreshSelection();
+        prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
+    });
+
+    maskSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(mask_),
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    maskSlider_->setDefaultValue(160.f);
+
+    panelAlphaSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(panelAlpha_),
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    panelAlphaSlider_->setDefaultValue(220.f);
+
+    loadFromPrefs();
+    refreshLabels();
+    refreshSelection();
+}
+
+void ConsoleTab::loadFromPrefs() {
+    fontSize_ = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
+    historyLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
+    lineHeight_ = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
+    promptIdx_ = indexOfPrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
+    autoScroll_ = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
+    blinkCursor_ = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
+    mask_ = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
+    panelAlpha_ = std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
+
+    maskSlider_->setValue(static_cast<float>(mask_));
+    panelAlphaSlider_->setValue(static_cast<float>(panelAlpha_));
+}
+
+void ConsoleTab::applyFont() {
+    prefs_->setInt(ConfigKey::kConsoleFontSize, fontSize_);
+}
+void ConsoleTab::applyHistory() {
+    prefs_->setInt(ConfigKey::kConsoleHistoryLines, historyLines_);
+}
+void ConsoleTab::applyLineHeight() {
+    prefs_->setInt(ConfigKey::kConsoleLineHeight, lineHeight_);
+}
+void ConsoleTab::applyPrompt() {
+    prefs_->setInt(ConfigKey::kConsolePrompt, promptIdx_);
+}
+
+void ConsoleTab::refreshLabels() {
+    for (auto& row : toggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+    for (auto& row : multiRows_)
+        row->refreshLabel();
+
+    labelMask_.setString(toSf(Str::T(Str::LabelConsoleMask)));
+    labelPanelAlpha_.setString(toSf(Str::T(Str::LabelConsolePanelAlpha)));
+}
+
+void ConsoleTab::refreshSelection() {
+    auto setToggle = [](ToggleRow* row, bool v) {
+        if (!row)
+            return;
+        row->currentValue = v;
+        row->onButton->setSelected(v);
+        row->offButton->setSelected(!v);
+    };
+    setToggle(rowAutoScroll_, autoScroll_);
+    setToggle(rowBlink_, blinkCursor_);
+
+    if (rowFont_)
+        rowFont_->setSelected(indexOfFont(fontSize_));
+    if (rowHistory_)
+        rowHistory_->setSelected(indexOfHistory(historyLines_));
+    if (rowLineHeight_)
+        rowLineHeight_->setSelected(indexOfLineHeight(lineHeight_));
+    if (rowPrompt_)
+        rowPrompt_->setSelected(promptIdx_);
+}
+
+void ConsoleTab::handleEvent(const sf::Event& ev) {
+    for (auto& row : toggles_) {
+        row->onButton->handleEvent(ev);
+        row->offButton->handleEvent(ev);
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
+    maskSlider_->handleEvent(ev);
+    panelAlphaSlider_->handleEvent(ev);
+}
+
+void ConsoleTab::update() {
+    for (auto& row : toggles_) {
+        if (row->onButton->consumeClick() && !row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(true);
+            return;
+        }
+        if (row->offButton->consumeClick() && row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(false);
+            return;
+        }
+    }
+    for (auto& row : multiRows_) {
+        for (size_t i = 0; i < row->buttons.size(); ++i) {
+            if (row->buttons[i]->consumeClick()) {
+                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
+                    row->onSelected(static_cast<int>(i));
+                return;
+            }
+        }
+    }
+    if (maskSlider_->consumeChanged()) {
+        mask_ = static_cast<int>(maskSlider_->value());
+        prefs_->setInt(ConfigKey::kConsoleMask, mask_);
+    }
+    if (panelAlphaSlider_->consumeChanged()) {
+        panelAlpha_ = static_cast<int>(panelAlphaSlider_->value());
+        prefs_->setInt(ConfigKey::kConsolePanelAlpha, panelAlpha_);
+    }
+}
+
+void ConsoleTab::registerFocus(std::vector<Button*>& out) {
+    for (auto& row : toggles_) {
+        out.push_back(row->onButton.get());
+        out.push_back(row->offButton.get());
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
+}
+
+bool ConsoleTab::anyEditing() const {
+    if (maskSlider_ && maskSlider_->isEditing())
+        return true;
+    if (panelAlphaSlider_ && panelAlphaSlider_->isEditing())
+        return true;
+    return false;
+}
+
+float ConsoleTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
+                         float startY) {
+    float y = startY;
+
+    auto drawToggle = [&](ToggleRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        row.onButton->setPosition({ctrlX, y});
+        row.offButton->setPosition({ctrlX + 96.f, y});
+        row.onButton->render(target);
+        row.offButton->render(target);
+        y += kRowH;
+    };
+    auto drawMulti = [&](MultiRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        for (size_t i = 0; i < row.buttons.size(); ++i) {
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->render(target);
+        }
+        y += kRowH;
+    };
+    auto drawSlider = [&](sf::Text& label, Slider& slider) {
+        label.setPosition({contentX, y + 4.f});
+        target.draw(label);
+        slider.setPosition({ctrlX, y + 4.f});
+        slider.render(target);
+        y += kRowH;
+    };
+
+    drawSlider(labelMask_, *maskSlider_);
+    drawSlider(labelPanelAlpha_, *panelAlphaSlider_);
+    if (rowFont_)
+        drawMulti(*rowFont_);
+    if (rowHistory_)
+        drawMulti(*rowHistory_);
+    if (rowLineHeight_)
+        drawMulti(*rowLineHeight_);
+    if (rowAutoScroll_)
+        drawToggle(*rowAutoScroll_);
+    if (rowBlink_)
+        drawToggle(*rowBlink_);
+    if (rowPrompt_)
+        drawMulti(*rowPrompt_);
+
+    return y;
+}
+
+void ConsoleTab::reapply() {
+    // 控制台外观在打开控制台时读，没有需要即时改的全局状态
+    loadFromPrefs();
+    refreshSelection();
+}
+
+===== ./src/scene/tabs/controls_tab.cpp =====
+#include "tabs/controls_tab.h"
+
+#include "config/keys.h"
+#include "focus_group.h"
+#include "infrastructure/gamepad.h"
+#include "sound_manager.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <functional>
+
+namespace {
+
+constexpr float kRowH = 50.f;
+
+/// 动作 → 配置键。
+///
+/// ⚠️ 以前这里是裸字面量 `"key_left"`，违反项目自己的约定
+///    （CLAUDE.md 关键约定 #6：键名必须走 keys.h 常量）。
+///    字面量打错字不会报错，只会**静默回退默认键位** ——
+///    用户改完键位重启发现白改了，还找不到原因。
+const char* prefKeyOf(KeyBindings::Action a) {
+    switch (a) {
+    case KeyBindings::MoveLeft:
+        return ConfigKey::kKeyLeft;
+    case KeyBindings::MoveRight:
+        return ConfigKey::kKeyRight;
+    case KeyBindings::Jump:
+        return ConfigKey::kKeyJump;
+    case KeyBindings::Pause:
+        return ConfigKey::kKeyPause;
+    case KeyBindings::Restart:
+        return ConfigKey::kKeyRestart;
+    default:
+        return nullptr;
+    }
+}
+
+} // namespace
+
+ControlsTab::ControlsTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        hintText_(font, sf::String(), scaledFontSize(14)),
+        labelVibrationIntensity_(font, sf::String(), scaledFontSize(20)) {
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        auto btn = std::make_unique<Button>(
+            KeyBindings::keyToString(
+                KeyBindings::instance().get(static_cast<KeyBindings::Action>(i))),
+            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 40.f}, 18);
+        keyBindingButtons_.push_back(std::move(btn));
+
+        auto label = std::make_unique<sf::Text>(font, sf::String(), scaledFontSize(20));
+        label->setFillColor(sf::Color(230, 230, 230));
+        keyLabels_.push_back(std::move(label));
+    }
+
+    hintText_.setFillColor(sf::Color(180, 180, 200));
+    labelVibrationIntensity_.setFillColor(sf::Color(230, 230, 230));
+
+    resetKeysButton_ =
+        std::make_unique<Button>(Str::ButtonResetKeys, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{180.f, 40.f}, 18);
+
+    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
+        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
+        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        toggles_.push_back(std::move(row));
+        return toggles_.back().get();
+    };
+
+    rowGamepad_ = addToggle(Str::LabelGamepad, [this](bool v) {
+        gamepadEnabled_ = v;
+        refreshSelection();
+        applyGamepad();
+    });
+    rowVibration_ = addToggle(Str::LabelGamepadVibration, [this](bool v) {
+        gamepadVibrationEnabled_ = v;
+        refreshSelection();
+        applyGamepadVibration();
+    });
+
+    vibrationSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 100.f, gamepadVibrationIntensity_ * 100.f,
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    vibrationSlider_->setDefaultValue(100.f);
+
+    loadFromPrefs();
+    refreshLabels();
+    refreshSelection();
+}
+
+void ControlsTab::loadFromPrefs() {
+    gamepadEnabled_ = prefs_->getBool(ConfigKey::kGamepadEnabled, true);
+    gamepadVibrationEnabled_ = prefs_->getBool(ConfigKey::kGamepadVibrationEnabled, true);
+    gamepadVibrationIntensity_ =
+        static_cast<float>(prefs_->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0));
+}
+
+void ControlsTab::applyGamepad() {
+    prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
+    FocusGroup::instance().setEnabled(gamepadEnabled_);
+}
+
+void ControlsTab::applyGamepadVibration() {
+    prefs_->setBool(ConfigKey::kGamepadVibrationEnabled, gamepadVibrationEnabled_);
+    Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
+}
+
+void ControlsTab::applyResetKeys() {
+    KeyBindings::instance().resetToDefaults();
+    // 必须把 5 个键都落盘 —— 只重置内存里的表，重启又会读回旧键位
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        const auto act = static_cast<KeyBindings::Action>(i);
+        if (const char* k = prefKeyOf(act))
+            prefs_->setInt(k, static_cast<int>(KeyBindings::instance().get(act)));
+    }
+    listeningAction_ = -1;
+    refreshLabels();
+}
+
+void ControlsTab::refreshBindingText() {
+    if (listeningAction_ >= 0)
+        return; // 正在监听时不覆盖提示文字
+    for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
+        const auto act = static_cast<KeyBindings::Action>(i);
+        keyBindingButtons_[i]->setText(
+            KeyBindings::keyToString(KeyBindings::instance().get(act)));
+    }
+}
+
+void ControlsTab::handleEvent(const sf::Event& ev) {
+    // 监听中：按下的下一个键就是新绑定
+    if (listeningAction_ >= 0) {
+        if (const auto* kp = ev.getIf<sf::Event::KeyPressed>()) {
+            if (kp->code == sf::Keyboard::Key::Escape) {
+                listeningAction_ = -1;
+                refreshBindingText();
+                return;
+            }
+            const auto act = static_cast<KeyBindings::Action>(listeningAction_);
+            KeyBindings::instance().set(act, kp->code);
+            if (const char* k = prefKeyOf(act))
+                prefs_->setInt(k, static_cast<int>(kp->code));
+
+            listeningAction_ = -1;
+            refreshBindingText();
+            return;
+        }
+        return; // 监听中不转发其它事件
+    }
+
+    for (auto& b : keyBindingButtons_)
+        b->handleEvent(ev);
+    resetKeysButton_->handleEvent(ev);
+    for (auto& row : toggles_) {
+        row->onButton->handleEvent(ev);
+        row->offButton->handleEvent(ev);
+    }
+    vibrationSlider_->handleEvent(ev);
+}
+
+void ControlsTab::update() {
+    if (listeningAction_ < 0) {
+        for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
+            if (keyBindingButtons_[i]->consumeClick()) {
+                listeningAction_ = i;
+                keyBindingButtons_[i]->setText(Str::T(Str::KeyPressNew));
+                return;
+            }
+        }
+        if (resetKeysButton_->consumeClick()) {
+            applyResetKeys();
+            SoundManager::instance().playClick();
+            return;
+        }
+    }
+
+    for (auto& row : toggles_) {
+        if (row->onButton->consumeClick() && !row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(true);
+            return;
+        }
+        if (row->offButton->consumeClick() && row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(false);
+            return;
+        }
+    }
+
+    if (vibrationSlider_->consumeChanged()) {
+        gamepadVibrationIntensity_ = vibrationSlider_->value() / 100.f;
+        Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
+        prefs_->setDouble(ConfigKey::kGamepadVibrationIntensity,
+                          gamepadVibrationIntensity_);
+    }
+}
+
+void ControlsTab::refreshLabels() {
+    for (int i = 0; i < static_cast<int>(keyLabels_.size()); ++i) {
+        const auto act = static_cast<KeyBindings::Action>(i);
+        keyLabels_[i]->setString(toSf(Str::T(KeyBindings::actionName(act))));
+    }
+    hintText_.setString(toSf(Str::T(Str::KeyBindHint)));
+    resetKeysButton_->setText(Str::T(Str::ButtonResetKeys));
+    labelVibrationIntensity_.setString(toSf(Str::T(Str::LabelVibrationIntensity)));
+
+    for (auto& row : toggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+
+    if (listeningAction_ >= 0)
+        keyBindingButtons_[listeningAction_]->setText(Str::T(Str::KeyPressNew));
+    else
+        refreshBindingText();
+}
+
+void ControlsTab::refreshSelection() {
+    auto setRow = [](ToggleRow* row, bool v) {
+        if (!row)
+            return;
+        row->currentValue = v;
+        row->onButton->setSelected(v);
+        row->offButton->setSelected(!v);
+    };
+    setRow(rowGamepad_, gamepadEnabled_);
+    setRow(rowVibration_, gamepadVibrationEnabled_);
+    vibrationSlider_->setValue(gamepadVibrationIntensity_ * 100.f);
+}
+
+void ControlsTab::registerFocus(std::vector<Button*>& out) {
+    for (auto& b : keyBindingButtons_)
+        out.push_back(b.get());
+    out.push_back(resetKeysButton_.get());
+    for (auto& row : toggles_) {
+        out.push_back(row->onButton.get());
+        out.push_back(row->offButton.get());
+    }
+}
+
+bool ControlsTab::anyEditing() const {
+    return vibrationSlider_ && vibrationSlider_->isEditing();
+}
+
+float ControlsTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
+                          float startY) {
+    float y = startY;
+
+    // ---- 键位 ----
+    for (int i = 0; i < static_cast<int>(keyBindingButtons_.size()); ++i) {
+        keyLabels_[i]->setPosition({contentX, y + 8.f});
+        target.draw(*keyLabels_[i]);
+        keyBindingButtons_[i]->setPosition({ctrlX, y});
+        keyBindingButtons_[i]->render(target);
+        y += kRowH;
+    }
+
+    hintText_.setPosition({contentX, y + 8.f});
+    target.draw(hintText_);
+    y += 34.f;
+
+    // ---- 恢复默认按键 ----
+    resetKeysButton_->setPosition({ctrlX, y});
+    resetKeysButton_->render(target);
+    y += kRowH + 6.f;
+
+    // ---- 手柄 ----
+    auto drawToggle = [&](ToggleRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        row.onButton->setPosition({ctrlX, y});
+        row.offButton->setPosition({ctrlX + 96.f, y});
+        row.onButton->render(target);
+        row.offButton->render(target);
+        y += kRowH;
+    };
+
+    if (rowGamepad_)
+        drawToggle(*rowGamepad_);
+    if (rowVibration_)
+        drawToggle(*rowVibration_);
+
+    // 振动强度
+    labelVibrationIntensity_.setPosition({contentX, y + 4.f});
+    target.draw(labelVibrationIntensity_);
+    vibrationSlider_->setPosition({ctrlX, y + 4.f});
+    vibrationSlider_->render(target);
+    y += kRowH;
+
+    return y + 20.f;
+}
+
+void ControlsTab::reapply() {
+    loadFromPrefs();
+    // 键位也要回到默认 —— 只删配置不改内存里的表，界面还是旧键位
+    KeyBindings::instance().resetToDefaults();
+    applyGamepad();
+    applyGamepadVibration();
+    refreshLabels();
     refreshSelection();
 }
 
@@ -25496,6 +24762,212 @@ void DisplayTab::reapply() {
     applyVsync();
     applyAntiAliasing();
     applyFpsLimit();
+    refreshSelection();
+}
+
+===== ./src/scene/tabs/game_tab.cpp =====
+#include "tabs/game_tab.h"
+
+#include "config/keys.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <functional>
+
+namespace {
+
+constexpr float kRowH = 50.f;
+
+const int kLives[] = {1, 3, 5, 10, 100};
+constexpr int kLivesCount = 5;
+
+int indexOfLives(int lives) {
+    for (int i = 0; i < kLivesCount; ++i)
+        if (kLives[i] == lives)
+            return i;
+    return 0;
+}
+
+} // namespace
+
+GameTab::GameTab(const sf::Font& font, std::shared_ptr<Preferences> prefs)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        labelPlayerName_(font, sf::String(), scaledFontSize(20)) {
+    labelPlayerName_.setFillColor(sf::Color(230, 230, 230));
+
+    auto addToggle = [this](const char* key, std::function<void(bool)> cb) {
+        auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
+        auto on = std::make_unique<Button>(Str::On, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(Str::Off, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
+        row->onButton = std::move(on);
+        row->offButton = std::move(off);
+        toggles_.push_back(std::move(row));
+        return toggles_.back().get();
+    };
+    auto addMulti = [this](const char* key, std::function<void(int)> cb) {
+        auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
+        multiRows_.push_back(std::move(row));
+        return multiRows_.back().get();
+    };
+
+    // 初始生命：给整局游戏定个难度基调，所以放在「游戏」页而不是画面页
+    rowLives_ = addMulti(Str::LabelInitialLives, [this](int i) {
+        initialLives_ = kLives[i];
+        refreshSelection();
+        applyInitialLives();
+    });
+    for (int i = 0; i < kLivesCount; ++i)
+        rowLives_->addButton(std::make_unique<Button>(std::to_string(kLives[i]), font_,
+                                                      sf::Vector2f{0.f, 0.f},
+                                                      sf::Vector2f{86.f, 40.f}, 18));
+
+    rowLevelIntro_ = addToggle(Str::LabelLevelIntro, [this](bool v) {
+        levelIntroEnabled_ = v;
+        refreshSelection();
+        prefs_->setBool(ConfigKey::kLevelIntro, v);
+    });
+
+    playerNameInput_ = std::make_unique<TextInput>(font_, sf::Vector2f{0.f, 0.f},
+                                                   sf::Vector2f{240.f, 40.f},
+                                                   Str::PlayerNamePlaceholder, 18, 16);
+    playerNameInput_->setText(prefs_->get(ConfigKey::kPlayerName, ""));
+    playerNameInput_->setOnChanged(
+        [this](const std::string& s) { prefs_->set(ConfigKey::kPlayerName, s); });
+
+    loadFromPrefs();
+    refreshLabels();
+    refreshSelection();
+}
+
+void GameTab::loadFromPrefs() {
+    initialLives_ = prefs_->getInt(ConfigKey::kInitialLives, 1);
+    levelIntroEnabled_ = prefs_->getBool(ConfigKey::kLevelIntro, true);
+}
+
+void GameTab::applyInitialLives() {
+    prefs_->setInt(ConfigKey::kInitialLives, initialLives_);
+}
+
+void GameTab::refreshLabels() {
+    for (auto& row : toggles_) {
+        row->label.setString(toSf(Str::T(row->labelKey.c_str())));
+        row->onButton->setText(Str::T(Str::On));
+        row->offButton->setText(Str::T(Str::Off));
+    }
+    for (auto& row : multiRows_)
+        row->refreshLabel();
+    labelPlayerName_.setString(toSf(Str::T(Str::LabelPlayerName)));
+}
+
+void GameTab::refreshSelection() {
+    if (rowLevelIntro_) {
+        rowLevelIntro_->currentValue = levelIntroEnabled_;
+        rowLevelIntro_->onButton->setSelected(levelIntroEnabled_);
+        rowLevelIntro_->offButton->setSelected(!levelIntroEnabled_);
+    }
+    if (rowLives_)
+        rowLives_->setSelected(indexOfLives(initialLives_));
+}
+
+void GameTab::handleEvent(const sf::Event& ev) {
+    for (auto& row : toggles_) {
+        row->onButton->handleEvent(ev);
+        row->offButton->handleEvent(ev);
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
+    if (playerNameInput_)
+        playerNameInput_->handleEvent(ev);
+}
+
+void GameTab::update() {
+    for (auto& row : toggles_) {
+        if (row->onButton->consumeClick() && !row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(true);
+            return;
+        }
+        if (row->offButton->consumeClick() && row->currentValue) {
+            if (row->onChanged)
+                row->onChanged(false);
+            return;
+        }
+    }
+    for (auto& row : multiRows_) {
+        for (size_t i = 0; i < row->buttons.size(); ++i) {
+            if (row->buttons[i]->consumeClick()) {
+                if (row->currentIndex != static_cast<int>(i) && row->onSelected)
+                    row->onSelected(static_cast<int>(i));
+                return;
+            }
+        }
+    }
+}
+
+void GameTab::registerFocus(std::vector<Button*>& out) {
+    for (auto& row : toggles_) {
+        out.push_back(row->onButton.get());
+        out.push_back(row->offButton.get());
+    }
+    for (auto& row : multiRows_)
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
+    // 玩家名输入框不是 Button，不参与几何导航（Tab 键 / 鼠标点进去）
+}
+
+bool GameTab::anyEditing() const {
+    return playerNameInput_ && playerNameInput_->isFocused();
+}
+
+float GameTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
+                      float startY) {
+    float y = startY;
+
+    auto drawToggle = [&](ToggleRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        row.onButton->setPosition({ctrlX, y});
+        row.offButton->setPosition({ctrlX + 96.f, y});
+        row.onButton->render(target);
+        row.offButton->render(target);
+        y += kRowH;
+    };
+    auto drawMulti = [&](MultiRow& row) {
+        row.label.setPosition({contentX, y + 8.f});
+        target.draw(row.label);
+        for (size_t i = 0; i < row.buttons.size(); ++i) {
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->render(target);
+        }
+        y += kRowH;
+    };
+
+    if (rowLives_)
+        drawMulti(*rowLives_);
+    if (rowLevelIntro_)
+        drawToggle(*rowLevelIntro_);
+
+    // 玩家名
+    labelPlayerName_.setPosition({contentX, y + 8.f});
+    target.draw(labelPlayerName_);
+    if (playerNameInput_) {
+        playerNameInput_->setPosition({ctrlX, y});
+        playerNameInput_->setSize({240.f, 40.f});
+        playerNameInput_->render(target);
+    }
+    y += kRowH;
+
+    return y;
+}
+
+void GameTab::reapply() {
+    // 玩法项在进入关卡时才读，没有需要即时改的全局状态
+    loadFromPrefs();
     refreshSelection();
 }
 
@@ -30723,6 +30195,7 @@ add_executable(unit_tests
     test_config_seeding.cpp
     test_settings_codec.cpp
     test_settings_tabs.cpp
+    test_settings_share.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )
@@ -43082,6 +42555,42 @@ TEST_CASE("MovingPlatform - lastDelta") {
     Vec2 d1 = mp.lastDelta();
     CHECK(d1.x == doctest::Approx(100.f).epsilon(0.01));
 }
+===== ./tests/test_platform.cpp =====
+#include "doctest.h"
+#include "core/platform.h"
+
+#include <filesystem>
+#include <string>
+
+// Platform::openDirectory 的真实行为会去启动文件管理器，没有 DISPLAY 的环境
+// 根本测不了（而且不该在单测里弹窗）。能测的只有「参数不合法就直接返回 false、
+// 连外部命令都不去执行」这条分支 —— 它恰好也是唯一不依赖桌面会话的一条。
+
+namespace fs = std::filesystem;
+
+TEST_CASE("Platform::openDirectory 目录不存在时返回 false") {
+    // 名字带随机后缀，保证在正常的 TMPDIR 下不存在
+    const fs::path missing =
+        fs::temp_directory_path() / "text-game-绝对不存在的目录-9f3c1a";
+    const bool exists = fs::exists(missing);
+    REQUIRE_FALSE(exists);
+
+    const bool opened = Platform::openDirectory(missing);
+    CHECK_FALSE(opened);
+}
+
+TEST_CASE("Platform::openDirectory 空路径与文件返回 false") {
+    const bool empty = Platform::openDirectory(fs::path{});
+    CHECK_FALSE(empty);
+
+    // 传目录以外的东西也一律拒绝，不去执行外部命令
+    const fs::path file = fs::temp_directory_path() / "text-game-not-a-dir-9f3c1a";
+    const bool isDir = fs::is_directory(file);
+    REQUIRE_FALSE(isDir);
+    const bool opened = Platform::openDirectory(file);
+    CHECK_FALSE(opened);
+}
+
 ===== ./tests/test_player.cpp =====
 #include "doctest.h"
 #include "player.h"
@@ -44341,6 +43850,366 @@ TEST_CASE("ScoreRules - 只有更快才算刷新 PB") {
     CHECK_FALSE(ScoreRules::isNewRecord(10.f, 10.1f));// 更慢不算
 }
 
+===== ./tests/test_settings_codec.cpp =====
+#include "doctest.h"
+#include "settings_codec.h"
+
+#include <string>
+
+// 设置分享码编解码（TS1:<base64(rle(设置文本))>）。
+//
+// 全程纯字符串处理，不碰 SFML、不碰 GL，所以这个文件在无 DISPLAY 下也能跑。
+//
+// 与关卡分享码（LevelCodec）最本质的差别在 RLE：设置文本里**数字是常态**
+// （fps_limit=144），关卡那套「<计数><字符>」的定界前提在这里直接不成立。
+// 所以下面专门钉了数字相关的用例 —— 只拿 "key=value" 的普通文本测往返，
+// 是抓不住"数字被当成计数吃掉"这类静默损坏的。
+
+namespace {
+
+/// 一份像样的设置文本：多行、带数字、含注释行与空行
+const char* kSampleSettings = "# 画面\n"
+                              "resolution_index=2\n"
+                              "vsync=true\n"
+                              "fps_limit=144\n"
+                              "\n"
+                              "volume=80\n"
+                              "player_name=Test\n";
+
+/// 模拟从聊天软件里粘贴：码被折行、被塞进空格和制表符
+std::string messUp(const std::string& code) {
+    std::string messy;
+    for (std::size_t i = 0; i < code.size(); ++i) {
+        if (i == 10 || i == 25)
+            messy += '\n';
+        if (i == 15)
+            messy += ' ';
+        if (i == 30)
+            messy += '\t';
+        messy += code[i];
+    }
+    return messy;
+}
+
+} // namespace
+
+// ============================================================
+// 往返一致性
+// ============================================================
+
+TEST_CASE("设置分享码 - 编解码往返不改变设置文本") {
+    const std::string original = kSampleSettings;
+
+    const std::string code = SettingsCodec::encode(original);
+
+    const bool hasPrefix = code.rfind("TS1:", 0) == 0; // 用的是设置前缀
+    CHECK(hasPrefix);
+    CHECK(SettingsCodec::decode(code) == original);
+}
+
+TEST_CASE("设置分享码 - 数字不会被 RLE 当成计数吃掉") {
+    // ⚠️ 这一组是重点：关卡那套 RLE 在这里会把 "144" 解释成计数，
+    //    于是设了 144 帧的玩家导入后拿到别的值，而且一路不报错。
+    const char* cases[] = {
+        "0",                        // 单个数字
+        "144",                      // 纯数字串
+        "111111111",                // 一长串相同数字
+        "fps_limit=144\nvolume=80", // 真实设置行
+        "k=1\nk2=22\nk3=333",       // 越来越多的数字
+        "=:=:",                     // 分隔符本身出现在文本里
+        ":::",                      // 全是分隔符
+    };
+
+    for (const char* c : cases) {
+        const std::string original = c;
+        CAPTURE(original);
+        CHECK(SettingsCodec::decode(SettingsCodec::encode(original)) == original);
+    }
+}
+
+TEST_CASE("设置分享码 - 含中文与换行的设置文本能往返") {
+    const std::string original = "player_name=小明\n"
+                                 "# 语言\n"
+                                 "language=简体中文\n"
+                                 "note=换行\n也在值里面\n";
+
+    const std::string code = SettingsCodec::encode(original);
+
+    CHECK(SettingsCodec::decode(code) == original);
+    CHECK(SettingsCodec::isValid(code));
+}
+
+TEST_CASE("设置分享码 - 码里的换行与空格会被忽略") {
+    const std::string original = kSampleSettings;
+    const std::string code = SettingsCodec::encode(original);
+
+    // 折行/空格只影响码本身，设置在 base64 里面，必须原样回来
+    CHECK(SettingsCodec::decode(messUp(code)) == original);
+}
+
+// ============================================================
+// 空输入与非法输入
+// ============================================================
+
+TEST_CASE("设置分享码 - 空输入与只有前缀都安全") {
+    const std::string emptyCode = SettingsCodec::encode("");
+    CHECK(emptyCode == "TS1:"); // 编码确定：空文本就是一个空壳码
+
+    CHECK(SettingsCodec::decode("").empty());
+    CHECK(SettingsCodec::decode("TS1:").empty());
+    CHECK_FALSE(SettingsCodec::isValid("TS1:"));
+
+    // 空文本的码与"解不开"长得一样 —— 与 LevelCodec 的取舍一致：
+    // 空设置本来也没有导入的意义，宁可当成坏码。
+    CHECK(SettingsCodec::decode(SettingsCodec::encode("")).empty());
+}
+
+TEST_CASE("设置分享码 - 前缀不对时一概不认") {
+    const char* bad[] = {
+        "TS1", // 比前缀还短
+        "XXXX:abcd",
+        "ts1:abcd", // 大小写敏感
+        "TS2:abcd",
+        " TG1:abcd",    // 前面带空白
+        "TG1:MToxYQ==", // 关卡分享码：设置这边不能去认领
+    };
+
+    for (const char* c : bad) {
+        CAPTURE(c);
+        CHECK(SettingsCodec::decode(c).empty());
+    }
+
+    // 反过来也必须成立：设置码不能长成关卡码的样子，否则 TG1 那边会误收
+    const std::string settingsCode = SettingsCodec::encode(kSampleSettings);
+    const bool looksLikeLevel = settingsCode.rfind("TG1:", 0) == 0;
+    CHECK_FALSE(looksLikeLevel);
+}
+
+TEST_CASE("设置分享码 - base64 里混入非法字符时拒绝") {
+    const char* bad[] = {
+        "TS1:!!!!",
+        "TS1:abcd!!!!", // 前面合法、后面混入非法字符
+        "TS1:####",           "TS1:****",
+        "TS1:中文不是base64", // 非 ASCII 字节同样非法
+    };
+
+    for (const char* c : bad) {
+        CAPTURE(c);
+        CHECK(SettingsCodec::decode(c).empty());
+        CHECK_FALSE(SettingsCodec::isValid(c));
+    }
+}
+
+TEST_CASE("设置分享码 - 被截断的码不会被当成有效设置") {
+    const std::string original = kSampleSettings;
+    const std::string code = SettingsCodec::encode(original);
+
+    // 砍一半之后要么解不出、要么解出来跟原文不一样 —— 总之不能"看起来成功"
+    const std::string half = code.substr(0, code.size() / 2);
+    CHECK(SettingsCodec::decode(half) != original);
+
+    // 只留前缀同样是失败的
+    CHECK(SettingsCodec::decode(code.substr(0, 4)).empty());
+}
+
+TEST_CASE("设置分享码 - RLE 长度字段损坏时安全拒绝") {
+    // 下面这些都是"前缀对 + base64 合法"，坏在 RLE 语法上。
+    // 字符串都写在注释里，方便手算核对。
+    const char* bad[] = {
+        "TS1:OTk5OTk5OTk5OTp4", // "9999999999:x" —— 计数远超上限
+        "TS1:MDp4",             // "0:x" —— 计数为 0，产不出字符
+        "TS1:MTAwMDAxOng=",     // "100001:x" —— 刚过单段上限
+        "TS1:YWJj",             // "abc" —— 开头就不是计数
+        "TS1:MTI6",             // "12:" —— ':' 后面没有字符（被截断）
+        "TS1:MTJ4",             // "12x" —— 缺 ':' 分隔符（关卡旧格式）
+        "TS1:MWE=",             // "1a" —— 关卡旧格式，这里不接受
+    };
+
+    for (const char* c : bad) {
+        CAPTURE(c);
+        CHECK(SettingsCodec::decode(c).empty());
+        CHECK_FALSE(SettingsCodec::isValid(c));
+    }
+}
+
+TEST_CASE("设置分享码 - 超长输入不崩且能往返") {
+    // 40 万字符：既有能压的重复段，也有几乎压不动的数字交替段
+    std::string big;
+    big.reserve(400000);
+    for (int i = 0; i < 20000; ++i) {
+        big += "key=value\n";
+        big += "0123456789";
+    }
+
+    const std::string code = SettingsCodec::encode(big);
+
+    const bool hasPrefix = code.rfind("TS1:", 0) == 0;
+    CHECK(hasPrefix);
+    CHECK(SettingsCodec::decode(code) == big);
+}
+
+TEST_CASE("设置分享码 - isValid 与 decode 的结论一致") {
+    const char* samples[] = {
+        "",          // 空
+        "TS1:",      // 只有前缀
+        "XXXX:abcd", // 前缀不对
+        "TS1:!!!!",  // base64 非法
+        "TS1:YWJj",  // base64 合法但不是 RLE
+        "TS1:MDp4",  // RLE 计数为 0
+    };
+
+    for (const char* c : samples) {
+        CAPTURE(c);
+        const bool valid = SettingsCodec::isValid(c);
+        const bool decodable = !SettingsCodec::decode(c).empty();
+        CHECK(valid == decodable);
+    }
+
+    // 好码两边都必须认
+    const std::string good = SettingsCodec::encode(kSampleSettings);
+    const bool goodValid = SettingsCodec::isValid(good);
+    const bool goodDecodable = !SettingsCodec::decode(good).empty();
+    CHECK(goodValid);
+    CHECK(goodDecodable);
+}
+
+===== ./tests/test_settings_tabs.cpp =====
+#include "doctest.h"
+#include "config/keys.h"
+#include "scene/settings_tab_id.h"
+
+#include <algorithm>
+#include <set>
+#include <string>
+
+// 设置页的「归属」检查。
+//
+// 0.3.8 重做设置系统时最典型的翻车是：新加了一个配置键、却忘了归到某一页，
+// 或者归错了页 —— 这两种都是**完全静默**的（界面上根本看不到那个键，
+// 或者它出现在一个没人会去找的地方）。这两条测试把它变成会红的。
+
+TEST_CASE("设置归属 - 每个配置键都恰好属于一页") {
+    std::vector<std::string> unowned;
+    std::vector<std::string> duplicated;
+
+    const auto& deliberatelyUnowned = unownedKeys();
+    for (const char* key : ConfigKey::allKeys()) {
+        int hits = 0;
+        for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
+            const auto& keys = keysForTab(static_cast<SettingsTab>(i));
+            if (std::find(keys.begin(), keys.end(), std::string(key)) != keys.end())
+                ++hits;
+        }
+        const bool onUnownedList =
+            std::find(deliberatelyUnowned.begin(), deliberatelyUnowned.end(),
+                      std::string(key)) != deliberatelyUnowned.end();
+        if (hits == 0 && !onUnownedList)
+            unowned.push_back(key);
+        else if (hits > 1)
+            duplicated.push_back(key);
+        else if (hits == 1 && onUnownedList)
+            duplicated.push_back(key); // 又归类又说"不归类"，矛盾
+    }
+
+    // 有键不属于任何一页：要么忘了归类，要么它就该在「高级」页
+    CHECK_MESSAGE(
+        unowned.empty(), "这些键没有归属的设置页：" << [&] {
+            std::string s;
+            for (const auto& k : unowned)
+                s += "\n      " + k;
+            return s;
+        }());
+
+    // 同一个键被两页认领：两边都会显示它，改一处另一处不同步
+    CHECK_MESSAGE(
+        duplicated.empty(), "这些键被多个设置页同时认领：" << [&] {
+            std::string s;
+            for (const auto& k : duplicated)
+                s += "\n      " + k;
+            return s;
+        }());
+}
+
+TEST_CASE("设置归属 - 表里不能有 keys.h 里不存在的键（防拼错）") {
+    std::set<std::string> known;
+    for (const char* key : ConfigKey::allKeys())
+        known.insert(key);
+
+    std::vector<std::string> typos;
+    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
+        for (const char* key : keysForTab(static_cast<SettingsTab>(i)))
+            if (known.count(key) == 0)
+                typos.push_back(key);
+    }
+
+    // 归属表里写了一个不存在的键名，那一条「恢复本页默认」就是空操作，
+    // 而且永远不会有任何提示
+    CHECK_MESSAGE(
+        typos.empty(), "归属表里有 keys.h 里不存在的键：" << [&] {
+            std::string s;
+            for (const auto& k : typos)
+                s += "\n      " + k;
+            return s;
+        }());
+}
+
+TEST_CASE("设置归属 - tabForKey 与 keysForTab 互为逆运算") {
+    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
+        const auto t = static_cast<SettingsTab>(i);
+        for (const char* key : keysForTab(t))
+            CHECK(tabForKey(key) == std::optional<SettingsTab>(t));
+    }
+    CHECK(tabForKey("这个键不存在") == std::nullopt);
+}
+
+TEST_CASE("设置归属 - 每页都有非空标签，且不重名") {
+    std::set<std::string> labels;
+    for (int i = 0; i < static_cast<int>(kSettingsTabCount); ++i) {
+        const char* label = settingsTabLabel(static_cast<SettingsTab>(i));
+        CHECK(label != nullptr);
+        const bool nonEmpty = label && *label != '\0';
+        CHECK(nonEmpty);
+        if (nonEmpty)
+            labels.insert(label);
+    }
+    // 两页同名的话，Tab 栏上会出现两个一模一样的按钮，用户根本分不清
+    CHECK(labels.size() == static_cast<std::size_t>(kSettingsTabCount));
+}
+
+TEST_CASE("设置归属 - 机器绑定的键不出现在可携带白名单里") {
+    // 这条把「导入别人的设置」的安全边界钉住：分辨率/窗口模式/ui_scale 这些
+    // 一旦被导入，可能开出用户根本用不了的窗口，而设置界面正是他改回来的地方。
+    const char* kForbidden[] = {
+        ConfigKey::kResolutionIndex,
+        ConfigKey::kFullscreen,
+        ConfigKey::kWindowMode,
+        ConfigKey::kVsync,
+        ConfigKey::kFpsLimit,
+        ConfigKey::kAntiAliasing,
+        ConfigKey::kUiScale,
+        ConfigKey::kFontScale,
+        ConfigKey::kRememberWindowSize,
+        ConfigKey::kCurrentWallpaper,
+    };
+    for (const char* key : kForbidden) {
+        const bool portable = ConfigKey::isPortable(key);
+        CHECK_MESSAGE(!portable, "这个键不该可携带：" << key);
+    }
+
+    // 反过来，观感/音量类的键必须在白名单里（否则导出等于什么都没导）
+    const char* kMustBePortable[] = {
+        ConfigKey::kTheme,   ConfigKey::kAudioMasterVolume, ConfigKey::kPostSaturation,
+        ConfigKey::kKeyJump, ConfigKey::kInitialLives,      ConfigKey::kUiSoundEnabled,
+    };
+    for (const char* key : kMustBePortable) {
+        const bool portable = ConfigKey::isPortable(key);
+        CHECK_MESSAGE(portable, "这个键应该可携带：" << key);
+    }
+
+    CHECK(ConfigKey::portableKeyCount() > 0);
+    CHECK(ConfigKey::portableKeyCount() < static_cast<int>(ConfigKey::allKeys().size()));
+}
+
 ===== ./tests/test_vec2.cpp =====
 #include "doctest.h"
 #include "utils/vec2.h"
@@ -44696,6 +44565,336 @@ TEST_CASE("缩略图 - 实际尺寸的壁纸能缩到 256 且形状对") {
     // 这里只要求"至少小 50 倍"，别把具体倍率写死。
     CHECK(thumbBytes < kFiftieth);
     CHECK(sameColor(dst.getPixel({100, 100}), sf::Color(70, 57, 40, 255)));
+}
+
+===== ./tools/settings_smoke.cpp =====
+// 设置页冒烟测试（**需要 DISPLAY，手动跑**）。
+//
+//   ./build/release/settings_smoke
+//
+// 为什么不放进 tests/：每页都要真的渲染一次才能知道按钮在哪（点击是按坐标判定
+// 的），而渲染要 sf::Font / sf::RenderTexture —— 都是 GlResource，
+// 没有 DISPLAY 时构造就 SIGABRT。tests/ 有"无 DISPLAY 也必须全绿"的硬要求。
+//
+// 它守的是这次重做最要紧的那条不变量：
+//
+//   **点某一页的控件，只能改这一页的键。**
+//
+// 以前各页的控件靠 `toggles_[7]` / `multiRows_[12]` 这种数字下标引用，
+// 搬一行就要重排全部下标，排错了不报错 —— 只是"点了这个改了那个"。
+// 0.3.8 把下标全换成具名指针，同时用这个工具把结果钉住：
+// 逐页、逐个可聚焦控件点过去，比对点击前后配置键的差集。
+#include "button.h"
+#include "config/keys.h"
+#include "config/preferences.h"
+#include "config/runtime_config.h"
+#include "core/paths.h"
+#include "core/resource_manager.h"
+#include "log/logger.h"
+#include "scene/settings_tab_id.h"
+#include "scene/tabs/advanced_tab.h"
+#include "scene/tabs/audio_tab.h"
+#include "scene/tabs/console_tab.h"
+#include "scene/tabs/controls_tab.h"
+#include "scene/tabs/display_tab.h"
+#include "scene/tabs/game_tab.h"
+#include "scene/tabs/graphics_tab.h"
+#include "scene/tabs/interface_tab.h"
+#include "scene/tabs/wallpaper_tab.h"
+#include "ui/background.h"
+#include "ui/window.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
+
+#include <SFML/Graphics.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace {
+
+int failures = 0;
+
+void check(bool ok, const std::string& what) {
+    std::cout << (ok ? "  PASS  " : "  FAIL  ") << what << "\n";
+    if (!ok)
+        ++failures;
+}
+
+/// 一页的统一门面：9 个 Tab 类型各不相同，但测试只关心这四个动作
+struct Page {
+    std::function<float(sf::RenderTarget&, float, float, float)> render;
+    std::function<void(const sf::Event&)> handleEvent;
+    std::function<void()> update;
+    std::function<void(std::vector<Button*>&)> registerFocus;
+};
+
+/// 造出某一页（每次调用新建一份，各页之间互不影响）
+Page makePage(SettingsTab tab, const sf::Font& font, std::shared_ptr<Preferences> prefs,
+              std::shared_ptr<RuntimeConfig> runtime, std::shared_ptr<Window> window,
+              std::shared_ptr<Background> background,
+              std::shared_ptr<WallpaperLibrary> lib,
+              std::shared_ptr<WallpaperLoader> loader, std::shared_ptr<Logger> logger,
+              std::shared_ptr<Paths> paths);
+
+/// 把按钮的点击模拟成"在按钮中心按下 + 松开"，然后跑一次本页 update()
+void clickButton(Button& b, Page& page) {
+    const auto pos = b.position();
+    const auto size = b.size();
+    const sf::Vector2i at{static_cast<int>(pos.x + size.x * 0.5f),
+                          static_cast<int>(pos.y + size.y * 0.5f)};
+
+    sf::Event press(sf::Event::MouseButtonPressed{sf::Mouse::Button::Left, at});
+    sf::Event release(sf::Event::MouseButtonReleased{sf::Mouse::Button::Left, at});
+    page.handleEvent(press);
+    page.handleEvent(release);
+    page.update();
+}
+
+std::set<std::string> keySet(const Preferences& p) {
+    const auto v = p.keys();
+    return {v.begin(), v.end()};
+}
+
+struct Sandbox {
+    std::filesystem::path root;
+    std::unique_ptr<Paths> paths;
+    std::unique_ptr<ResourceManager> resources;
+    std::shared_ptr<Preferences> prefs;
+    std::shared_ptr<RuntimeConfig> runtime;
+
+    explicit Sandbox(const std::string& tag) {
+        root = std::filesystem::temp_directory_path() / ("textgame_sett_smoke_" + tag);
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+        paths = std::make_unique<Paths>(root);
+        resources = std::make_unique<ResourceManager>(*paths);
+        prefs = std::make_shared<Preferences>(*paths, *resources);
+        runtime = std::make_shared<RuntimeConfig>(*paths, *resources);
+    }
+    ~Sandbox() {
+        // ⚠️ 顺序要紧：Config 析构会 flush 一次，得赶在删目录之前放掉它，
+        //    否则收尾时会刷一堆"无法写入"
+        prefs.reset();
+        runtime.reset();
+        paths.reset();
+        resources.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+    }
+
+    /// AdvancedTab 要 shared_ptr<Paths>（打开配置/日志目录用）；不转移所有权
+    std::shared_ptr<Paths> paths_shared() {
+        return std::shared_ptr<Paths>(paths.get(), [](Paths*) {});
+    }
+};
+
+Page makePage(SettingsTab tab, const sf::Font& font, std::shared_ptr<Preferences> prefs,
+              std::shared_ptr<RuntimeConfig> runtime, std::shared_ptr<Window> window,
+              std::shared_ptr<Background> background,
+              std::shared_ptr<WallpaperLibrary> lib,
+              std::shared_ptr<WallpaperLoader> loader, std::shared_ptr<Logger> logger,
+              std::shared_ptr<Paths> paths) {
+    Page page;
+    switch (tab) {
+    case SettingsTab::Display: {
+        auto t = std::make_shared<DisplayTab>(font, prefs, runtime, window);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Interface: {
+        auto t = std::make_shared<InterfaceTab>(font, prefs, window);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Wallpaper: {
+        auto t = std::make_shared<WallpaperTab>(font, prefs, background, lib, loader);
+        page.render = [t](sf::RenderTarget& tg, float cx, float, float y) {
+            return t->render(tg, cx, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Graphics: {
+        auto t = std::make_shared<GraphicsTab>(font, prefs, window);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Audio: {
+        auto t = std::make_shared<AudioTab>(font, prefs, window);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Controls: {
+        auto t = std::make_shared<ControlsTab>(font, prefs);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Game: {
+        auto t = std::make_shared<GameTab>(font, prefs);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Console: {
+        auto t = std::make_shared<ConsoleTab>(font, prefs);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    case SettingsTab::Advanced: {
+        auto t = std::make_shared<AdvancedTab>(font, prefs, logger, paths);
+        page.render = [t](sf::RenderTarget& tg, float cx, float ctrl, float y) {
+            return t->render(tg, cx, ctrl, y);
+        };
+        page.handleEvent = [t](const sf::Event& e) { t->handleEvent(e); };
+        page.update = [t] { t->update(); };
+        page.registerFocus = [t](std::vector<Button*>& out) { t->registerFocus(out); };
+        break;
+    }
+    default:
+        break;
+    }
+    return page;
+}
+
+bool belongsTo(SettingsTab tab, const std::string& key) {
+    const auto& keys = keysForTab(tab);
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+} // namespace
+
+int main() {
+    // 提供一个 GL 上下文（Font / RenderTexture 都要）
+    sf::RenderWindow window(sf::VideoMode({640, 400}), "settings_smoke");
+    window.setVisible(false);
+
+    sf::Font font;
+    if (!font.openFromFile("assets/font.ttf")) {
+        std::cout << "加载字体失败，跳过\n";
+        return 2;
+    }
+
+    auto logger = std::make_shared<Logger>(LogLevel::Error);
+    Sandbox box("main");
+
+    // 各页构造要 Window（DisplayTab 改分辨率、AudioTab 读音量都要它）
+    auto win = std::make_shared<Window>(640, 400, "settings_smoke_inner");
+
+    auto lib = std::make_shared<WallpaperLibrary>();
+    lib->scan("wallpaper");
+    auto loader = std::make_shared<WallpaperLoader>();
+    auto background = std::make_shared<Background>(*lib, *loader, "", 640, 400, logger);
+
+    // 每一页：都点一遍，看它改了哪些键
+    for (int i = 0; i < kSettingsTabCount; ++i) {
+        const auto tab = static_cast<SettingsTab>(i);
+        const std::string name = settingsTabLabel(tab);
+
+        std::cout << "\n--- " << name << " ---\n";
+
+        Page page = makePage(tab, font, box.prefs, box.runtime, win, background, lib,
+                             loader, logger, box.paths_shared());
+        if (!page.render) {
+            check(false, "这一页没造出来");
+            continue;
+        }
+
+        std::vector<Button*> items;
+        page.registerFocus(items);
+
+        // 先渲染一次：按钮位置是渲染时落定的，而点击按坐标判定
+        sf::RenderTexture rt(sf::Vector2u{1280, 720});
+        rt.clear(sf::Color::Black);
+        page.render(rt, 240.f, 480.f, 50.f);
+        rt.display();
+        // ⚠️ registerFocus 是**追加**语义（各页都是 out.push_back）。
+        //    第二次必须传一个空 vector —— 传同一个会让列表翻倍，
+        //    而"跳过最后 4 个动作按钮"就会跟着错位，
+        //    结果是**真的去打开文件管理器**（这个坑踩过一次）。
+        std::vector<Button*> laidOut;
+        page.registerFocus(laidOut);
+        items = laidOut;
+
+        check(!items.empty(),
+              name + " 有可聚焦控件（" + std::to_string(items.size()) + " 个）");
+
+        // 「高级」页最后 4 个是动作按钮（打开目录 / 导出 / 导入），点了有副作用
+        // （真的去启动文件管理器、写剪贴板），这里跳过它们。
+        // 它们不写配置，归属检查对它们本来也没有意义。
+        std::size_t clickable = items.size();
+        if (tab == SettingsTab::Advanced && clickable >= 4)
+            clickable -= 4;
+
+        std::set<std::string> violations;
+        for (std::size_t k = 0; k < clickable; ++k) {
+            const auto before = keySet(*box.prefs);
+            clickButton(*items[k], page);
+            const auto after = keySet(*box.prefs);
+
+            for (const auto& key : after) {
+                if (before.count(key))
+                    continue; // 已存在的键（值可能变了，但归属不变）
+                if (!belongsTo(tab, key))
+                    violations.insert(key);
+            }
+        }
+
+        if (violations.empty()) {
+            check(true, name + " 的控件只改了本页的键");
+        } else {
+            std::string list;
+            for (const auto& k : violations)
+                list += " " + k;
+            check(false, name + " 的控件改了不属于本页的键：" + list);
+        }
+    }
+
+    std::cout << (failures == 0 ? "\n全部通过\n"
+                                : "\n失败 " + std::to_string(failures) + " 条\n");
+    return failures == 0 ? 0 : 1;
 }
 
 ===== ./tools/validate_levels.cpp =====
