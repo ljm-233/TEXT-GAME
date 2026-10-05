@@ -29,6 +29,7 @@ add_executable(unit_tests
     test_settings_codec.cpp
     test_settings_tabs.cpp
     test_settings_share.cpp
+    test_particle_system.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )

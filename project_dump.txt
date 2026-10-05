@@ -1,4 +1,91 @@
 
+===== ./tests/test_particle_system.cpp =====
+#include "doctest.h"
+#include "ui/particle_system.h"
+
+// 粒子密度的数值效果（0.3.8 新增的设置项）。
+//
+// 这个类是少数几个**没有 GlResource 成员**的 UI 类（只有一堆 Particle 值），
+// 所以能在无 DISPLAY 的环境里直接构造与断言 —— 不像 Background / WallpaperTab
+// 那样只能靠手动冒烟。
+//
+// 密度只缩放在 emit() 里传进来的 count，不碰其它参数：
+// 语义是"同样的事件、差多少颗粒子"，而不是"特效有没有"。
+
+namespace {
+
+/// 一个远超容量上限的请求量（只用来验证"再怎么要也是同一个上限"）
+constexpr int kMaxParticlesProbe = 1000000;
+
+constexpr float kSpeedMin = 10.f;
+constexpr float kSpeedMax = 20.f;
+constexpr float kLifeMin = 0.5f;
+constexpr float kLifeMax = 1.0f;
+constexpr float kSizeMin = 2.f;
+constexpr float kSizeMax = 4.f;
+
+int emitAndCount(ParticleSystem& ps, int n) {
+    ps.clear();
+    ps.emit({0.f, 0.f}, n, sf::Color::White, kSpeedMin, kSpeedMax, kLifeMin, kLifeMax,
+            kSizeMin, kSizeMax);
+    return ps.count();
+}
+
+} // namespace
+
+TEST_CASE("粒子密度 - 默认是 1 倍，数量原样") {
+    ParticleSystem ps;
+    CHECK(ps.densityScale() == doctest::Approx(1.0f));
+    CHECK(emitAndCount(ps, 10) == 10);
+}
+
+TEST_CASE("粒子密度 - 半分 → 粒子减半") {
+    ParticleSystem ps;
+    ps.setDensityScale(0.5f);
+    CHECK(emitAndCount(ps, 10) == 5);
+}
+
+TEST_CASE("粒子密度 - 两倍 → 粒子翻倍") {
+    ParticleSystem ps;
+    ps.setDensityScale(2.0f);
+    CHECK(emitAndCount(ps, 10) == 20);
+}
+
+TEST_CASE("粒子密度 - 0 表示完全不生成") {
+    ParticleSystem ps;
+    ps.setDensityScale(0.f);
+    CHECK(emitAndCount(ps, 10) == 0);
+}
+
+TEST_CASE("粒子密度 - 负数被夹到 0，不会算出负数量") {
+    ParticleSystem ps;
+    ps.setDensityScale(-3.f);
+    CHECK(ps.densityScale() == doctest::Approx(0.0f));
+    CHECK(emitAndCount(ps, 10) == 0);
+}
+
+TEST_CASE("粒子密度 - 小数量取整不会凭空多出来") {
+    ParticleSystem ps;
+    ps.setDensityScale(0.5f);
+    // 1 * 0.5 = 0.5 → 截断成 0（宁可少一颗，也别在低密度下反而更多）
+    CHECK(emitAndCount(ps, 1) == 0);
+    // 3 * 0.5 = 1.5 → 1
+    CHECK(emitAndCount(ps, 3) == 1);
+}
+
+TEST_CASE("粒子密度 - 上限仍受 kMaxParticles 约束") {
+    ParticleSystem ps;
+    ps.setDensityScale(2.0f);
+    // 一次请求远超上限：密度调高不能绕过容量上限。
+    // 上限本身在 particle_system.cpp 里（kMaxParticles），这里按"绝不越界"
+    // 断言，不去抄那个常量的具体数值 —— 抄了就又多一份要同步的东西。
+    const int n = emitAndCount(ps, 100000);
+    CHECK(n > 0);
+    // 先把上限算出来，再比 —— doctest 拆不了复杂表达式
+    const int capped = emitAndCount(ps, kMaxParticlesProbe);
+    CHECK(n == capped);
+}
+
 ===== ./.github/workflows/build.yml =====
 name: Build & Test
 
@@ -1433,6 +1520,8 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | WallpaperThumbnail（等比缩放 / 盒式平均 / 不放大 / 极端宽高比 / 内存预算） | ✅ |
 | SettingsTab 归属（每个键恰好属一页 / 表里无错名 / `tabForKey` 互逆 / 可携带白名单） | ✅ |
 | SettingsCodec（分享码往返 / 数字不被 RLE 吞 / 非法与截断输入 / 内存放大上限） | ✅ |
+| SettingsShare（端到端往返 / **机器绑定的键不被带走** / 恶意文本只认白名单） | ✅ |
+| ParticleSystem 密度（半分/两倍/零/负数夹取/容量上限） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
@@ -2426,7 +2515,7 @@ message(STATUS "=== 构建配置完成 ===")
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**290 个单元测试用例 / 5066 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**305 个单元测试用例 / 5124 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -2994,7 +3083,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，290 个用例 / 5066 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，305 个用例 / 5124 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
@@ -29998,6 +30087,7 @@ add_executable(unit_tests
     test_settings_codec.cpp
     test_settings_tabs.cpp
     test_settings_share.cpp
+    test_particle_system.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )
