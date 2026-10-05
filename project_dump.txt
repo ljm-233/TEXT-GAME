@@ -1,552 +1,4 @@
 
-===== ./include/scene/tabs/wallpaper_tab.h =====
-#pragma once
-#include "background.h"
-#include "button.h"
-#include "preferences.h"
-#include "wallpaper/wallpaper_library.h"
-#include "wallpaper/wallpaper_loader.h"
-
-#include <SFML/Graphics.hpp>
-#include <memory>
-#include <vector>
-
-namespace wallpaper_tab_layout {
-
-inline constexpr float kThumbW = 160.f;
-inline constexpr float kThumbH = 90.f;
-inline constexpr float kRowH = 106.f;
-inline constexpr float kGap = 20.f;
-inline constexpr float kBtnW = 420.f;
-inline constexpr float kBtnH = 46.f;
-inline constexpr float kHintH = 34.f;
-
-/// 第 index 行那个按钮的左上角。
-///
-/// 放在头里是**故意的**：冒烟测试要按同样的坐标模拟鼠标点击，而
-/// "点击落在哪个按钮上"这件事只能有一个来源 —— 布局改了而测试还按老坐标点，
-/// 断言会变成"点空了所以什么也没发生"，看着像通过、其实什么都没验。
-inline sf::Vector2f rowButtonPos(float contentX, float startY, int index) {
-    return {contentX + kThumbW + kGap,
-            startY + kHintH + static_cast<float>(index) * kRowH + (kRowH - kBtnH) * 0.5f};
-}
-
-/// 第 index 行缩略图框的左上角
-inline sf::Vector2f rowThumbPos(float contentX, float startY, int index) {
-    return {contentX, startY + kHintH + static_cast<float>(index) * kRowH};
-}
-
-} // namespace wallpaper_tab_layout
-
-/// 设置里的「壁纸」页：把目录里所有壁纸列出来（缩略图 + 文件名），点一下就切。
-///
-/// 一行一张：
-///     [ 缩略图 160x90 ]  [ Button: 文件名 ]
-///
-/// **为什么用 Button 当行**：点击、悬停、选中态、以及手柄焦点导航全都白拿 ——
-/// `FocusGroup` 收的就是 `std::vector<Button*>`，再按按钮位置做几何导航。
-/// 缩略图由本类自己画在按钮左边，不参与焦点。
-///
-/// ⚠️ 缩略图**必须先缩到 256** 再上传纹理（见 wallpaper_thumbnail.h）。
-///    直接给全尺寸纹理套 `setScale` 显示小图的话，5 张壁纸要吃 160MB+ 显存，
-///    而那些像素一个都不会真的被显示出来。
-class WallpaperTab {
-public:
-    WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
-                 std::shared_ptr<Background> background,
-                 std::shared_ptr<WallpaperLibrary> library,
-                 std::shared_ptr<WallpaperLoader> loader);
-
-    void handleEvent(const sf::Event& ev);
-    void update();
-
-    float render(sf::RenderTarget& target, float contentX, float startY);
-
-    void refreshLabels();
-    void refreshSelection();
-    void registerFocus(std::vector<Button*>& out);
-    bool anyEditing() const { return false; } // 本页没有文本输入
-
-private:
-    /// 把已经解码好的缩略图上传成小纹理。缩略图是后台线程逐个产出的，
-    /// 所以这一步要**反复调**，直到全部就位。
-    void ensureThumbnails();
-
-    /// 按当前选中项更新按钮的选中态（每帧调，成本就是几次 setSelected）
-    void syncSelection();
-
-    /// 统一算行位置。render 与 registerFocus 都要调 —— 焦点导航是按
-    /// 按钮位置做几何计算的，而切 Tab 时的 syncFocus 发生在本页第一次
-    /// render **之前**，只靠 render 布局会让首次的手柄导航落在错误位置。
-    void layoutRows();
-
-    void applySelection(int index);
-
-    const sf::Font& font_;
-    std::shared_ptr<Preferences> prefs_;
-    std::shared_ptr<Background> background_;
-    std::shared_ptr<WallpaperLibrary> library_;
-    std::shared_ptr<WallpaperLoader> loader_;
-
-    /// 与 library_ 的下标一一对应
-    std::vector<std::unique_ptr<Button>> rowButtons_;
-
-    /// 每张壁纸的缩略图纹理。
-    ///
-    /// ⚠️ 纹理必须用 `unique_ptr` 持有：sprite 内部存的是纹理**地址**，
-    ///    而这个 vector 会随着 push_back 重新分配、把元素搬走 ——
-    ///    按值持有的话 sprite 立刻指向已搬走的旧地址（Background 里踩过同样的坑）。
-    struct Thumb {
-        std::unique_ptr<sf::Texture> tex;
-        std::unique_ptr<sf::Sprite> sprite;
-    };
-    std::vector<Thumb> thumbs_;
-
-    /// 最近一次布局用的原点（render 传入并保存，registerFocus 复用）
-    float originX_ = 0.f;
-    float originY_ = 0.f;
-    bool laidOut_ = false;
-
-    // 提示行（含 "当前/总数"）。sf::Text 没有默认构造函数，必须在初始化
-    // 列表里用字体构造 —— 而且不能每帧新建（HarfBuzz 析构那条坑）。
-    sf::Text hint_;
-};
-
-===== ./include/wallpaper/wallpaper_thumbnail.h =====
-#pragma once
-#include <SFML/Graphics/Image.hpp>
-
-/// 壁纸缩略图：把原图等比缩到"最长边不超过 maxDim"。
-///
-/// 为什么要自己缩而不是让 sprite 去缩放显示：壁纸原图最长边到 3840，
-/// 一张解码后就是 33MB。设置里一次性列出 5 张，如果各自上传一张全尺寸
-/// 纹理再靠 setScale 显示小图，显存会直接吃掉 160MB+ —— 而这些像素
-/// 一个都不会真的显示出来。先在 CPU 上缩到 256，一张只剩 147KB。
-///
-/// 用**盒式平均**（每个目标像素取源图对应矩形块的平均值）而不是最近邻：
-/// 3840 → 256 是 15 倍降采样，最近邻会明显出现锯齿与摩尔纹，
-/// 而壁纸缩略图恰恰是看"这张图大概什么样"，锯齿会直接影响判断。
-///
-/// `sf::Image` **不是 `sf::GlResource`** —— 不需要 GL 上下文，所以这个函数
-/// 能在无 DISPLAY 环境里直接单元测试（见 tests/test_wallpaper_thumbnail.cpp）。
-///
-/// - 源图为空 / maxDim 为 0 → 返回空图
-/// - 原图本来就小于 maxDim → 原样返回（**不放大**）
-/// - 宽高比保持不变，且至少 1x1
-sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim);
-
-/// 壁纸缩略图的最长边。256 足够在设置里显示成 ~160x90 的行内预览，
-/// 单张内存 256*256*4 = 256KB（实际按宽高比更小）。
-inline constexpr unsigned kThumbnailMaxDim = 256;
-
-===== ./src/scene/tabs/wallpaper_tab.cpp =====
-#include "scene/tabs/wallpaper_tab.h"
-
-#include "config/keys.h"
-#include "theme.h"
-#include "ui_scale.h"
-#include "utils/text_strings.h"
-#include "utils/utf8.h"
-
-#include <algorithm>
-#include <string>
-
-// 行布局常量统一放在 wallpaper_tab.h 的 wallpaper_tab_layout 里 ——
-// 冒烟测试要按同样的坐标模拟点击，不能各写一份。
-using namespace wallpaper_tab_layout;
-
-WallpaperTab::WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
-                           std::shared_ptr<Background> background,
-                           std::shared_ptr<WallpaperLibrary> library,
-                           std::shared_ptr<WallpaperLoader> loader)
-      : font_(font),
-        prefs_(std::move(prefs)),
-        background_(std::move(background)),
-        library_(std::move(library)),
-        loader_(std::move(loader)),
-        hint_(font, sf::String(), scaledFontSize(18)) {
-    hint_.setFillColor(sf::Color(180, 180, 200));
-
-    if (!library_)
-        return;
-
-    // 每张壁纸一个行按钮。名字用文件名 —— 壁纸没有别的元数据可显示，
-    // 而文件名正是 current_wallpaper 里存的那个东西，对得上号最重要。
-    const int n = library_->size();
-    rowButtons_.reserve(n);
-    thumbs_.resize(n);
-    for (int i = 0; i < n; ++i) {
-        rowButtons_.push_back(std::make_unique<Button>(library_->at(i).filename, font_,
-                                                       sf::Vector2f{0.f, 0.f},
-                                                       sf::Vector2f{kBtnW, kBtnH}, 18));
-    }
-
-    refreshLabels();
-}
-
-void WallpaperTab::refreshLabels() {
-    if (!library_) {
-        hint_.setString(toSf(std::string(Str::T(Str::WallpaperHint))));
-        return;
-    }
-
-    // 把"共几张、当前第几张"和操作提示放一行，省一行空间
-    std::string text = Str::T(Str::WallpaperHint);
-    if (!library_->empty()) {
-        const int cur = background_ ? background_->currentIndex() : -1;
-        text += "    (" + std::to_string(cur >= 0 ? cur + 1 : 0) + "/" +
-                std::to_string(library_->size()) + ")";
-    }
-    hint_.setString(toSf(text));
-}
-
-void WallpaperTab::ensureThumbnails() {
-    if (!loader_ || !library_)
-        return;
-
-    for (int i = 0; i < library_->size(); ++i) {
-        Thumb& t = thumbs_[static_cast<std::size_t>(i)];
-        if (t.tex)
-            continue; // 已经就位
-
-        // 后台线程逐个产出缩略图，没好的下一次再来问
-        auto img = loader_->thumbnail(i);
-        if (!img || img->getSize().x == 0)
-            continue;
-
-        t.tex = std::make_unique<sf::Texture>();
-        if (!t.tex->loadFromImage(*img)) {
-            t.tex.reset();
-            continue; // 这次没成功，下次重试
-        }
-        t.tex->setSmooth(true);
-        // sprite 建在纹理之后，且纹理由 unique_ptr 持有（地址稳定）
-        t.sprite = std::make_unique<sf::Sprite>(*t.tex);
-    }
-}
-
-void WallpaperTab::syncSelection() {
-    const int cur = background_ ? background_->currentIndex() : -1;
-    for (std::size_t i = 0; i < rowButtons_.size(); ++i)
-        rowButtons_[i]->setSelected(static_cast<int>(i) == cur);
-}
-
-void WallpaperTab::layoutRows() {
-    if (!laidOut_)
-        return;
-
-    float y = originY_;
-    for (auto& b : rowButtons_) {
-        b->setPosition({originX_ + kThumbW + kGap, y + (kRowH - kBtnH) * 0.5f});
-        y += kRowH;
-    }
-}
-
-void WallpaperTab::handleEvent(const sf::Event& ev) {
-    for (auto& b : rowButtons_)
-        b->handleEvent(ev);
-}
-
-void WallpaperTab::applySelection(int index) {
-    if (!library_ || !background_)
-        return;
-    const WallpaperInfo info = library_->at(index);
-    if (!info.valid())
-        return;
-
-    // loadByName 内部会做淡入；成功之后 currentFile() **立刻**就是新名字
-    // （选中项与显示项是分开的，见 background.h），所以这里存的就是用户
-    // 刚点的那张，不会存到旧名字上。
-    if (!background_->loadByName(info.filename))
-        return; // 加载失败就别动配置，免得重启后指向一张打不开的图
-
-    if (prefs_)
-        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
-    refreshLabels();
-}
-
-void WallpaperTab::update() {
-    ensureThumbnails();
-    syncSelection();
-
-    for (std::size_t i = 0; i < rowButtons_.size(); ++i) {
-        if (rowButtons_[i]->consumeClick())
-            applySelection(static_cast<int>(i));
-    }
-}
-
-void WallpaperTab::registerFocus(std::vector<Button*>& out) {
-    // 焦点导航按按钮位置算，所以这里必须先把位置落好 ——
-    // 切 Tab 时的 syncFocus 发生在本页第一次 render **之前**。
-    layoutRows();
-    for (auto& b : rowButtons_)
-        out.push_back(b.get());
-}
-
-void WallpaperTab::refreshSelection() {
-    syncSelection();
-}
-
-float WallpaperTab::render(sf::RenderTarget& target, float contentX, float startY) {
-    originX_ = contentX;
-    originY_ = startY + 34.f; // 提示行占掉一行
-    laidOut_ = true;
-    layoutRows();
-
-    hint_.setPosition({contentX, startY});
-    target.draw(hint_);
-
-    if (!library_ || library_->empty()) {
-        return originY_ + 40.f;
-    }
-
-    const Theme& th = getTheme();
-    const int cur = background_ ? background_->currentIndex() : -1;
-
-    float y = originY_;
-    for (int i = 0; i < library_->size(); ++i) {
-        const float rowY = y;
-        const Thumb& t = thumbs_[static_cast<std::size_t>(i)];
-
-        // ---- 缩略图（等比 contain 放进 kThumbW x kThumbH 的框里）----
-        if (t.sprite && t.tex) {
-            const auto ts = t.tex->getSize();
-            if (ts.x > 0 && ts.y > 0) {
-                const float scale = std::min(kThumbW / static_cast<float>(ts.x),
-                                             kThumbH / static_cast<float>(ts.y));
-                t.sprite->setScale({scale, scale});
-                t.sprite->setPosition(
-                    {contentX + (kThumbW - static_cast<float>(ts.x) * scale) * 0.5f,
-                     rowY + (kThumbH - static_cast<float>(ts.y) * scale) * 0.5f});
-                target.draw(*t.sprite);
-            }
-        } else {
-            // 还没解码好：画个占位块。注意别在这儿建 sf::Text（会触发
-            // HarfBuzz 析构那条坑），纯矩形就够了。
-            sf::RectangleShape ph({kThumbW, kThumbH});
-            ph.setFillColor(th.panelBg);
-            ph.setOutlineThickness(1.f);
-            ph.setOutlineColor(th.outline);
-            ph.setPosition({contentX, rowY});
-            target.draw(ph);
-        }
-
-        // ---- 选中项加一圈高亮，和右边按钮的选中态呼应 ----
-        if (i == cur) {
-            sf::RectangleShape hl({kThumbW, kThumbH});
-            hl.setFillColor(sf::Color::Transparent);
-            hl.setOutlineThickness(3.f);
-            hl.setOutlineColor(th.buttonSelected);
-            hl.setPosition({contentX, rowY});
-            target.draw(hl);
-        }
-
-        y += kRowH;
-    }
-
-    // 按钮位置已经在 layoutRows() 里落好，这里只画
-    for (auto& b : rowButtons_)
-        b->render(target);
-
-    return y + 20.f;
-}
-
-===== ./src/wallpaper/wallpaper_thumbnail.cpp =====
-#include "wallpaper/wallpaper_thumbnail.h"
-
-#include <algorithm>
-#include <cstdint>
-
-sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim) {
-    const sf::Vector2u srcSize = src.getSize();
-    if (srcSize.x == 0 || srcSize.y == 0 || maxDim == 0)
-        return {};
-
-    // 本来就够小就原样返回 —— 不放大。放大只会浪费内存，还会更糊。
-    if (srcSize.x <= maxDim && srcSize.y <= maxDim)
-        return src;
-
-    const float scale =
-        static_cast<float>(maxDim) / static_cast<float>(std::max(srcSize.x, srcSize.y));
-
-    const unsigned dstW = std::max(1u, static_cast<unsigned>(srcSize.x * scale));
-    const unsigned dstH = std::max(1u, static_cast<unsigned>(srcSize.y * scale));
-
-    // ⚠️ 必须写成 sf::Vector2u{...}，不能写 ({dstW, dstH}) ——
-    //    单参数花括号在 clang/MSVC 上会与其它重载歧义（见 CLAUDE.md 跨平台那节）
-    sf::Image dst(sf::Vector2u{dstW, dstH}, sf::Color::Black);
-
-    // 读走原始字节：getPixel() 每个像素都有边界检查，这里要读 800 万个像素，
-    // 用裸指针快得多。RGBA 四字节连续排列，逐行从上到下。
-    const std::uint8_t* pixels = src.getPixelsPtr();
-
-    for (unsigned y = 0; y < dstH; ++y) {
-        // 源图上这一段矩形由哪些行组成（整数边界，保证恰好铺满、不重不漏）
-        const unsigned sy0 = y * srcSize.y / dstH;
-        const unsigned sy1 = std::max(sy0 + 1, (y + 1) * srcSize.y / dstH);
-
-        for (unsigned x = 0; x < dstW; ++x) {
-            const unsigned sx0 = x * srcSize.x / dstW;
-            const unsigned sx1 = std::max(sx0 + 1, (x + 1) * srcSize.x / dstW);
-
-            std::uint64_t r = 0, g = 0, b = 0, a = 0;
-            unsigned count = 0;
-            for (unsigned sy = sy0; sy < sy1; ++sy) {
-                const std::uint8_t* row =
-                    pixels + (static_cast<std::size_t>(sy) * srcSize.x + sx0) * 4;
-                for (unsigned sx = sx0; sx < sx1; ++sx) {
-                    r += row[0];
-                    g += row[1];
-                    b += row[2];
-                    a += row[3];
-                    row += 4;
-                    ++count;
-                }
-            }
-            if (count == 0)
-                count = 1;
-
-            dst.setPixel({x, y}, sf::Color(static_cast<std::uint8_t>(r / count),
-                                           static_cast<std::uint8_t>(g / count),
-                                           static_cast<std::uint8_t>(b / count),
-                                           static_cast<std::uint8_t>(a / count)));
-        }
-    }
-
-    return dst;
-}
-
-===== ./tests/test_wallpaper_thumbnail.cpp =====
-#include "doctest.h"
-#include "wallpaper/wallpaper_thumbnail.h"
-
-#include <SFML/Graphics/Image.hpp>
-
-// 壁纸缩略图的降采样。
-//
-// `sf::Image` 不是 `sf::GlResource`，所以这一整套能在**无 DISPLAY** 的环境里跑
-// （CLAUDE.md 里"测试必须能在没有 DISPLAY 的环境下全绿"那条）。
-// Background 那边要 sf::Texture，就没这个待遇了，只能靠 wallpaper_smoke。
-
-namespace {
-
-sf::Image solid(unsigned w, unsigned h, sf::Color c) {
-    // ⚠️ 必须写成 sf::Vector2u{...}：单参数花括号在 clang/MSVC 上与其它重载歧义
-    sf::Image img(sf::Vector2u{w, h}, c);
-    return img;
-}
-
-/// 4x4：左上 2x2 红，其余蓝 —— 降一半之后每个目标像素正好对应一个 2x2 块
-sf::Image quadrants() {
-    sf::Image img(sf::Vector2u{4, 4}, sf::Color::Blue);
-    for (unsigned y = 0; y < 2; ++y)
-        for (unsigned x = 0; x < 2; ++x)
-            img.setPixel({x, y}, sf::Color::Red);
-    return img;
-}
-
-bool sameColor(sf::Color a, sf::Color b) {
-    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
-}
-
-} // namespace
-
-TEST_CASE("缩略图 - 等比缩到最长边不超过 maxDim") {
-    // 100x50 → 最长边 100 缩到 20，宽高比 2:1 必须保持
-    const sf::Image src = solid(100, 50, sf::Color::White);
-    const sf::Image dst = makeThumbnail(src, 20);
-    CHECK(dst.getSize().x == 20);
-    CHECK(dst.getSize().y == 10);
-}
-
-TEST_CASE("缩略图 - 竖图按高度那一边缩") {
-    const sf::Image src = solid(50, 100, sf::Color::White);
-    const sf::Image dst = makeThumbnail(src, 20);
-    CHECK(dst.getSize().x == 10);
-    CHECK(dst.getSize().y == 20);
-}
-
-TEST_CASE("缩略图 - 盒式平均：每个目标像素是源图对应块的平均值") {
-    const sf::Image dst = makeThumbnail(quadrants(), 2);
-    REQUIRE(dst.getSize().x == 2);
-    REQUIRE(dst.getSize().y == 2);
-
-    // 每块都是纯色，平均之后应当原样保留
-    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color::Red));
-    CHECK(sameColor(dst.getPixel({1, 0}), sf::Color::Blue));
-    CHECK(sameColor(dst.getPixel({0, 1}), sf::Color::Blue));
-    CHECK(sameColor(dst.getPixel({1, 1}), sf::Color::Blue));
-}
-
-TEST_CASE("缩略图 - 会真的做平均，不是取其中一个像素") {
-    // 2x1：左边黑、右边白。缩到 1x1 应当是两者的平均（127 左右），
-    // 而不是"取左边"（0）或"取右边"（255）—— 这条专门挡"退化成最近邻"。
-    sf::Image src(sf::Vector2u{2, 1}, sf::Color::Black);
-    src.setPixel({1, 0}, sf::Color::White);
-
-    const sf::Image dst = makeThumbnail(src, 1);
-    REQUIRE(dst.getSize().x == 1);
-    const sf::Color c = dst.getPixel({0, 0});
-    const bool inRange = (c.r >= 120) && (c.r <= 135);
-    CHECK_MESSAGE(inRange, "期望约 127，实得 " << static_cast<int>(c.r));
-}
-
-TEST_CASE("缩略图 - 纯色图缩小后还是那个颜色") {
-    const sf::Image src = solid(64, 64, sf::Color(10, 200, 30, 255));
-    const sf::Image dst = makeThumbnail(src, 8);
-    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color(10, 200, 30, 255)));
-    CHECK(sameColor(dst.getPixel({7, 7}), sf::Color(10, 200, 30, 255)));
-}
-
-TEST_CASE("缩略图 - 本来就小于 maxDim 就原样返回，不放大") {
-    const sf::Image src = solid(10, 10, sf::Color::Green);
-    const sf::Image dst = makeThumbnail(src, 32);
-    CHECK(dst.getSize().x == 10);
-    CHECK(dst.getSize().y == 10);
-    CHECK(sameColor(dst.getPixel({5, 5}), sf::Color::Green));
-}
-
-TEST_CASE("缩略图 - 空图 / maxDim 为 0 返回空图，不崩") {
-    const sf::Image empty;
-    CHECK(makeThumbnail(empty, 32).getSize().x == 0);
-
-    const sf::Image src = solid(8, 8, sf::Color::White);
-    CHECK(makeThumbnail(src, 0).getSize().x == 0);
-}
-
-TEST_CASE("缩略图 - 极端宽高比也不会缩成 0 宽或 0 高") {
-    // 1000x1 缩到 8 → 高会算成 0.008，必须被夹到至少 1 像素
-    const sf::Image wide = solid(1000, 1, sf::Color::White);
-    const sf::Image d1 = makeThumbnail(wide, 8);
-    CHECK(d1.getSize().x == 8);
-    CHECK(d1.getSize().y >= 1);
-
-    const sf::Image tall = solid(1, 1000, sf::Color::White);
-    const sf::Image d2 = makeThumbnail(tall, 8);
-    CHECK(d2.getSize().x >= 1);
-    CHECK(d2.getSize().y == 8);
-}
-
-TEST_CASE("缩略图 - 实际尺寸的壁纸能缩到 256 且形状对") {
-    // 3840x2160（4K，最长边的墙壁纸就是这么大）→ 256x144
-    const sf::Image src = solid(3840, 2160, sf::Color(70, 57, 40, 255));
-    const sf::Image dst = makeThumbnail(src, kThumbnailMaxDim);
-    CHECK(dst.getSize().x == 256);
-    CHECK(dst.getSize().y == 144);
-    // 单张缩略图的内存占用 —— 这里顺便钉住"不是全尺寸纹理"这件事。
-    // 注意先算成变量再比：doctest 不拆解三连乘的表达式，会直接静态断言报
-    // "Expression Too Complex Please Rewrite As Binary Comparison"。
-    const unsigned thumbBytes = dst.getSize().x * dst.getSize().y * 4;
-    constexpr unsigned kThumbBudget = 256u * 256u * 4;
-    constexpr unsigned kFullHdBytes = 1920u * 1080u * 4;
-    constexpr unsigned kFiftieth = kFullHdBytes / 50;
-    CHECK(thumbBytes <= kThumbBudget);
-    // 实测 256x144x4 = 147KB，而一张 1080p 全尺寸纹理是 8.3MB —— 小约 56 倍。
-    // 这里只要求"至少小 50 倍"，别把具体倍率写死。
-    CHECK(thumbBytes < kFiftieth);
-    CHECK(sameColor(dst.getPixel({100, 100}), sf::Color(70, 57, 40, 255)));
-}
-
 ===== ./.github/workflows/build.yml =====
 name: Build & Test
 
@@ -9415,6 +8867,119 @@ private:
     void applyAutoPause();
     void applyLogRotation();
 };
+===== ./include/scene/tabs/wallpaper_tab.h =====
+#pragma once
+#include "background.h"
+#include "button.h"
+#include "preferences.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
+
+#include <SFML/Graphics.hpp>
+#include <memory>
+#include <vector>
+
+namespace wallpaper_tab_layout {
+
+inline constexpr float kThumbW = 160.f;
+inline constexpr float kThumbH = 90.f;
+inline constexpr float kRowH = 106.f;
+inline constexpr float kGap = 20.f;
+inline constexpr float kBtnW = 420.f;
+inline constexpr float kBtnH = 46.f;
+inline constexpr float kHintH = 34.f;
+
+/// 第 index 行那个按钮的左上角。
+///
+/// 放在头里是**故意的**：冒烟测试要按同样的坐标模拟鼠标点击，而
+/// "点击落在哪个按钮上"这件事只能有一个来源 —— 布局改了而测试还按老坐标点，
+/// 断言会变成"点空了所以什么也没发生"，看着像通过、其实什么都没验。
+inline sf::Vector2f rowButtonPos(float contentX, float startY, int index) {
+    return {contentX + kThumbW + kGap,
+            startY + kHintH + static_cast<float>(index) * kRowH + (kRowH - kBtnH) * 0.5f};
+}
+
+/// 第 index 行缩略图框的左上角
+inline sf::Vector2f rowThumbPos(float contentX, float startY, int index) {
+    return {contentX, startY + kHintH + static_cast<float>(index) * kRowH};
+}
+
+} // namespace wallpaper_tab_layout
+
+/// 设置里的「壁纸」页：把目录里所有壁纸列出来（缩略图 + 文件名），点一下就切。
+///
+/// 一行一张：
+///     [ 缩略图 160x90 ]  [ Button: 文件名 ]
+///
+/// **为什么用 Button 当行**：点击、悬停、选中态、以及手柄焦点导航全都白拿 ——
+/// `FocusGroup` 收的就是 `std::vector<Button*>`，再按按钮位置做几何导航。
+/// 缩略图由本类自己画在按钮左边，不参与焦点。
+///
+/// ⚠️ 缩略图**必须先缩到 256** 再上传纹理（见 wallpaper_thumbnail.h）。
+///    直接给全尺寸纹理套 `setScale` 显示小图的话，5 张壁纸要吃 160MB+ 显存，
+///    而那些像素一个都不会真的被显示出来。
+class WallpaperTab {
+public:
+    WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                 std::shared_ptr<Background> background,
+                 std::shared_ptr<WallpaperLibrary> library,
+                 std::shared_ptr<WallpaperLoader> loader);
+
+    void handleEvent(const sf::Event& ev);
+    void update();
+
+    float render(sf::RenderTarget& target, float contentX, float startY);
+
+    void refreshLabels();
+    void refreshSelection();
+    void registerFocus(std::vector<Button*>& out);
+    bool anyEditing() const { return false; } // 本页没有文本输入
+
+private:
+    /// 把已经解码好的缩略图上传成小纹理。缩略图是后台线程逐个产出的，
+    /// 所以这一步要**反复调**，直到全部就位。
+    void ensureThumbnails();
+
+    /// 按当前选中项更新按钮的选中态（每帧调，成本就是几次 setSelected）
+    void syncSelection();
+
+    /// 统一算行位置。render 与 registerFocus 都要调 —— 焦点导航是按
+    /// 按钮位置做几何计算的，而切 Tab 时的 syncFocus 发生在本页第一次
+    /// render **之前**，只靠 render 布局会让首次的手柄导航落在错误位置。
+    void layoutRows();
+
+    void applySelection(int index);
+
+    const sf::Font& font_;
+    std::shared_ptr<Preferences> prefs_;
+    std::shared_ptr<Background> background_;
+    std::shared_ptr<WallpaperLibrary> library_;
+    std::shared_ptr<WallpaperLoader> loader_;
+
+    /// 与 library_ 的下标一一对应
+    std::vector<std::unique_ptr<Button>> rowButtons_;
+
+    /// 每张壁纸的缩略图纹理。
+    ///
+    /// ⚠️ 纹理必须用 `unique_ptr` 持有：sprite 内部存的是纹理**地址**，
+    ///    而这个 vector 会随着 push_back 重新分配、把元素搬走 ——
+    ///    按值持有的话 sprite 立刻指向已搬走的旧地址（Background 里踩过同样的坑）。
+    struct Thumb {
+        std::unique_ptr<sf::Texture> tex;
+        std::unique_ptr<sf::Sprite> sprite;
+    };
+    std::vector<Thumb> thumbs_;
+
+    /// 最近一次布局用的原点（render 传入并保存，registerFocus 复用）
+    float originX_ = 0.f;
+    float originY_ = 0.f;
+    bool laidOut_ = false;
+
+    // 提示行（含 "当前/总数"）。sf::Text 没有默认构造函数，必须在初始化
+    // 列表里用字体构造 —— 而且不能每帧新建（HarfBuzz 析构那条坑）。
+    sf::Text hint_;
+};
+
 ===== ./include/ui/background.h =====
 #pragma once
 #include "wallpaper/wallpaper_library.h"
@@ -11342,6 +10907,33 @@ private:
     std::unordered_map<int, std::shared_ptr<const sf::Image>> thumbs_;
     std::atomic<bool> stop_{false};
 };
+
+===== ./include/wallpaper/wallpaper_thumbnail.h =====
+#pragma once
+#include <SFML/Graphics/Image.hpp>
+
+/// 壁纸缩略图：把原图等比缩到"最长边不超过 maxDim"。
+///
+/// 为什么要自己缩而不是让 sprite 去缩放显示：壁纸原图最长边到 3840，
+/// 一张解码后就是 33MB。设置里一次性列出 5 张，如果各自上传一张全尺寸
+/// 纹理再靠 setScale 显示小图，显存会直接吃掉 160MB+ —— 而这些像素
+/// 一个都不会真的显示出来。先在 CPU 上缩到 256，一张只剩 147KB。
+///
+/// 用**盒式平均**（每个目标像素取源图对应矩形块的平均值）而不是最近邻：
+/// 3840 → 256 是 15 倍降采样，最近邻会明显出现锯齿与摩尔纹，
+/// 而壁纸缩略图恰恰是看"这张图大概什么样"，锯齿会直接影响判断。
+///
+/// `sf::Image` **不是 `sf::GlResource`** —— 不需要 GL 上下文，所以这个函数
+/// 能在无 DISPLAY 环境里直接单元测试（见 tests/test_wallpaper_thumbnail.cpp）。
+///
+/// - 源图为空 / maxDim 为 0 → 返回空图
+/// - 原图本来就小于 maxDim → 原样返回（**不放大**）
+/// - 宽高比保持不变，且至少 1x1
+sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim);
+
+/// 壁纸缩略图的最长边。256 足够在设置里显示成 ~160x90 的行内预览，
+/// 单张内存 256*256*4 = 256KB（实际按宽高比更小）。
+inline constexpr unsigned kThumbnailMaxDim = 256;
 
 ===== ./src/config/bootstrap.cpp =====
 #include "config/bootstrap.h"
@@ -24201,6 +23793,218 @@ float OtherTab::render(sf::RenderTarget& target,
     // 底部留 40 像素给"关于 / 重置"按钮（这两个在窗口坐标系，不在这里画）
     return y + 40.f;
 }
+===== ./src/scene/tabs/wallpaper_tab.cpp =====
+#include "scene/tabs/wallpaper_tab.h"
+
+#include "config/keys.h"
+#include "theme.h"
+#include "ui_scale.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
+
+#include <algorithm>
+#include <string>
+
+// 行布局常量统一放在 wallpaper_tab.h 的 wallpaper_tab_layout 里 ——
+// 冒烟测试要按同样的坐标模拟点击，不能各写一份。
+using namespace wallpaper_tab_layout;
+
+WallpaperTab::WallpaperTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
+                           std::shared_ptr<Background> background,
+                           std::shared_ptr<WallpaperLibrary> library,
+                           std::shared_ptr<WallpaperLoader> loader)
+      : font_(font),
+        prefs_(std::move(prefs)),
+        background_(std::move(background)),
+        library_(std::move(library)),
+        loader_(std::move(loader)),
+        hint_(font, sf::String(), scaledFontSize(18)) {
+    hint_.setFillColor(sf::Color(180, 180, 200));
+
+    if (!library_)
+        return;
+
+    // 每张壁纸一个行按钮。名字用文件名 —— 壁纸没有别的元数据可显示，
+    // 而文件名正是 current_wallpaper 里存的那个东西，对得上号最重要。
+    const int n = library_->size();
+    rowButtons_.reserve(n);
+    thumbs_.resize(n);
+    for (int i = 0; i < n; ++i) {
+        rowButtons_.push_back(std::make_unique<Button>(library_->at(i).filename, font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{kBtnW, kBtnH}, 18));
+    }
+
+    refreshLabels();
+}
+
+void WallpaperTab::refreshLabels() {
+    if (!library_) {
+        hint_.setString(toSf(std::string(Str::T(Str::WallpaperHint))));
+        return;
+    }
+
+    // 把"共几张、当前第几张"和操作提示放一行，省一行空间
+    std::string text = Str::T(Str::WallpaperHint);
+    if (!library_->empty()) {
+        const int cur = background_ ? background_->currentIndex() : -1;
+        text += "    (" + std::to_string(cur >= 0 ? cur + 1 : 0) + "/" +
+                std::to_string(library_->size()) + ")";
+    }
+    hint_.setString(toSf(text));
+}
+
+void WallpaperTab::ensureThumbnails() {
+    if (!loader_ || !library_)
+        return;
+
+    for (int i = 0; i < library_->size(); ++i) {
+        Thumb& t = thumbs_[static_cast<std::size_t>(i)];
+        if (t.tex)
+            continue; // 已经就位
+
+        // 后台线程逐个产出缩略图，没好的下一次再来问
+        auto img = loader_->thumbnail(i);
+        if (!img || img->getSize().x == 0)
+            continue;
+
+        t.tex = std::make_unique<sf::Texture>();
+        if (!t.tex->loadFromImage(*img)) {
+            t.tex.reset();
+            continue; // 这次没成功，下次重试
+        }
+        t.tex->setSmooth(true);
+        // sprite 建在纹理之后，且纹理由 unique_ptr 持有（地址稳定）
+        t.sprite = std::make_unique<sf::Sprite>(*t.tex);
+    }
+}
+
+void WallpaperTab::syncSelection() {
+    const int cur = background_ ? background_->currentIndex() : -1;
+    for (std::size_t i = 0; i < rowButtons_.size(); ++i)
+        rowButtons_[i]->setSelected(static_cast<int>(i) == cur);
+}
+
+void WallpaperTab::layoutRows() {
+    if (!laidOut_)
+        return;
+
+    float y = originY_;
+    for (auto& b : rowButtons_) {
+        b->setPosition({originX_ + kThumbW + kGap, y + (kRowH - kBtnH) * 0.5f});
+        y += kRowH;
+    }
+}
+
+void WallpaperTab::handleEvent(const sf::Event& ev) {
+    for (auto& b : rowButtons_)
+        b->handleEvent(ev);
+}
+
+void WallpaperTab::applySelection(int index) {
+    if (!library_ || !background_)
+        return;
+    const WallpaperInfo info = library_->at(index);
+    if (!info.valid())
+        return;
+
+    // loadByName 内部会做淡入；成功之后 currentFile() **立刻**就是新名字
+    // （选中项与显示项是分开的，见 background.h），所以这里存的就是用户
+    // 刚点的那张，不会存到旧名字上。
+    if (!background_->loadByName(info.filename))
+        return; // 加载失败就别动配置，免得重启后指向一张打不开的图
+
+    if (prefs_)
+        prefs_->set(ConfigKey::kCurrentWallpaper, background_->currentFile());
+    refreshLabels();
+}
+
+void WallpaperTab::update() {
+    ensureThumbnails();
+    syncSelection();
+
+    for (std::size_t i = 0; i < rowButtons_.size(); ++i) {
+        if (rowButtons_[i]->consumeClick())
+            applySelection(static_cast<int>(i));
+    }
+}
+
+void WallpaperTab::registerFocus(std::vector<Button*>& out) {
+    // 焦点导航按按钮位置算，所以这里必须先把位置落好 ——
+    // 切 Tab 时的 syncFocus 发生在本页第一次 render **之前**。
+    layoutRows();
+    for (auto& b : rowButtons_)
+        out.push_back(b.get());
+}
+
+void WallpaperTab::refreshSelection() {
+    syncSelection();
+}
+
+float WallpaperTab::render(sf::RenderTarget& target, float contentX, float startY) {
+    originX_ = contentX;
+    originY_ = startY + 34.f; // 提示行占掉一行
+    laidOut_ = true;
+    layoutRows();
+
+    hint_.setPosition({contentX, startY});
+    target.draw(hint_);
+
+    if (!library_ || library_->empty()) {
+        return originY_ + 40.f;
+    }
+
+    const Theme& th = getTheme();
+    const int cur = background_ ? background_->currentIndex() : -1;
+
+    float y = originY_;
+    for (int i = 0; i < library_->size(); ++i) {
+        const float rowY = y;
+        const Thumb& t = thumbs_[static_cast<std::size_t>(i)];
+
+        // ---- 缩略图（等比 contain 放进 kThumbW x kThumbH 的框里）----
+        if (t.sprite && t.tex) {
+            const auto ts = t.tex->getSize();
+            if (ts.x > 0 && ts.y > 0) {
+                const float scale = std::min(kThumbW / static_cast<float>(ts.x),
+                                             kThumbH / static_cast<float>(ts.y));
+                t.sprite->setScale({scale, scale});
+                t.sprite->setPosition(
+                    {contentX + (kThumbW - static_cast<float>(ts.x) * scale) * 0.5f,
+                     rowY + (kThumbH - static_cast<float>(ts.y) * scale) * 0.5f});
+                target.draw(*t.sprite);
+            }
+        } else {
+            // 还没解码好：画个占位块。注意别在这儿建 sf::Text（会触发
+            // HarfBuzz 析构那条坑），纯矩形就够了。
+            sf::RectangleShape ph({kThumbW, kThumbH});
+            ph.setFillColor(th.panelBg);
+            ph.setOutlineThickness(1.f);
+            ph.setOutlineColor(th.outline);
+            ph.setPosition({contentX, rowY});
+            target.draw(ph);
+        }
+
+        // ---- 选中项加一圈高亮，和右边按钮的选中态呼应 ----
+        if (i == cur) {
+            sf::RectangleShape hl({kThumbW, kThumbH});
+            hl.setFillColor(sf::Color::Transparent);
+            hl.setOutlineThickness(3.f);
+            hl.setOutlineColor(th.buttonSelected);
+            hl.setPosition({contentX, rowY});
+            target.draw(hl);
+        }
+
+        y += kRowH;
+    }
+
+    // 按钮位置已经在 layoutRows() 里落好，这里只画
+    for (auto& b : rowButtons_)
+        b->render(target);
+
+    return y + 20.f;
+}
+
 ===== ./src/ui/background.cpp =====
 #include "background.h"
 
@@ -27861,6 +27665,71 @@ void WallpaperLoader::workerLoop() {
         // 调用方会回退到旧图或默认。
         cv_.notify_all();
     }
+}
+
+===== ./src/wallpaper/wallpaper_thumbnail.cpp =====
+#include "wallpaper/wallpaper_thumbnail.h"
+
+#include <algorithm>
+#include <cstdint>
+
+sf::Image makeThumbnail(const sf::Image& src, unsigned maxDim) {
+    const sf::Vector2u srcSize = src.getSize();
+    if (srcSize.x == 0 || srcSize.y == 0 || maxDim == 0)
+        return {};
+
+    // 本来就够小就原样返回 —— 不放大。放大只会浪费内存，还会更糊。
+    if (srcSize.x <= maxDim && srcSize.y <= maxDim)
+        return src;
+
+    const float scale =
+        static_cast<float>(maxDim) / static_cast<float>(std::max(srcSize.x, srcSize.y));
+
+    const unsigned dstW = std::max(1u, static_cast<unsigned>(srcSize.x * scale));
+    const unsigned dstH = std::max(1u, static_cast<unsigned>(srcSize.y * scale));
+
+    // ⚠️ 必须写成 sf::Vector2u{...}，不能写 ({dstW, dstH}) ——
+    //    单参数花括号在 clang/MSVC 上会与其它重载歧义（见 CLAUDE.md 跨平台那节）
+    sf::Image dst(sf::Vector2u{dstW, dstH}, sf::Color::Black);
+
+    // 读走原始字节：getPixel() 每个像素都有边界检查，这里要读 800 万个像素，
+    // 用裸指针快得多。RGBA 四字节连续排列，逐行从上到下。
+    const std::uint8_t* pixels = src.getPixelsPtr();
+
+    for (unsigned y = 0; y < dstH; ++y) {
+        // 源图上这一段矩形由哪些行组成（整数边界，保证恰好铺满、不重不漏）
+        const unsigned sy0 = y * srcSize.y / dstH;
+        const unsigned sy1 = std::max(sy0 + 1, (y + 1) * srcSize.y / dstH);
+
+        for (unsigned x = 0; x < dstW; ++x) {
+            const unsigned sx0 = x * srcSize.x / dstW;
+            const unsigned sx1 = std::max(sx0 + 1, (x + 1) * srcSize.x / dstW);
+
+            std::uint64_t r = 0, g = 0, b = 0, a = 0;
+            unsigned count = 0;
+            for (unsigned sy = sy0; sy < sy1; ++sy) {
+                const std::uint8_t* row =
+                    pixels + (static_cast<std::size_t>(sy) * srcSize.x + sx0) * 4;
+                for (unsigned sx = sx0; sx < sx1; ++sx) {
+                    r += row[0];
+                    g += row[1];
+                    b += row[2];
+                    a += row[3];
+                    row += 4;
+                    ++count;
+                }
+            }
+            if (count == 0)
+                count = 1;
+
+            dst.setPixel({x, y}, sf::Color(static_cast<std::uint8_t>(r / count),
+                                           static_cast<std::uint8_t>(g / count),
+                                           static_cast<std::uint8_t>(b / count),
+                                           static_cast<std::uint8_t>(a / count)));
+        }
+    }
+
+    return dst;
 }
 
 ===== ./tests/CMakeLists.txt =====
@@ -41733,6 +41602,137 @@ TEST_CASE("WallpaperLibrary - 同一主名 + 不同扩展名多个候选时取�
     CHECK(lib.resolveIndex("x.tiff") >= 0); // 任何一个都行
     CHECK(lib.resolveIndex("x.jpg") == 0);  // 全名命中优先
     CHECK(lib.resolveIndex("x.png") == 1);
+}
+
+===== ./tests/test_wallpaper_thumbnail.cpp =====
+#include "doctest.h"
+#include "wallpaper/wallpaper_thumbnail.h"
+
+#include <SFML/Graphics/Image.hpp>
+
+// 壁纸缩略图的降采样。
+//
+// `sf::Image` 不是 `sf::GlResource`，所以这一整套能在**无 DISPLAY** 的环境里跑
+// （CLAUDE.md 里"测试必须能在没有 DISPLAY 的环境下全绿"那条）。
+// Background 那边要 sf::Texture，就没这个待遇了，只能靠 wallpaper_smoke。
+
+namespace {
+
+sf::Image solid(unsigned w, unsigned h, sf::Color c) {
+    // ⚠️ 必须写成 sf::Vector2u{...}：单参数花括号在 clang/MSVC 上与其它重载歧义
+    sf::Image img(sf::Vector2u{w, h}, c);
+    return img;
+}
+
+/// 4x4：左上 2x2 红，其余蓝 —— 降一半之后每个目标像素正好对应一个 2x2 块
+sf::Image quadrants() {
+    sf::Image img(sf::Vector2u{4, 4}, sf::Color::Blue);
+    for (unsigned y = 0; y < 2; ++y)
+        for (unsigned x = 0; x < 2; ++x)
+            img.setPixel({x, y}, sf::Color::Red);
+    return img;
+}
+
+bool sameColor(sf::Color a, sf::Color b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+} // namespace
+
+TEST_CASE("缩略图 - 等比缩到最长边不超过 maxDim") {
+    // 100x50 → 最长边 100 缩到 20，宽高比 2:1 必须保持
+    const sf::Image src = solid(100, 50, sf::Color::White);
+    const sf::Image dst = makeThumbnail(src, 20);
+    CHECK(dst.getSize().x == 20);
+    CHECK(dst.getSize().y == 10);
+}
+
+TEST_CASE("缩略图 - 竖图按高度那一边缩") {
+    const sf::Image src = solid(50, 100, sf::Color::White);
+    const sf::Image dst = makeThumbnail(src, 20);
+    CHECK(dst.getSize().x == 10);
+    CHECK(dst.getSize().y == 20);
+}
+
+TEST_CASE("缩略图 - 盒式平均：每个目标像素是源图对应块的平均值") {
+    const sf::Image dst = makeThumbnail(quadrants(), 2);
+    REQUIRE(dst.getSize().x == 2);
+    REQUIRE(dst.getSize().y == 2);
+
+    // 每块都是纯色，平均之后应当原样保留
+    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color::Red));
+    CHECK(sameColor(dst.getPixel({1, 0}), sf::Color::Blue));
+    CHECK(sameColor(dst.getPixel({0, 1}), sf::Color::Blue));
+    CHECK(sameColor(dst.getPixel({1, 1}), sf::Color::Blue));
+}
+
+TEST_CASE("缩略图 - 会真的做平均，不是取其中一个像素") {
+    // 2x1：左边黑、右边白。缩到 1x1 应当是两者的平均（127 左右），
+    // 而不是"取左边"（0）或"取右边"（255）—— 这条专门挡"退化成最近邻"。
+    sf::Image src(sf::Vector2u{2, 1}, sf::Color::Black);
+    src.setPixel({1, 0}, sf::Color::White);
+
+    const sf::Image dst = makeThumbnail(src, 1);
+    REQUIRE(dst.getSize().x == 1);
+    const sf::Color c = dst.getPixel({0, 0});
+    const bool inRange = (c.r >= 120) && (c.r <= 135);
+    CHECK_MESSAGE(inRange, "期望约 127，实得 " << static_cast<int>(c.r));
+}
+
+TEST_CASE("缩略图 - 纯色图缩小后还是那个颜色") {
+    const sf::Image src = solid(64, 64, sf::Color(10, 200, 30, 255));
+    const sf::Image dst = makeThumbnail(src, 8);
+    CHECK(sameColor(dst.getPixel({0, 0}), sf::Color(10, 200, 30, 255)));
+    CHECK(sameColor(dst.getPixel({7, 7}), sf::Color(10, 200, 30, 255)));
+}
+
+TEST_CASE("缩略图 - 本来就小于 maxDim 就原样返回，不放大") {
+    const sf::Image src = solid(10, 10, sf::Color::Green);
+    const sf::Image dst = makeThumbnail(src, 32);
+    CHECK(dst.getSize().x == 10);
+    CHECK(dst.getSize().y == 10);
+    CHECK(sameColor(dst.getPixel({5, 5}), sf::Color::Green));
+}
+
+TEST_CASE("缩略图 - 空图 / maxDim 为 0 返回空图，不崩") {
+    const sf::Image empty;
+    CHECK(makeThumbnail(empty, 32).getSize().x == 0);
+
+    const sf::Image src = solid(8, 8, sf::Color::White);
+    CHECK(makeThumbnail(src, 0).getSize().x == 0);
+}
+
+TEST_CASE("缩略图 - 极端宽高比也不会缩成 0 宽或 0 高") {
+    // 1000x1 缩到 8 → 高会算成 0.008，必须被夹到至少 1 像素
+    const sf::Image wide = solid(1000, 1, sf::Color::White);
+    const sf::Image d1 = makeThumbnail(wide, 8);
+    CHECK(d1.getSize().x == 8);
+    CHECK(d1.getSize().y >= 1);
+
+    const sf::Image tall = solid(1, 1000, sf::Color::White);
+    const sf::Image d2 = makeThumbnail(tall, 8);
+    CHECK(d2.getSize().x >= 1);
+    CHECK(d2.getSize().y == 8);
+}
+
+TEST_CASE("缩略图 - 实际尺寸的壁纸能缩到 256 且形状对") {
+    // 3840x2160（4K，最长边的墙壁纸就是这么大）→ 256x144
+    const sf::Image src = solid(3840, 2160, sf::Color(70, 57, 40, 255));
+    const sf::Image dst = makeThumbnail(src, kThumbnailMaxDim);
+    CHECK(dst.getSize().x == 256);
+    CHECK(dst.getSize().y == 144);
+    // 单张缩略图的内存占用 —— 这里顺便钉住"不是全尺寸纹理"这件事。
+    // 注意先算成变量再比：doctest 不拆解三连乘的表达式，会直接静态断言报
+    // "Expression Too Complex Please Rewrite As Binary Comparison"。
+    const unsigned thumbBytes = dst.getSize().x * dst.getSize().y * 4;
+    constexpr unsigned kThumbBudget = 256u * 256u * 4;
+    constexpr unsigned kFullHdBytes = 1920u * 1080u * 4;
+    constexpr unsigned kFiftieth = kFullHdBytes / 50;
+    CHECK(thumbBytes <= kThumbBudget);
+    // 实测 256x144x4 = 147KB，而一张 1080p 全尺寸纹理是 8.3MB —— 小约 56 倍。
+    // 这里只要求"至少小 50 倍"，别把具体倍率写死。
+    CHECK(thumbBytes < kFiftieth);
+    CHECK(sameColor(dst.getPixel({100, 100}), sf::Color(70, 57, 40, 255)));
 }
 
 ===== ./tools/validate_levels.cpp =====

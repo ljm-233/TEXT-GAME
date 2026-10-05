@@ -331,6 +331,34 @@ jobs:
       contents: write
 
     steps:
+      # 要用 tag 自带的说明当发布正文，所以得把 tag 一起拉下来
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 从 tag 说明生成发布正文
+        run: |
+          # ⚠️ 两个坑，0.3.7 发版时都踩到了：
+          #
+          #   1. `action-gh-release` **不会**自动拿 tag 说明当正文。
+          #      只设 generate_release_notes 的话，正文就只剩一行自动生成的
+          #      "**Full Changelog**: ..."，手写的发版说明根本不出现。
+          #      必须显式给 body / body_path。
+          #      （0.3.6 的正文看着是对的 —— 那是发布之后手工编辑的，
+          #        不是这个 workflow 写进去的，害我以为它会自动用 tag 说明。）
+          #
+          #   2. 打 tag 时要用 `git tag -a --cleanup=verbatim -F <文件>`。
+          #      默认的 cleanup=strip 会把 '#' 开头的行当**注释吃掉** ——
+          #      说明里的 "## 0.3.7 xxx" 标题就是这么没的。
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "tag 没有说明，写个占位正文，别发出空正文"
+            printf '本次发布没有写 tag 说明，改动见提交记录。\n' > release_notes.md
+          fi
+          echo "---- 发布正文预览 ----"
+          head -20 release_notes.md
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -345,7 +373,8 @@ jobs:
             artifacts/TEXT-GAME-Linux/*
             artifacts/TEXT-GAME-macOS/*
             artifacts/TEXT-GAME-Windows/*
-          generate_release_notes: true
+          body_path: release_notes.md
+          generate_release_notes: false
           draft: false
           prerelease: false
         env:

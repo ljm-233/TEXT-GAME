@@ -466,6 +466,23 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
   Windows（NSIS 安装包）。`create-release` 把三个 artifact 目录全挂上去。
 - 想在不发版的前提下验证打包：`gh workflow run release.yml`。
   `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，手动触发只当演练。
+- **发版说明走附注 tag，但有两个坑**（0.3.7 时全踩了，正文只剩一行自动 changelog）：
+
+  1. **打 tag 必须加 `--cleanup=verbatim`**：
+     ```bash
+     git tag -a --cleanup=verbatim -F /tmp/notes.md v0.3.7
+     ```
+     默认的 `cleanup=strip` 会把 **`#` 开头的行当注释吃掉** ——
+     说明里的 `## 0.3.7 xxx` 标题就这么没了，而且 git 不会给任何提示。
+  2. **`action-gh-release` 不会自动拿 tag 说明当正文**。只设
+     `generate_release_notes: true` 的话，正文是一行自动生成的
+     `**Full Changelog**: ...`，手写的说明根本不出现。
+     现在 `release.yml` 里加了一步 `git tag -l --format='%(contents)'`，
+     用 `body_path` 显式喂进去 —— 改的是 workflow，不用每次手工编辑 release。
+
+  ⚠️ 别被历史发布迷惑：v0.3.6 的正文看着是手写说明，**那是发布后手工编辑的**，
+  不代表 workflow 会写进去。要看正文对不对，发完用
+  `gh release view v0.3.7 --json body --jq .body` 核一遍。
 - **每个 job 都有自检步骤，不达标就红**：
   - Linux：`lib/` 库数量 + 带 `LD_LIBRARY_PATH` 的 `ldd` 无 `not found`、
     zip 有内容、deb 的 `Architecture` 非空且不是 i386、rpm 的 `ARCH=x86_64`、
