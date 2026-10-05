@@ -3,13 +3,19 @@
 # 打包 AppImage。
 #
 # 前置：
-#   - 已编译 Release 版本（cmake --preset release-package && cmake --build --preset release-package）
+#   - 已编译并配置好 Release（cmake --preset release-package）
 #   - 已生成图标（python3 packaging/icons/generate_icons.py）
 #   - 已安装 appimagetool
 #
 # 输出：
 #   TEXT-GAME-<version>-x86_64.AppImage
 #
+# 依赖库不再手写清单，而是复用 CMake 的 install 规则：
+# `BUNDLE_RUNTIME_DEPS=ON` 时 install(CODE) 会用 GET_RUNTIME_DEPENDENCIES
+# 把 SFML 及其**间接**依赖的完整闭包算出来放进 lib/。
+# 所以 AppImage 现在和 tar.gz / deb / rpm 用的是同一套闭包 ——
+# 以前这里维护着一份四十来个库名的模式列表，漏一个就是"干净机器上起不来"，
+# 而且和 CMake 那份各改各的。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -22,15 +28,16 @@ if [ -z "$VERSION" ]; then
     echo "错误: 无法从 CMakeLists.txt 解析出版本号"
     exit 1
 fi
+
 BUILD_DIR="${TEXTGAME_BUILD_DIR:-$ROOT/build/release-package}"
+STAGE="$ROOT/build/appstage"
 APP_NAME="TEXT-GAME"
-APP_ID="text-game"
 APPDIR="$ROOT/build/AppDir"
 OUTPUT="$ROOT/build/${APP_NAME}-${VERSION}-x86_64.AppImage"
 
 echo "=== 检查前置 ==="
-if [ ! -x "$BUILD_DIR/text_game" ]; then
-    echo "错误: 找不到 $BUILD_DIR/text_game"
+if [ ! -f "$BUILD_DIR/cmake_install.cmake" ]; then
+    echo "错误: $BUILD_DIR 还不是一个配置好的构建目录"
     echo "请先运行:"
     echo "  cmake --preset release-package"
     echo "  cmake --build --preset release-package"
@@ -56,107 +63,45 @@ if [ ! -f "$ROOT/packaging/icons/text-game.png" ]; then
     exit 1
 fi
 
-echo "=== 清理旧的 AppDir ==="
+echo "=== 用 CMake 的 install 规则生成自带依赖的目录树 ==="
+# 这一步就是 tar.gz / deb / rpm 走的同一条路：
+# install(CODE) 里的 GET_RUNTIME_DEPENDENCIES + FOLLOW_SYMLINK_CHAIN
+rm -rf "$STAGE"
+cmake --install "$BUILD_DIR" --prefix "$STAGE"
+
+LIBS=$(find "$STAGE/lib" -maxdepth 1 -name '*.so*' 2>/dev/null | wc -l)
+echo "  依赖库: $LIBS 个"
+if [ "$LIBS" -lt 5 ]; then
+    echo "错误: lib/ 几乎是空的 —— 构建时是不是没开 BUNDLE_RUNTIME_DEPS？"
+    exit 1
+fi
+
+echo "=== 组装 AppDir ==="
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/lib"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor"
 
-echo "=== 复制可执行文件 ==="
-cp "$BUILD_DIR/text_game" "$APPDIR/usr/bin/text_game"
+cp "$STAGE/text_game" "$APPDIR/usr/bin/text_game"
 chmod +x "$APPDIR/usr/bin/text_game"
 
-echo "=== 复制资源（和可执行文件同目录，便于 Platform::executableDir 找到）==="
-cp -r "$ROOT/assets"    "$APPDIR/usr/bin/assets"
-cp -r "$ROOT/wallpaper" "$APPDIR/usr/bin/wallpaper"
+# 资源必须和可执行文件同目录 —— Paths 靠"可执行文件旁边有没有 assets/"
+# 判断自己是不是打包模式
+cp -r "$STAGE/assets"    "$APPDIR/usr/bin/assets"
+cp -r "$STAGE/wallpaper" "$APPDIR/usr/bin/wallpaper"
 
-echo "=== 复制动态库（SFML / 音频）==="
-# 复制所有匹配的文件（包括软链接链，例如 .so / .so.3 / .so.3.1 / .so.3.1.0）
-copy_lib() {
-    local pattern="$1"
-    local found=0
-    for f in $(find /usr/lib /usr/lib64 -maxdepth 1 -name "$pattern" 2>/dev/null); do
-        cp -av "$f" "$APPDIR/usr/lib/"
-        found=1
-    done
-    if [ "$found" -eq 0 ]; then
-        echo "  [警告] 未找到: $pattern"
-    fi
-}
-
-for pat in \
-    'libsfml-graphics.so.*' \
-    'libsfml-window.so.*' \
-    'libsfml-system.so.*' \
-    'libsfml-audio.so.*' \
-    'libopenal.so.*' \
-    'libvorbis.so.*' \
-    'libvorbisfile.so.*' \
-    'libvorbisenc.so.*' \
-    'libogg.so.*' \
-    'libFLAC.so.*' \
-    'libsndfile.so.*' \
-    'libmpg123.so.*' \
-    'libopus.so.*' \
-    'libopusfile.so.*' \
-    'libfreetype.so.*' \
-    'libharfbuzz.so.*' \
-    'libfontconfig.so.*' \
-    'libpng*.so.*' \
-    'libjpeg.so.*' \
-    'libbrotli*.so.*' \
-    'libz.so.*' \
-    'libbz2.so.*' \
-    'liblzma.so.*' \
-    'libexpat.so.*' \
-    'libgraphite2.so.*' \
-    'libglib-2.0.so.*' \
-    'libX11.so.*' \
-    'libXext.so.*' \
-    'libXcursor.so.*' \
-    'libXrandr.so.*' \
-    'libXi.so.*' \
-    'libXfixes.so.*' \
-    'libXrender.so.*' \
-    'libxcb.so.*' \
-    'libxcb-*.so.*' \
-    'libwayland-client.so.*' \
-    'libwayland-cursor.so.*' \
-    'libwayland-egl.so.*'
-do
-    copy_lib "$pat"
-done
+# -a 保留软链（依赖里大量 .so -> .so.3 -> .so.3.1.0 的链）
+cp -a "$STAGE/lib/." "$APPDIR/usr/lib/"
 
 echo "=== 校验依赖 ==="
-# 用 ldd 找出可执行文件的所有直接 + 间接依赖，检查 AppDir 里是否都有
-MISSING_LIBS=0
-ldd "$APPDIR/usr/bin/text_game" 2>/dev/null | while read line; do
-    if echo "$line" | grep -q '=>'; then
-        lib_path=$(echo "$line" | awk '{print $3}')
-        lib_name=$(echo "$line" | awk '{print $1}')
-        if [ -n "$lib_path" ] && [ "$lib_path" != "not" ]; then
-            # 系统库不算（libc / libm / libpthread 等由系统提供）
-            case "$lib_name" in
-                linux-vdso*|ld-linux*|libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|libstdc++.so*|libgcc_s.so*)
-                    continue
-                    ;;
-            esac
-            # 检查 AppDir 里有没有
-            if ! [ -e "$APPDIR/usr/lib/$lib_name" ]; then
-                echo "  [缺失] $lib_name  (来自 $lib_path)"
-                MISSING_LIBS=1
-            fi
-        fi
-    fi
-done
-
-if [ "$MISSING_LIBS" -eq 1 ]; then
-    echo ""
-    echo "警告: 有依赖未打包。如果 AppImage 在干净系统上跑不起来，"
-    echo "      请把这些库名加到上面的 copy_lib 调用列表里。"
-    echo ""
+# 用 AppRun 同款的环境变量跑 ldd：有 not found 就说明闭包不完整
+if LD_LIBRARY_PATH="$APPDIR/usr/lib" ldd "$APPDIR/usr/bin/text_game" | grep -q "not found"; then
+    echo "错误: 有未解析的依赖："
+    LD_LIBRARY_PATH="$APPDIR/usr/lib" ldd "$APPDIR/usr/bin/text_game" | grep "not found"
+    exit 1
 fi
+echo "  无 not found ✓"
 
 echo "=== 复制 .desktop 和图标 ==="
 cp "$ROOT/packaging/linux/text-game.desktop" "$APPDIR/"
