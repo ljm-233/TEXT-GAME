@@ -218,19 +218,22 @@ else()
 endif()
 
 # ============================================================
-# Linux: 打包运行时依赖库
+# Linux / macOS: 打包运行时依赖库
 # ============================================================
 #
 # Windows 的 vcpkg 构建会拷 DLL，AppImage 也自带一整套 .so —— 只有 Linux 的
 # deb / rpm / tar.gz 一直是"裸二进制 + 假设系统装了 SFML"。而这个假设在
 # Debian / Ubuntu 上根本不成立：**SFML 3 还没进它们的仓库**，所以打出来的包
 # 装上能启动、一跑就报 "libsfml-graphics.so.3.1: cannot open shared object"。
+# macOS 那份同理，一直要用户自己 `brew install sfml`。
 #
-# 打开这个开关就把依赖一起打进包里，并给可执行文件设 $ORIGIN/lib 的 RPATH。
+# 打开这个开关就把依赖一起打进包里。
+# Linux：给可执行文件设 $ORIGIN/lib 的 RPATH + 启动器设 LD_LIBRARY_PATH。
 # 注意 **GL 驱动相关的库绝不能打**（libGL / libGLX / libGLdispatch / libOpenGL /
 # libEGL / libdrm / libgbm）—— 那些和显卡驱动绑定，打进去换台机器就崩。
 # glibc 家族同理，必须用系统那份。
-option(BUNDLE_RUNTIME_DEPS "把运行时依赖库一起打进包（让 Linux 包自带 SFML）" OFF)
+# macOS：Mach-O 一个字节都不改，全靠启动器设 DYLD_LIBRARY_PATH（见下面的注释）。
+option(BUNDLE_RUNTIME_DEPS "把运行时依赖库一起打进包（让 Linux / macOS 包自带 SFML）" OFF)
 
 if(BUNDLE_RUNTIME_DEPS AND UNIX AND NOT APPLE)
     set_target_properties(text_game PROPERTIES
@@ -293,6 +296,45 @@ if(BUNDLE_RUNTIME_DEPS AND UNIX AND NOT APPLE)
     # X11 …）用的是【那个库自己的 RUNPATH】，包里那些库没设，于是会回退到系统。
     # 所以额外装一个启动器，靠 LD_LIBRARY_PATH 让直接 + 间接依赖都走包内。
     install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/linux/launch.sh"
+            DESTINATION .
+            RENAME TEXT-GAME
+            COMPONENT Runtime)
+
+elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
+    # macOS 走另一条路：**一个字节都不改 Mach-O**，依赖原样拷进 lib/，
+    # 再由 TEXT-GAME 启动器设 DYLD_LIBRARY_PATH 把它找出来。
+    #
+    # 为什么不用 install_name_tool 改写 install name：
+    #   Apple Silicon 上一切可执行代码都必须带有效签名（至少 ad-hoc），
+    #   而 install_name_tool / strip 这类写文件的工具会立刻让签名失效，
+    #   内核随后 SIGKILL（"Code Signature Invalid"）。原样拷贝则签名还在。
+    #   DYLD_LIBRARY_PATH 的查找发生在按 install name 解析之前、且按叶子名
+    #   匹配，所以绝对路径的 install name 照样能被包内的同名文件顶替。
+    install(CODE [[
+        file(GET_RUNTIME_DEPENDENCIES
+            EXECUTABLES "$<TARGET_FILE:text_game>"
+            RESOLVED_DEPENDENCIES_VAR _deps
+            UNRESOLVED_DEPENDENCIES_VAR _unresolved
+            # /usr/lib 与 /System 是系统自带的（真机上走 dyld 共享缓存），不打
+            PRE_EXCLUDE_REGEXES
+                "^/usr/lib/.*"
+                "^/System/.*"
+            POST_EXCLUDE_REGEXES
+                ".*/libSystem\\..*"
+        )
+        foreach(_dep ${_deps})
+            file(INSTALL "${_dep}"
+                 DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
+                 FOLLOW_SYMLINK_CHAIN)
+        endforeach()
+        list(LENGTH _deps _n)
+        message(STATUS "已捆绑 ${_n} 个 dylib 到 lib/")
+        if(_unresolved)
+            message(WARNING "有未解析的依赖，可能是构建机的 RPATH 问题: ${_unresolved}")
+        endif()
+    ]])
+
+    install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/macos/launch.sh"
             DESTINATION .
             RENAME TEXT-GAME
             COMPONENT Runtime)
@@ -370,7 +412,18 @@ else()
 endif()
 
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-set(CPACK_STRIP_FILES TRUE)
+
+# ⚠️ macOS 上绝不能 strip。
+#    Apple Silicon 要求一切可执行代码都带有效签名（CMake/ld 会自动加 ad-hoc
+#    签名），而 strip 改完文件签名就对不上了 —— 内核直接 SIGKILL
+#    （"Code Signature Invalid"），不是报个错而是连启动都启动不了。
+#    Homebrew 在 ARM 上同样不 strip，就是同一个原因。
+#    代价是符号留着、包大几 MB，换的是"在真机上能跑"。
+if(APPLE)
+    set(CPACK_STRIP_FILES FALSE)
+else()
+    set(CPACK_STRIP_FILES TRUE)
+endif()
 
 include(CPack)
 

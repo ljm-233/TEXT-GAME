@@ -24,7 +24,8 @@ jobs:
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUNDLE_RUNTIME_DEPS=ON
 
       - name: Build
         run: cmake --build build -j
@@ -33,6 +34,24 @@ jobs:
         run: |
           cd build
           cpack
+
+      - name: Verify bundle is self-contained
+        run: |
+          cd build
+          mkdir -p /tmp/verify
+          tar xzf TEXT-GAME-*-Linux.tar.gz -C /tmp/verify
+          test -x /tmp/verify/TEXT-GAME
+
+          count=$(ls /tmp/verify/lib/*.so* 2>/dev/null | wc -l)
+          echo "包内库数量: $count"
+          [ "$count" -ge 5 ] || { echo "lib/ 几乎是空的，依赖没打进去"; exit 1; }
+
+          # 启动器就是靠这个环境变量让直接 + 间接依赖都走包内的
+          if LD_LIBRARY_PATH=/tmp/verify/lib ldd /tmp/verify/text_game | grep -q "not found"; then
+            echo "有未解析的依赖："
+            LD_LIBRARY_PATH=/tmp/verify/lib ldd /tmp/verify/text_game | grep "not found"
+            exit 1
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -55,7 +74,8 @@ jobs:
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUNDLE_RUNTIME_DEPS=ON
 
       - name: Build
         run: cmake --build build -j
@@ -64,6 +84,44 @@ jobs:
         run: |
           cd build
           cpack
+
+      # macOS 的包一旦"看起来能打出来但其实起不来"，下载的人只会看到
+      # 一句 SIGKILL / Library not loaded，很难查。所以这里把两件最容易
+      # 悄悄坏掉的事钉成硬检查：
+      #   1. Mach-O 的代码签名还有效（strip / install_name_tool 都会毁掉它，
+      #      Apple Silicon 上内核随后直接 SIGKILL）
+      #   2. 主程序与每个包内 dylib 的非系统依赖，都能在 lib/ 里找到同名文件
+      #      （启动器靠 DYLD_LIBRARY_PATH 按叶子名去找，找得到就能跑）
+      - name: Verify bundle is self-contained
+        run: |
+          cd build
+          mkdir -p /tmp/verify
+          tar xzf TEXT-GAME-*-macOS.tar.gz -C /tmp/verify
+          test -x /tmp/verify/TEXT-GAME
+
+          count=$(ls /tmp/verify/lib/*.dylib 2>/dev/null | wc -l)
+          echo "包内 dylib 数量: $count"
+          [ "$count" -ge 5 ] || { echo "lib/ 几乎是空的，依赖没打进去"; exit 1; }
+
+          echo "== 代码签名 =="
+          codesign --verify --verbose=2 /tmp/verify/text_game
+          for f in /tmp/verify/lib/*.dylib; do
+            codesign --verify "$f" || { echo "签名失效: $f"; exit 1; }
+          done
+
+          echo "== 依赖是否都在包内 =="
+          for target in /tmp/verify/text_game /tmp/verify/lib/*.dylib; do
+            for dep in $(otool -L "$target" | tail -n +2 | awk '{print $1}'); do
+              case "$dep" in
+                /usr/lib/*|/System/*) continue ;;
+              esac
+              base=$(basename "$dep")
+              if [ ! -f "/tmp/verify/lib/$base" ]; then
+                echo "缺少依赖: $target -> $dep"
+                exit 1
+              fi
+            done
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -75,6 +133,10 @@ jobs:
     name: Create Release
     needs: [release-linux, release-macos]
     runs-on: ubuntu-latest
+
+    # workflow_dispatch 只拿来当"打包演练"用：跑完能拿到 artifacts，
+    # 但不会去创建 release（手动触发时 github.ref 是分支，不是 tag）。
+    if: startsWith(github.ref, 'refs/tags/')
 
     permissions:
       contents: write
