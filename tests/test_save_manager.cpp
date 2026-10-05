@@ -417,4 +417,12 @@ TEST_CASE("SaveManager - pending save 取走之后就没了") {
 
     // 取走即清空，避免下一次进游戏又跳回同一个存档
     CHECK_FALSE(box.saves->hasPendingSave());
+
+    // ⭐ 也正因为"取走即清空"，连着调两次是致命的：第二次拿到的是空 SaveInfo。
+    //    GameScene::onEnter 里就多调了一次，第二次把刚读到的 save_ 冲成空 ——
+    //    filename 为空 → saveFile("") 指向 saves 目录本身 →
+    //    updateProgress / setLevelStar / setLevelBestTime 全部写入失败，
+    //    通关不记进度、星级与 PB 永不落盘。
+    const SaveInfo again = box.saves->takePendingSave();
+    CHECK(again.filename.empty());
 }

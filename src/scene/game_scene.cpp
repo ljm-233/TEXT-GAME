@@ -81,16 +81,21 @@ GameScene::GameScene(std::shared_ptr<Background>  background,
 
 void GameScene::onEnter() {
     nextScene_ = SceneId::None;
-    // （原有的 save_ / parallax_ / loadLevel 逻辑保持不变）
     // ⭐ 场景常驻后，onEnter 可能被多次调用。
     //    pending save 为空时沿用上次的 save_
+    //
+    // ⚠️ takePendingSave() 是**取走即清空**（save_manager.h:41 里 `pending_ = {}`）。
+    //    这里曾经多出一行 `save_ = saveManager_->takePendingSave();`，
+    //    于是第二次拿到的是空 SaveInfo，把刚读到的存档又冲掉了 ——
+    //    后果是 levelIndex_ 恒为 1、save_.filename 恒为空，
+    //    进而 updateProgress / setLevelStar / setLevelBestTime 全部写入失败，
+    //    通关不记进度、星级与 PB 永不落盘。别再调第二次。
     SaveInfo pending = saveManager_->takePendingSave();
     if (!pending.filename.empty()) {
         save_ = pending;
     }
     syncFocus();
 
-    save_ = saveManager_->takePendingSave();
     levelIndex_ = std::max(1, save_.currentLevel);
 
     // ⭐ 读取本关之前的 PB
