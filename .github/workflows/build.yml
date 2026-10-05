@@ -40,6 +40,40 @@ jobs:
         run: ./build/tests/unit_tests
 
   # ============================================================
+  # Sanitizer（ASan + UBSan + LSan）
+  # 与上面的 build-arch 同构，只是多开 -DSANITIZE=ON。
+  # 存在的意义：普通 Debug 构建看不出 use-after-free / 越界 / 未定义行为。
+  # GameWorld::reset() 的悬垂指针就是这么藏了好几个月的 —— 四个平台全绿。
+  # ============================================================
+  test-asan:
+    name: Sanitizer
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            base-devel cmake ninja sfml git
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (with sanitizer)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTS=ON \
+            -DSANITIZE=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Run unit tests
+        run: ./build/tests/unit_tests
+
+  # ============================================================
   # Ubuntu（从源码编译 SFML 3）
   # ============================================================
   build-ubuntu:
