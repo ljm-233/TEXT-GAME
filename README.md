@@ -7,7 +7,7 @@
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**235 个单元测试用例 / 4755 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**241 个单元测试用例 / 4768 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -41,6 +41,16 @@
 >
 > 包里的可执行文件叫 `text_game`、bundle 目录叫 `text_game.app` ——
 > `MACOSX_BUNDLE_BUNDLE_NAME` 只影响 Info.plist 里的显示名，不改目录名。
+
+> **关于 0.3.4 的包体**：Linux 包从 40.5MB 降到 **21.8MB**、AppImage 从 41MB 降到约 **23MB**。
+> 做法是把 `wallpaper/` 重新编码（22.9MB → 4.1MB）：最长边压到 3840
+> （背景最多也就在 4K 屏上铺满），统一转 JPEG q90。
+> 副作用是好的那边：最大那张壁纸解码+上传从 **209ms 降到 74ms**、
+> 纹理占用从 **87MB 降到 26MB**。
+> 细节与画质实测数据记在 `wallpaper/CREDITS.md` 里，原始文件都在 git 历史中。
+>
+> `assets/font.ttf`（15.7MB 的完整 Noto Sans CJK）**没有动** —— 子集化能再省 10MB，
+> 但代价是玩家名里的生僻字会变豆腐块，所以保留了完整字形。
 
 ---
 
@@ -539,7 +549,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，235 个用例 / 4755 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，241 个用例 / 4768 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov

@@ -23,6 +23,7 @@ add_executable(unit_tests
     test_score_rules.cpp
     test_editor_tools.cpp
     test_focus_nav.cpp
+    test_background.cpp
     test_config_seeding.cpp
 )
 

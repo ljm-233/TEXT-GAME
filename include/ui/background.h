@@ -6,6 +6,18 @@
 #include <string>
 #include <vector>
 
+/// 在候选文件里找出 requested 对应的那个文件名（不含路径）。
+///
+/// 先按全名匹配；找不到时按**主名**（不含扩展名）匹配，好让素材换扩展名之后
+/// 用户存在 current_wallpaper 里的设置还能接上 —— 不做这一步的话，改名会让
+/// 壁纸静默打回默认，看着就像"设置自己丢了"。
+///
+/// 返回空串表示候选里没有对得上的。
+/// 抽成自由函数是为了能测：Background 有按值的 sf::Texture（GlResource），
+/// 无界面环境里连构造都做不到。
+std::string resolveWallpaperName(const std::vector<std::filesystem::path>& files,
+                                 const std::string& requested);
+
 class Background {
 public:
     Background(const std::filesystem::path& dir, const std::string& initialFile,

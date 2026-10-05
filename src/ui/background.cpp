@@ -12,12 +12,9 @@ Background::Background(const std::filesystem::path& dir, const std::string& init
         return;
     }
 
-    std::string toLoad = initialFile;
-    if (toLoad.empty() || std::find_if(files_.begin(), files_.end(), [&](const auto& p) {
-                              return p.filename().string() == toLoad;
-                          }) == files_.end()) {
+    std::string toLoad = resolveWallpaperName(files_, initialFile);
+    if (toLoad.empty())
         toLoad = files_[0].filename().string();
-    }
     loadByName(toLoad);
     fitToWindow(windowWidth, windowHeight);
     lastW_ = windowWidth;
@@ -40,6 +37,25 @@ void Background::scanDirectory() {
         }
     }
     std::sort(files_.begin(), files_.end());
+}
+
+std::string resolveWallpaperName(const std::vector<std::filesystem::path>& files,
+                                 const std::string& requested) {
+    if (requested.empty())
+        return {};
+
+    for (const auto& p : files) {
+        if (p.filename().string() == requested)
+            return requested;
+    }
+
+    // 全名对不上就按主名匹配：素材换了扩展名（.png -> .jpg）也能接上
+    std::filesystem::path want(requested);
+    for (const auto& p : files) {
+        if (p.stem() == want.stem())
+            return p.filename().string();
+    }
+    return {};
 }
 
 bool Background::loadByName(const std::string& filename) {
@@ -97,7 +113,8 @@ void Background::render(sf::RenderTarget& target) {
     auto vs = target.getView().getSize();
     unsigned lw = static_cast<unsigned>(vs.x);
     unsigned lh = static_cast<unsigned>(vs.y);
-    if (lw == 0 || lh == 0) return;
+    if (lw == 0 || lh == 0)
+        return;
     if (lw != lastW_ || lh != lastH_) {
         fitToWindow(lw, lh);
         lastW_ = lw;

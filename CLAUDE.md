@@ -384,9 +384,26 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
   于是五种包共用同一套依赖闭包。CI 里要传 `TEXTGAME_BUILD_DIR=build`，
   因为脚本默认找 `build/release-package`（本机 preset 的目录名）。
 - **发行版默认设置放 `assets/defaults/preferences.conf`**，由
-  `config/bootstrap.cpp` 在用户没有配置文件时铺一次。**只放观感类设置**，
-  个人与机器相关的键（`player_name` / `resolution_index` / `fullscreen` /
-  `ui_scale` / `current_wallpaper` / `key_*`）一律不放。
+  `config/bootstrap.cpp` 在用户没有配置文件时铺一次。**只放观感类设置**。
+
+  ⚠️ **跟机器/显卡绑定的性能键一个都不能放**，否则每个新用户都继承开发机的状态：
+
+  | 键 | 为什么不能放 | 不放时走哪 |
+  | :--- | :--- | :--- |
+  | `player_name` | 个人名字 | 空 |
+  | `resolution_index` | 机器分辨率 | 代码兜底 |
+  | `window_mode` / `fullscreen` | 机器窗口习惯 | 代码兜底 |
+  | `ui_scale` / `font_scale` | 按开发机屏幕调的 | 1.0 |
+  | `current_wallpaper` | 个人口味 | 列表第一张 |
+  | `remember_window_size` | 与 `runtime.conf` 联动 | 代码兜底 |
+  | `key_*` | 个人键位 | 代码兜底 |
+  | **`vsync` / `fps_limit` / `anti_aliasing`** | **跟显卡与显示器绑定** | `bootstrap.cpp` / `display_tab.cpp` |
+
+  最后一行是 0.3.4 才修的：0.3.1~0.3.3 把开发机的
+  `vsync=false` + `fps_limit=0` + `anti_aliasing=0` 原样发了出去，
+  而 `fps_limit=0` 在 SFML 里就是**不限帧** —— 新用户默认不锁帧、不垂直同步、
+  不抗锯齿，显卡满载空转。**同一份默认值出现在两个地方且互相打架，本身就是 bug**：
+  要么只留代码里的兜底，要么只留这个文件，别两边都写。
 
 ### 编辑器
 
