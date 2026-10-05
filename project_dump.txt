@@ -1,4 +1,81 @@
 
+===== ./tests/test_keybindings.cpp =====
+#include "doctest.h"
+#include "infrastructure/keybindings.h"
+
+#include <set>
+#include <string>
+
+// 全局键位表。它是单例、没有 GlResource 成员（只有一个 sf::Keyboard::Key
+// 数组），所以能在无界面环境直接测。
+//
+// 「恢复默认按键」这个设置项就落在 resetToDefaults() 上。它的另一半
+// （把 5 个键写回配置）在 ControlsTab 里，且键名走 ConfigKey 常量 ——
+// 写错字编译不过，所以那半边的风险是编译期挡住的，不需要测试来兜。
+
+TEST_CASE("键位表 - 默认键位是 A / D / 空格 / ESC / R") {
+    KeyBindings& kb = KeyBindings::instance();
+    kb.resetToDefaults();
+
+    // 把默认值写死在测试里是**故意**的：这是一套要长期保持稳定的东西，
+    // 哪天被人顺手改了（尤其是"改成方向键"这种看着更合理的改动），
+    // 老玩家的肌肉记忆就没了，而不会有任何东西报错。
+    // 真要改默认键位，请连这条测试一起改 —— 那时改动是有意识的。
+    CHECK(kb.get(KeyBindings::MoveLeft) == sf::Keyboard::Key::A);
+    CHECK(kb.get(KeyBindings::MoveRight) == sf::Keyboard::Key::D);
+    CHECK(kb.get(KeyBindings::Jump) == sf::Keyboard::Key::Space);
+    CHECK(kb.get(KeyBindings::Pause) == sf::Keyboard::Key::Escape);
+    CHECK(kb.get(KeyBindings::Restart) == sf::Keyboard::Key::R);
+}
+
+TEST_CASE("键位表 - 改过之后 resetToDefaults 能回到默认") {
+    KeyBindings& kb = KeyBindings::instance();
+
+    kb.set(KeyBindings::Jump, sf::Keyboard::Key::Z);
+    CHECK(kb.get(KeyBindings::Jump) == sf::Keyboard::Key::Z);
+
+    kb.resetToDefaults();
+    CHECK(kb.get(KeyBindings::Jump) == sf::Keyboard::Key::Space);
+
+    // 每个动作都要有非 Unknown 的默认键 —— 漏掉一个的话那个动作就永远
+    // 绑不上键，而且是静默的（按下没反应，谁也不知道为什么）
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        const auto a = static_cast<KeyBindings::Action>(i);
+        const bool bound = kb.get(a) != sf::Keyboard::Key::Unknown;
+        CHECK_MESSAGE(bound, "动作 " << KeyBindings::actionName(a) << " 没有默认键");
+    }
+}
+
+TEST_CASE("键位表 - 默认键位互不重复") {
+    KeyBindings& kb = KeyBindings::instance();
+    kb.resetToDefaults();
+
+    // 两个动作绑同一个人键，就有一个动作永远按不出来
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        for (int j = i + 1; j < KeyBindings::Count; ++j) {
+            const auto a = static_cast<KeyBindings::Action>(i);
+            const auto b = static_cast<KeyBindings::Action>(j);
+            const bool same = kb.get(a) == kb.get(b);
+            CHECK_MESSAGE(!same, KeyBindings::actionName(a)
+                                     << " 与 " << KeyBindings::actionName(b)
+                                     << " 的默认键位相同");
+        }
+    }
+}
+
+TEST_CASE("键位表 - 每个动作都有名字，且不重名") {
+    std::set<std::string> names;
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        const char* n = KeyBindings::actionName(static_cast<KeyBindings::Action>(i));
+        CHECK(n != nullptr);
+        const bool nonEmpty = n && *n != '\0';
+        CHECK(nonEmpty);
+        if (nonEmpty)
+            names.insert(n);
+    }
+    CHECK(names.size() == static_cast<std::size_t>(KeyBindings::Count));
+}
+
 ===== ./.github/workflows/build.yml =====
 name: Build & Test
 
@@ -1435,6 +1512,8 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | SettingsCodec（分享码往返 / 数字不被 RLE 吞 / 非法与截断输入 / 内存放大上限） | ✅ |
 | SettingsShare（端到端往返 / **机器绑定的键不被带走** / 恶意文本只认白名单） | ✅ |
 | ParticleSystem 密度（半分/两倍/零/负数夹取/容量上限） | ✅ |
+| ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
+| KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
@@ -2428,7 +2507,7 @@ message(STATUS "=== 构建配置完成 ===")
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**305 个单元测试用例 / 5124 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**311 个单元测试用例 / 5167 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -2996,7 +3075,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，305 个用例 / 5124 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，311 个用例 / 5167 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
@@ -30007,6 +30086,7 @@ add_executable(unit_tests
     test_settings_tabs.cpp
     test_settings_share.cpp
     test_particle_system.cpp
+    test_keybindings.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )
@@ -41178,7 +41258,9 @@ std::unique_ptr<Level> makeRoom(const std::string& row2) {
     REQUIRE(row2.size() == 18);
     const std::string text = "####################\n"
                              "#                  #\n"
-                             "#" + row2 + "#\n"
+                             "#" +
+                             row2 +
+                             "#\n"
                              "#                  #\n"
                              "####################";
     auto level = std::make_unique<Level>();
@@ -41195,8 +41277,7 @@ Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
     int seen = 0;
     for (std::size_t i = 0; i < row2.size(); ++i) {
         if (row2[i] == ch && ++seen == nth) {
-            return {static_cast<float>(static_cast<int>(i) + 1) * kTile,
-                    2.f * kTile};
+            return {static_cast<float>(static_cast<int>(i) + 1) * kTile, 2.f * kTile};
         }
     }
     REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
@@ -41211,8 +41292,7 @@ struct EventLog {
         world.bus().subscribe([this](const GameEvent& e) { events.push_back(e); });
     }
 
-    template <typename T>
-    int count() const {
+    template <typename T> int count() const {
         int n = 0;
         for (const auto& e : events)
             if (std::holds_alternative<T>(e))
@@ -41240,7 +41320,7 @@ TEST_CASE("GameWorld - 构造后生成玩家与关卡对象") {
     CHECK(world.levelIndex() == 1);
     CHECK_FALSE(world.level().hasGoal());
 
-    CHECK(world.totalCoins() == 2);   // 两个 C
+    CHECK(world.totalCoins() == 2); // 两个 C
     CHECK(world.coins() == 0);
 
     // 玩家出生在 P 那一格
@@ -41282,7 +41362,7 @@ TEST_CASE("GameWorld - 同一枚金币不会被重复计数") {
 
     teleport(world, tileOf(row, 'C'));
     for (int i = 0; i < 30; ++i)
-        world.update(kStep);   // 站在原地蹭 30 帧
+        world.update(kStep); // 站在原地蹭 30 帧
 
     CHECK(world.coins() == 1);
     CHECK(log.count<EvCoined>() == 1);
@@ -41309,8 +41389,69 @@ TEST_CASE("GameWorld - 从上方踩敌人：击杀 + 弹起 + 不扣血") {
 
     CHECK(log.count<EvStomped>() == 1);
     CHECK(log.count<EvHurt>() == 0);
-    CHECK(world.lives() == 3);                    // 没扣血
-    CHECK(world.player().velocity().y < 0.f);     // 被弹起
+    CHECK(world.lives() == 3);                // 没扣血
+    CHECK(world.player().velocity().y < 0.f); // 被弹起
+}
+
+// 屏幕震动强度（0.3.8 新增的设置项）。
+//
+// Camera::shake() 在 intensity <= 0 时**直接早退**，所以"强度 0 == 不抖"
+// 是可以断言的，不用去猜阈值。另外固定 srand 种子后 rand 序列完全一致，
+// 于是"2 倍强度"的偏移与"1 倍强度"的偏移应当恰好成 2 倍关系 ——
+// 这样就不用去验一个随机数落在什么范围里。
+namespace {
+
+/// 同一套踩踏场景，跑一次 update，返回相机中心（含震动偏移）
+Vec2 cameraAfterStomp(float shakeIntensity) {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    world.setShakeIntensity(shakeIntensity);
+
+    std::srand(12345); // 固定种子：三次调用消耗的 rand 序列必须一致
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, 40.f});
+    world.player().setVelocityY(400.f);
+    world.update(kStep);
+    return world.cameraCenter();
+}
+
+} // namespace
+
+TEST_CASE("震动强度 - 0 等于不抖，2 倍的偏移恰好是 1 倍的两倍") {
+    const Vec2 c0 = cameraAfterStomp(0.f);
+    const Vec2 c1 = cameraAfterStomp(1.f);
+    const Vec2 c2 = cameraAfterStomp(2.f);
+
+    // 强度 0 → shake(0, …) 早退 → 偏移恒为 0，c0 就是"不抖"的基准
+    // 强度 1 → 抖起来了（同种子下必然非零，否则这条会红）
+    const float dx1 = c1.x - c0.x;
+    const float dy1 = c1.y - c0.y;
+    const bool moved = (dx1 != 0.f) || (dy1 != 0.f);
+    CHECK(moved);
+
+    // 2 倍强度的偏移恰好是 1 倍的两倍（rand 序列一致，只有 amp 变了）
+    CHECK(c2.x - c0.x == doctest::Approx(dx1 * 2.f));
+    CHECK(c2.y - c0.y == doctest::Approx(dy1 * 2.f));
+}
+
+TEST_CASE("震动强度 - 关掉震动开关时强度再大也不抖") {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    world.setScreenShake(false);
+    world.setShakeIntensity(2.f);
+
+    std::srand(12345);
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, 40.f});
+    world.player().setVelocityY(400.f);
+    world.update(kStep);
+
+    // 与"强度 0"得到同一个位置：开关关掉之后强度不该还有任何影响
+    const Vec2 off = cameraAfterStomp(0.f);
+    CHECK(world.cameraCenter().x == doctest::Approx(off.x));
+    CHECK(world.cameraCenter().y == doctest::Approx(off.y));
 }
 
 TEST_CASE("GameWorld - 侧面撞敌人：扣血 + 受伤事件") {
@@ -41373,7 +41514,7 @@ TEST_CASE("GameWorld - 无敌状态下踩尖刺不掉血") {
     EventLog log;
     log.attach(world);
     teleport(world, tileOf(row, '^'));
-    world.player().setInvincible(true);   // respawn 会清掉无敌，所以放在它后面
+    world.player().setInvincible(true); // respawn 会清掉无敌，所以放在它后面
     world.update(kStep);
 
     CHECK(log.count<EvHurt>() == 0);
@@ -41420,8 +41561,8 @@ TEST_CASE("GameWorld - 拿到钥匙：钥匙数 +1") {
     world.update(kStep);
 
     CHECK(world.player().keys() == 1);
-    CHECK(log.count<EvCoined>() == 1);   // 钥匙复用金币的拾取事件
-    CHECK_FALSE(world.player().isInvincible());   // 开门不影响玩家状态
+    CHECK(log.count<EvCoined>() == 1);          // 钥匙复用金币的拾取事件
+    CHECK_FALSE(world.player().isInvincible()); // 开门不影响玩家状态
 }
 
 TEST_CASE("GameWorld - reset 会清空钥匙数") {
@@ -41487,7 +41628,7 @@ TEST_CASE("GameWorld - reset 恢复生命与金币计数") {
 TEST_CASE("GameWorld - 生命耗尽后延迟重生，并重置生命") {
     const std::string row = "  P     ^         ";
     GameWorld world(makeRoom(row), 1);
-    world.setInitialLives(1);   // 一碰就死
+    world.setInitialLives(1); // 一碰就死
 
     EventLog log;
     log.attach(world);
@@ -41505,7 +41646,7 @@ TEST_CASE("GameWorld - 生命耗尽后延迟重生，并重置生命") {
     world.update(kStep);
 
     CHECK(log.count<EvLifeExhausted>() == 1);
-    CHECK(world.lives() == 1);   // 生命重置
+    CHECK(world.lives() == 1); // 生命重置
 }
 
 ===== ./tests/test_jump_pad.cpp =====

@@ -615,6 +615,8 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | SettingsCodec（分享码往返 / 数字不被 RLE 吞 / 非法与截断输入 / 内存放大上限） | ✅ |
 | SettingsShare（端到端往返 / **机器绑定的键不被带走** / 恶意文本只认白名单） | ✅ |
 | ParticleSystem 密度（半分/两倍/零/负数夹取/容量上限） | ✅ |
+| ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
+| KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 

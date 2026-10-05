@@ -28,7 +28,9 @@ std::unique_ptr<Level> makeRoom(const std::string& row2) {
     REQUIRE(row2.size() == 18);
     const std::string text = "####################\n"
                              "#                  #\n"
-                             "#" + row2 + "#\n"
+                             "#" +
+                             row2 +
+                             "#\n"
                              "#                  #\n"
                              "####################";
     auto level = std::make_unique<Level>();
@@ -45,8 +47,7 @@ Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
     int seen = 0;
     for (std::size_t i = 0; i < row2.size(); ++i) {
         if (row2[i] == ch && ++seen == nth) {
-            return {static_cast<float>(static_cast<int>(i) + 1) * kTile,
-                    2.f * kTile};
+            return {static_cast<float>(static_cast<int>(i) + 1) * kTile, 2.f * kTile};
         }
     }
     REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
@@ -61,8 +62,7 @@ struct EventLog {
         world.bus().subscribe([this](const GameEvent& e) { events.push_back(e); });
     }
 
-    template <typename T>
-    int count() const {
+    template <typename T> int count() const {
         int n = 0;
         for (const auto& e : events)
             if (std::holds_alternative<T>(e))
@@ -90,7 +90,7 @@ TEST_CASE("GameWorld - 构造后生成玩家与关卡对象") {
     CHECK(world.levelIndex() == 1);
     CHECK_FALSE(world.level().hasGoal());
 
-    CHECK(world.totalCoins() == 2);   // 两个 C
+    CHECK(world.totalCoins() == 2); // 两个 C
     CHECK(world.coins() == 0);
 
     // 玩家出生在 P 那一格
@@ -132,7 +132,7 @@ TEST_CASE("GameWorld - 同一枚金币不会被重复计数") {
 
     teleport(world, tileOf(row, 'C'));
     for (int i = 0; i < 30; ++i)
-        world.update(kStep);   // 站在原地蹭 30 帧
+        world.update(kStep); // 站在原地蹭 30 帧
 
     CHECK(world.coins() == 1);
     CHECK(log.count<EvCoined>() == 1);
@@ -159,8 +159,69 @@ TEST_CASE("GameWorld - 从上方踩敌人：击杀 + 弹起 + 不扣血") {
 
     CHECK(log.count<EvStomped>() == 1);
     CHECK(log.count<EvHurt>() == 0);
-    CHECK(world.lives() == 3);                    // 没扣血
-    CHECK(world.player().velocity().y < 0.f);     // 被弹起
+    CHECK(world.lives() == 3);                // 没扣血
+    CHECK(world.player().velocity().y < 0.f); // 被弹起
+}
+
+// 屏幕震动强度（0.3.8 新增的设置项）。
+//
+// Camera::shake() 在 intensity <= 0 时**直接早退**，所以"强度 0 == 不抖"
+// 是可以断言的，不用去猜阈值。另外固定 srand 种子后 rand 序列完全一致，
+// 于是"2 倍强度"的偏移与"1 倍强度"的偏移应当恰好成 2 倍关系 ——
+// 这样就不用去验一个随机数落在什么范围里。
+namespace {
+
+/// 同一套踩踏场景，跑一次 update，返回相机中心（含震动偏移）
+Vec2 cameraAfterStomp(float shakeIntensity) {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    world.setShakeIntensity(shakeIntensity);
+
+    std::srand(12345); // 固定种子：三次调用消耗的 rand 序列必须一致
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, 40.f});
+    world.player().setVelocityY(400.f);
+    world.update(kStep);
+    return world.cameraCenter();
+}
+
+} // namespace
+
+TEST_CASE("震动强度 - 0 等于不抖，2 倍的偏移恰好是 1 倍的两倍") {
+    const Vec2 c0 = cameraAfterStomp(0.f);
+    const Vec2 c1 = cameraAfterStomp(1.f);
+    const Vec2 c2 = cameraAfterStomp(2.f);
+
+    // 强度 0 → shake(0, …) 早退 → 偏移恒为 0，c0 就是"不抖"的基准
+    // 强度 1 → 抖起来了（同种子下必然非零，否则这条会红）
+    const float dx1 = c1.x - c0.x;
+    const float dy1 = c1.y - c0.y;
+    const bool moved = (dx1 != 0.f) || (dy1 != 0.f);
+    CHECK(moved);
+
+    // 2 倍强度的偏移恰好是 1 倍的两倍（rand 序列一致，只有 amp 变了）
+    CHECK(c2.x - c0.x == doctest::Approx(dx1 * 2.f));
+    CHECK(c2.y - c0.y == doctest::Approx(dy1 * 2.f));
+}
+
+TEST_CASE("震动强度 - 关掉震动开关时强度再大也不抖") {
+    const std::string row = "  P          E    ";
+    GameWorld world(makeRoom(row), 1);
+    world.setInitialLives(3);
+    world.setScreenShake(false);
+    world.setShakeIntensity(2.f);
+
+    std::srand(12345);
+    const Vec2 enemyPos = tileOf(row, 'E');
+    teleport(world, {enemyPos.x, 40.f});
+    world.player().setVelocityY(400.f);
+    world.update(kStep);
+
+    // 与"强度 0"得到同一个位置：开关关掉之后强度不该还有任何影响
+    const Vec2 off = cameraAfterStomp(0.f);
+    CHECK(world.cameraCenter().x == doctest::Approx(off.x));
+    CHECK(world.cameraCenter().y == doctest::Approx(off.y));
 }
 
 TEST_CASE("GameWorld - 侧面撞敌人：扣血 + 受伤事件") {
@@ -223,7 +284,7 @@ TEST_CASE("GameWorld - 无敌状态下踩尖刺不掉血") {
     EventLog log;
     log.attach(world);
     teleport(world, tileOf(row, '^'));
-    world.player().setInvincible(true);   // respawn 会清掉无敌，所以放在它后面
+    world.player().setInvincible(true); // respawn 会清掉无敌，所以放在它后面
     world.update(kStep);
 
     CHECK(log.count<EvHurt>() == 0);
@@ -270,8 +331,8 @@ TEST_CASE("GameWorld - 拿到钥匙：钥匙数 +1") {
     world.update(kStep);
 
     CHECK(world.player().keys() == 1);
-    CHECK(log.count<EvCoined>() == 1);   // 钥匙复用金币的拾取事件
-    CHECK_FALSE(world.player().isInvincible());   // 开门不影响玩家状态
+    CHECK(log.count<EvCoined>() == 1);          // 钥匙复用金币的拾取事件
+    CHECK_FALSE(world.player().isInvincible()); // 开门不影响玩家状态
 }
 
 TEST_CASE("GameWorld - reset 会清空钥匙数") {
@@ -337,7 +398,7 @@ TEST_CASE("GameWorld - reset 恢复生命与金币计数") {
 TEST_CASE("GameWorld - 生命耗尽后延迟重生，并重置生命") {
     const std::string row = "  P     ^         ";
     GameWorld world(makeRoom(row), 1);
-    world.setInitialLives(1);   // 一碰就死
+    world.setInitialLives(1); // 一碰就死
 
     EventLog log;
     log.attach(world);
@@ -355,5 +416,5 @@ TEST_CASE("GameWorld - 生命耗尽后延迟重生，并重置生命") {
     world.update(kStep);
 
     CHECK(log.count<EvLifeExhausted>() == 1);
-    CHECK(world.lives() == 1);   // 生命重置
+    CHECK(world.lives() == 1); // 生命重置
 }
