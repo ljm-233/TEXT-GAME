@@ -310,7 +310,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TEXT-GAME-Windows
-          path: build/*.exe
+          # 只挂 NSIS 安装包。以前写的是 build/*.exe，会把 build 树里的
+          # text_game.exe / validate_levels.exe 一起捞进去 ——
+          # 那两个是裸可执行文件，旁边没有 SFML 的 DLL，下载了跑不起来。
+          path: build/TEXT-GAME-*-Windows.exe
 
   # ============================================================
   # 建 Release
