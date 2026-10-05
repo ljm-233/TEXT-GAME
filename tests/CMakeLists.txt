@@ -23,9 +23,9 @@ add_executable(unit_tests
     test_score_rules.cpp
     test_editor_tools.cpp
     test_focus_nav.cpp
-    test_background.cpp
     test_resource_manager.cpp
     test_config_seeding.cpp
+    test_wallpaper_library.cpp
 )
 
 # 只有 doctest.h 需要额外加路径；游戏源码的 include 路径、

@@ -21,7 +21,8 @@ namespace fs = std::filesystem;
 namespace {
 
 const std::vector<std::string> kLayers = {
-    "common", "utils", "infrastructure", "config", "log", "core", "ui", "game", "scene",
+    "common", "utils", "infrastructure", "wallpaper", "config", "log",
+    "core",   "ui",    "game",           "scene",
 };
 
 struct Rule {
@@ -45,6 +46,7 @@ const std::vector<Rule> kRules = {
     {"utils",
      {"common", "infrastructure", "config", "log", "core", "ui", "game", "scene"}},
     {"infrastructure", {"config", "log", "core", "ui", "game", "scene"}},
+    {"wallpaper", {"config", "log", "core", "ui", "game", "scene"}},
     {"common", {"infrastructure", "config", "log", "core", "ui", "game", "scene"}},
     {"config", {"log", "ui", "game", "scene"}},
     {"log", {"ui", "game", "scene"}},
@@ -185,9 +187,8 @@ TEST_CASE("分层架构 - 没有跨层违规依赖") {
 
     const std::vector<std::string> violations = findViolations(root);
 
-    CHECK_MESSAGE(violations.empty(),
-                  "发现 " << violations.size() << " 处跨层违规依赖："
-                          << join(violations));
+    CHECK_MESSAGE(violations.empty(), "发现 " << violations.size() << " 处跨层违规依赖："
+                                              << join(violations));
 }
 
 TEST_CASE("分层架构 - 规则表本身是自洽的") {

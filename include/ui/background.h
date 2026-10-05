@@ -1,56 +1,88 @@
 #pragma once
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
 #include "log/logger.h"
+
 #include <SFML/Graphics.hpp>
-#include <filesystem>
 #include <memory>
 #include <string>
-#include <vector>
 
-/// 在候选文件里找出 requested 对应的那个文件名（不含路径）。
+/// 全屏背景。
 ///
-/// 先按全名匹配；找不到时按**主名**（不含扩展名）匹配，好让素材换扩展名之后
-/// 用户存在 current_wallpaper 里的设置还能接上 —— 不做这一步的话，改名会让
-/// 壁纸静默打回默认，看着就像"设置自己丢了"。
+/// 持有 wallpaper 层的两个服务：
+///   - `WallpaperLibrary` 负责"目录下有几张图、哪张是当前选中的"
+///   - `WallpaperLoader` 负责"异步把图解成 sf::Image"
 ///
-/// 返回空串表示候选里没有对得上的。
-/// 抽成自由函数是为了能测：Background 有按值的 sf::Texture（GlResource），
-/// 无界面环境里连构造都做不到。
-std::string resolveWallpaperName(const std::vector<std::filesystem::path>& files,
-                                 const std::string& requested);
-
+/// 自身只管 GL 那部分：sf::Texture 上传、sprite 平铺、窗口适配、淡入淡出。
+///
+/// **淡入淡出**用两张纹理：front_ 是底图（一直 alpha=1），back_ 是正在淡入
+/// 的新图（alpha 从 0 到 1）。两层都画，front_ 的 alpha 同时从 1 降到
+/// (1 - fadeT_)，达到 crossfade 的效果。fadeT_ 由 render() 内部按 sf::Clock
+/// 推进 —— 场景常驻 + 单例 Background 共享意味着没有跨场景的 fade，
+/// 同场景一帧只 render 一次，所以"内部 clock 推进"是安全的。
 class Background {
 public:
-    Background(const std::filesystem::path& dir, const std::string& initialFile,
-               unsigned windowWidth, unsigned windowHeight,
-               std::shared_ptr<Logger> logger);
+    /// 构造时立即在主线程同步解码当前选中的那张（`prime`），避免首屏黑屏。
+    /// 其余壁纸由 loader 后台预解码，切图时几乎都已 ready。
+    Background(WallpaperLibrary& library, WallpaperLoader& loader,
+               const std::string& initialFile, unsigned windowWidth,
+               unsigned windowHeight, std::shared_ptr<Logger> logger);
 
     void render(sf::RenderTarget& target);
 
-    bool isLoaded() const { return loaded_; }
-    std::string currentFile() const { return currentFile_; }
-    int currentIndex() const { return currentIndex_; }
-    int totalWallpapers() const { return static_cast<int>(files_.size()); }
+    bool isLoaded() const { return front_.index >= 0; }
+    std::string currentFile() const;
+    int currentIndex() const { return front_.index; }
+    int totalWallpapers() const { return lib_.size(); }
 
-    // 加载指定文件名（不含路径）
+    /// 切到指定文件名。异步：从 loader 等图（默认 2s 超时），
+    /// 拿到后开始 0.5s 淡入淡出；超时则保持当前图。
     bool loadByName(const std::string& filename);
 
-    // 切换到下一张，循环
+    /// 切到下一张（循环）。
     bool next();
 
 private:
-    void scanDirectory();
-    void fitToWindow(unsigned windowWidth, unsigned windowHeight);
+    /// 一层纹理 + sprite + 关联的 library index。
+    ///
+    /// ⚠️ 纹理必须用 `unique_ptr` 持有，**不能按值**。
+    ///    `sf::Sprite` 内部存的是 `const sf::Texture*` —— 它记的是**地址**。
+    ///    淡入淡出结束时要把 back_ 整体搬成 front_（`front_ = std::move(back_)`），
+    ///    如果纹理是按值成员，这一搬会让纹理对象换地址，而 sprite 里的指针
+    ///    还指着旧地址（已经变成 moved-from 的空纹理）—— 表现是**每次切图
+    ///    淡入结束后壁纸直接消失**。用 unique_ptr 后搬的只是指针，
+    ///    纹理对象本身地址不变，sprite 就始终指得对。
+    struct Layer {
+        std::unique_ptr<sf::Texture> tex;
+        std::unique_ptr<sf::Sprite> sprite;
+        int index = -1; ///< -1 表示这层空着
 
-    std::filesystem::path dir_;
-    std::vector<std::filesystem::path> files_;
-    int currentIndex_ = -1;
-    std::string currentFile_;
+        bool valid() const { return tex != nullptr && sprite != nullptr; }
+        void clear() {
+            sprite.reset();
+            tex.reset();
+            index = -1;
+        }
+    };
 
-    sf::Texture texture_;
-    std::unique_ptr<sf::Sprite> sprite_;
-    bool loaded_ = false;
+    bool uploadToFront(int index, const WallpaperInfo& info);
+    void uploadToBack(int index, const WallpaperInfo& info);
+    void startFade();
+    void fitToWindow(Layer& layer, unsigned windowWidth, unsigned windowHeight) const;
+    unsigned targetWidth(const sf::RenderTarget& target) const;
+    unsigned targetHeight(const sf::RenderTarget& target) const;
+
+    WallpaperLibrary& lib_;
+    WallpaperLoader& loader_;
+    std::shared_ptr<Logger> logger_;
+
+    Layer front_;
+    Layer back_;
+
+    bool fading_ = false;
+    float fadeT_ = 0.f; ///< 0 = 刚开切；1 = 切完
+    sf::Clock fadeClock_;
+
     unsigned lastW_ = 0;
     unsigned lastH_ = 0;
-
-    std::shared_ptr<Logger> logger_;
 };

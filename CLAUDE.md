@@ -35,6 +35,9 @@ ctest --preset tests
 # 关卡可达性验证
 ./build/debug/validate_levels assets/levels
 
+# 壁纸冒烟测试（**需要 DISPLAY，手动跑**，见下文"壁纸系统"）
+./build/release/wallpaper_smoke
+
 # Sanitizer
 cmake --preset asan
 cmake --build --preset asan
@@ -46,12 +49,14 @@ cmake --build --preset asan
 ## 目录结构
 
 ```
-include/ 和 src/ 一一对应，共 9 个层（从叶子到顶层）：
+include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
 
   utils/          零内部依赖的叶子：utf8 / lang / text_strings / vec2 /
                   animation / animator
   common/         共享基元：AppError / ContainerError
   infrastructure/ 设备层：Gamepad / GamepadVibration / KeyBindings
+  wallpaper/      壁纸：WallpaperLibrary（扫盘/匹配，纯逻辑，可测）
+                  + WallpaperLoader（后台线程预解码到 sf::Image，不需要 GL）
   config/         配置（header-only）+ keys.h（配置键的唯一权威来源）
                   + bootstrap（registerConfig）
   log/            日志三层：Logger / LogFormatter / LogHandler
@@ -85,7 +90,9 @@ assets/
     ↑
   core                  ← Container / Application / 场景契约
     ↑
-  config   log
+  config   log          ← 可以依赖 core 的 Container 契约
+    ↑
+  wallpaper             ← 静态资源内容（扫盘/匹配/预解码），不认识任何上层
     ↑
   common  infrastructure  utils   ← 叶子层
 ```
@@ -99,6 +106,9 @@ assets/
   `GameWorld` 只管发事件）
 - `utils` / `common` 是零内部依赖的叶子
 - `infrastructure` 是设备层，不认识应用层与前端
+- `wallpaper` 只解决"静态资源的内容"（哪个目录、哪张图、怎么解码），
+  不认识 config / core / ui 及以上任何一层 —— 它被 `ui::Background` 用，
+  但不反过来依赖 ui
 - 新增一层时记得同步 `test_layers.cpp` 里的 `kLayers` 与 `kRules`，
   否则会有一条测试提醒你
 
@@ -156,6 +166,9 @@ code = app.exec();
    （`Config` 用裸路径构造时没有资源表，原样返回）。
    **用户可写目录（config / saves / cache / temp）不走别名** ——
    那些跟机器绑定、落在 XDG 下，仍然由 `Paths` 提供。
+   两者的分工可以这样记：`ResourceManager` 解决**路径**问题
+   （"某个目录是哪一层"），`wallpaper::WallpaperLibrary` 解决**内容**问题
+   （"这个目录下有几张图、哪张是用户选的"）。
 8. **物理常量放 `include/game/game_constants.h`**（只放游戏自己的常量，
    设备属性不要塞进来）。
 9. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
@@ -182,6 +195,8 @@ code = app.exec();
 | **添加新设置项** | 在对应 Tab（`include/scene/tabs/xxx_tab.h/cpp`）加成员 + 创建控件 + update 回调。**不用改 SettingsScene** |
 | 添加新事件 | `include/game/event_bus.h` 加 struct + 加入 variant，然后 `GameWorld` emit + `GameScene` 订阅 |
 | 添加关卡 | `assets/levels/levelN.txt`，参考已有格式；用 `validate_levels` 验证 |
+| 加/换壁纸素材 | 直接丢进 `wallpaper/`（`.jpg` / `.jpeg` / `.png`），会被自动扫到。**不用改代码**；顺手补 `wallpaper/CREDITS.md` |
+| 改壁纸行为（排序/过滤/过渡） | 扫盘与匹配在 `wallpaper/wallpaper_library.cpp`；过渡与适配在 `src/ui/background.cpp` |
 | 添加主题 | `include/ui/theme.h` 加枚举 + `src/ui/theme.cpp` 加颜色组 |
 | 添加成就 | `src/core/achievement.cpp` 的 `kAchievements` 加一行 + `include/utils/text_strings.h` 加名称/描述 |
 | 添加画面预设 | `src/scene/tabs/graphics_tab.cpp` 的 `kPresets` 加一行 + `presetRow_` 加按钮 |
@@ -252,6 +267,47 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 设置里有开关。**这个功能是完成的，README 里"待接入"的说法已过时。**
 
 `Gamepad::vibrate(low, high, duration)` 是入口，内部有正弦包络（0 → 1 → 0）。
+
+### 壁纸系统
+
+0.3.7 重做。三块职责分开，各自只干一件事：
+
+| 组件 | 层 | 干什么 |
+| :--- | :--- | :--- |
+| `WallpaperLibrary` | wallpaper | 扫盘、排序、把 `current_wallpaper` 里的名字解析成下标（纯逻辑，可测） |
+| `WallpaperLoader` | wallpaper | 后台线程把图**解码成 `sf::Image`** |
+| `Background` | ui | 上传 `sf::Texture`、窗口适配、淡入淡出 |
+
+**为什么要拆**：`Background` 里有 `sf::Texture`（GlResource），无界面环境连
+构造都做不到，所以它整个没法测。把"扫盘 + 匹配"这段纯逻辑挪到 wallpaper 层
+之后就能直接测了（`tests/test_wallpaper_library.cpp`，11 个用例），
+剩下的 GL 部分交给冒烟工具。
+
+**`sf::Image` 不是 GlResource** —— 解码不需要 GL 上下文。这正是能把解码整个
+扔进 worker 线程的原因；`sf::Texture` 的上传必须回主线程做。
+
+**启动策略（"启动别卡"）**：构造 `Background` 时**只同步解码用户选中的那一张**
+（实测 ~70ms），第一帧就能画；其余壁纸交给 loader 后台慢慢预解码，切图时
+基本都已经 ready。启动时同步解码全部 5 张最坏要 1 秒多，那才是要避免的。
+
+**切图**：`next()` / `loadByName()` 把新图放到 `back_` 图层并开始 0.5s 的
+crossfade（旧图 alpha 1→0，新图 0→1），结束后 `front_ = std::move(back_)`。
+
+⚠️ **改这段代码时踩过两个只有运行时才能发现的坑**，都记在
+`tools/wallpaper_smoke.cpp` 顶部：
+
+1. **纹理不能按值持有**。`sf::Sprite` 内部存的是 `const sf::Texture*` —— 记的是
+   **地址**。淡入结束时要把 `back_` 搬到 `front_`，纹理若按值成员就会换地址，
+   sprite 便指向 moved-from 的空纹理。表现是**每次淡入结束壁纸直接消失**
+   （实测画出来是纯白）。用 `unique_ptr` 持有，搬的只是指针就没事。
+2. **新建的 `back_` 必须立刻 `fitToWindow`**。`render()` 里的重适配只在
+   `lw != lastW_`（尺寸**变化**）时触发，而切图时尺寸没变 —— 漏了这一步，
+   新图会以原生像素尺寸（3840×2160）从左上角画出来，淡入结束也没人再修。
+
+验证方式是 `./build/release/wallpaper_smoke`（**需要 DISPLAY**，所以进不了
+`tests/`）：它把背景渲染进 `RenderTexture` 取中心像素，和"同一张图不走淡入"
+的基准渲染对比。**只判"不是纯黑"是抓不住上面第 1 个坑的** —— 那个 bug 画出来
+是纯白。两个坑都用变异测试确认过会被抓到。
 
 ## 已知陷阱
 
@@ -485,6 +541,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
 | FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
 | ResourceManager（别名寻址 / 路径穿越拒绝 / `${path:别名}` 展开） | ✅ |
+| WallpaperLibrary（扩展名过滤 / 全名与主名匹配 / 中文名 / 越界 / 空目录） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。

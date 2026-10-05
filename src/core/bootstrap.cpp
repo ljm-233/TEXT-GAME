@@ -18,6 +18,8 @@
 #include "ui/background.h"
 #include "ui/button_style.h"
 #include "ui/font_holder.h"
+#include "wallpaper/wallpaper_library.h"
+#include "wallpaper/wallpaper_loader.h"
 #include "infrastructure/gamepad.h"
 #include "infrastructure/keybindings.h"
 #include "ui/notification.h"
@@ -118,14 +120,27 @@ void registerCore(Container& container) {
     // ---------------- 前端资源 ----------------
     container.reg<Window>("window", [&container]() { return makeWindow(container); });
 
-    container.reg<Background>("background", [&container]() {
+    // wallpaper 层的两个服务：纯逻辑的 library（扫盘/匹配/排序）+ 后台解码的 loader
+    container.reg<WallpaperLibrary>("wallpaper_library", [&container]() {
         auto resources = container.require<ResourceManager>("resources");
+        auto lib = std::make_shared<WallpaperLibrary>();
+        lib->scan(resources->dir("wallpaper"));
+        return lib;
+    });
+
+    container.reg<WallpaperLoader>("wallpaper_loader", [&container]() {
+        return std::make_shared<WallpaperLoader>();
+    });
+
+    container.reg<Background>("background", [&container]() {
+        auto& lib = *container.require<WallpaperLibrary>("wallpaper_library");
+        auto& loader = *container.require<WallpaperLoader>("wallpaper_loader");
         auto prefs = container.require<Preferences>("preferences");
         auto window = container.require<Window>("window");
         auto logger = container.require<Logger>("logger");
 
         const auto size = window->native().getSize();
-        return std::make_shared<Background>(resources->dir("wallpaper"),
+        return std::make_shared<Background>(lib, loader,
                                             prefs->get(ConfigKey::kCurrentWallpaper, ""),
                                             size.x, size.y, logger);
     });

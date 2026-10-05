@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(text_game VERSION 0.3.6 LANGUAGES CXX)
+project(text_game VERSION 0.3.7 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
@@ -107,6 +107,7 @@ file(GLOB_RECURSE TEXTGAME_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/scene/*.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/*.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/*.cpp
+    ${CMAKE_SOURCE_DIR}/src/wallpaper/*.cpp
 )
 # main() 只能留在可执行文件里 —— 进了库会让两个可执行目标各带一份 main
 list(REMOVE_ITEM TEXTGAME_SOURCES ${CMAKE_SOURCE_DIR}/src/core/main.cpp)
@@ -148,6 +149,7 @@ target_include_directories(text_game_core PUBLIC
     include/game
     include/scene
     include/log
+    include/wallpaper
 )
 
 string(TIMESTAMP BUILD_DATE "%Y-%m-%d")
@@ -627,6 +629,19 @@ endif()
 # 现在只链 text_game_core —— 清单只剩顶层那一份。
 add_executable(validate_levels tools/validate_levels.cpp)
 target_link_libraries(validate_levels PRIVATE text_game_core)
+
+# ============================================================
+# 壁纸冒烟测试（独立目标，**需要 DISPLAY，手动跑**）
+# ============================================================
+# 补的是单测覆盖不到的那一段：真实纹理上传 + 窗口适配 + 淡入淡出。
+# 这些都要 sf::Texture（GlResource），而无 DISPLAY 时构造就 SIGABRT，
+# 所以进不了 tests/（那里有一条"没有 DISPLAY 也必须全绿"的硬要求）。
+#
+#   ./build/release/wallpaper_smoke [壁纸目录]
+#
+# 它抓到过两个纯逻辑测试发现不了的 bug，细节见源文件顶部注释。
+add_executable(wallpaper_smoke tools/wallpaper_smoke.cpp)
+target_link_libraries(wallpaper_smoke PRIVATE text_game_core)
 
 # ============================================================
 # clang-tidy（-DCLANG_TIDY=ON 开启）
