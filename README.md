@@ -7,7 +7,7 @@
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**227 个单元测试用例 / 4719 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**235 个单元测试用例 / 4755 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -23,6 +23,7 @@
 | `TEXT-GAME-<版本>-Linux.deb` | Debian/Ubuntu | 安装后运行 `TEXT-GAME`，同样自带依赖 |
 | `TEXT-GAME-<版本>-Linux.rpm` | Fedora/RHEL | 同上 |
 | `TEXT-GAME-<版本>-macOS.tar.gz` | macOS | 解压后双击 `text_game.app`（**自带依赖**，见下） |
+| `TEXT-GAME-<版本>-Windows.exe` | Windows | NSIS 安装包，**自带 SFML 及其依赖 DLL** |
 
 > **Linux 包自带运行库**：`lib/` 里打包了 SFML 及其依赖（freetype / harfbuzz / X11 / FLAC …），
 > 所以**不需要系统预装 SFML 3** —— 这一点很重要，因为 SFML 3 还没进 Debian / Ubuntu 的仓库。
@@ -538,12 +539,14 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，227 个用例 / 4719 断言，**无 DISPLAY 也能全绿**）
-- **静态分析**：clang-tidy
-- **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
+- **测试**：doctest（单头文件，235 个用例 / 4755 断言，**无 DISPLAY 也能全绿**）
+- **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
+- **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
-- **打包**：CPack / AppImage / NSIS
-- **CI**：GitHub Actions，四个平台（Arch / Ubuntu / macOS / Windows）全绿
+- **打包**：CPack / AppImage / NSIS，五种 Linux 包 + macOS `.app` + Windows 安装包
+- **CI**：GitHub Actions，6 个 job 全绿 ——
+  Arch / Ubuntu 24.04 / macOS / Windows 四个平台构建 + 单测，
+  外加 **Sanitizer**（ASan+UBSan+LSan）与 **clang-tidy** 两个质量门
 - **跨平台**：Linux / Windows / macOS
 
 ---
@@ -655,12 +658,20 @@ cd build/release
 cpack -G NSIS
 ```
 
-> 打 tag（形如 `v1.2.3`）会触发 `.github/workflows/release.yml`，在 CI 上构建 Linux + macOS 包并自动建 Release。
-> 两个包都开了 `BUNDLE_RUNTIME_DEPS`，自带依赖；每个 job 里都有一道自检
-> （Linux 查 `ldd` 有没有 `not found`，macOS 查代码签名 + 有没有残留的绝对依赖路径），
-> 不达标的包不会发出去。
+> 打 tag（形如 `v1.2.3`）会触发 `.github/workflows/release.yml`，在 CI 上建 Release。
+> **三个平台一次出全**：
 >
-> **AppImage / deb / rpm 目前仍需要本机补传** —— `release.yml` 只产 `tar.gz` / `zip`。
+> | 平台 | 产物 |
+> | :--- | :--- |
+> | Linux | `tar.gz` / `zip` / `deb` / `rpm` / `AppImage` |
+> | macOS | `tar.gz`（自带依赖的 `.app`） |
+> | Windows | `.exe`（NSIS 安装包，自带 SFML DLL） |
+>
+> 每个 job 都带**自检步骤，不达标就红** —— 不达标的包不会发出去：
+> Linux 查 `lib/` 库数量、`ldd` 有没有 `not found`、deb 的架构字段、
+> rpm 的 ARCH、AppImage 解包后能不能解析全部依赖；macOS 查 `.app` 数量、
+> 资源位置、每个 Mach-O 的代码签名、有没有残留的绝对依赖路径；
+> Windows 查安装包里有没有 `sfml-*.dll` 和 `font.ttf`。
 
 > 想在不发版的情况下验证打包：`gh workflow run release.yml`。
 > `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，
@@ -696,9 +707,35 @@ cmake --build --preset coverage --target coverage
 ### 静态分析
 
 ```bash
+# 方式一：构建时跑（慢，适合边写边看）
 cmake --preset clang-tidy
 cmake --build --preset clang-tidy -j
+
+# 方式二：只 configure，再并行跑一遍（CI 用的就是这个，快得多）
+cmake -S . -B build/lint -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+run-clang-tidy -p build/lint -j "$(nproc)" src/
 ```
+
+检查项写在仓库根的 `.clang-tidy` 里，原则是**只开能当 BUG 修的检查**，
+并设了 `WarningsAsErrors: '*'` —— 有任何一条就是非零退出码，CI 会红。
+
+带一堆假阳性的门禁会被无视，所以 `easily-swappable-parameters`、
+`signed-bitwise`（UTF-8 编码里的位运算）、`narrowing-conversions`、
+`clang-analyzer-optin.*` 这些都排除了。**往里加检查之前，先确认当前代码能过。**
+
+### 格式化
+
+`.clang-format` 在仓库根。`format.yml` **只检查 PR 改动过的文件**：
+
+```bash
+# 手工整理你动过的文件
+clang-format -i src/foo.cpp include/foo.h
+```
+
+> 仓库里还有 132 / 193 个源文件不符合 `.clang-format`（历史遗留）。
+> 一次性清掉的话：`clang-format -i $(find src include -name '*.cpp' -o -name '*.h')`
+> —— 约 7340 行纯机械改动，建议单独占一个 commit。
 
 ### 检查硬编码中文
 
@@ -716,6 +753,12 @@ python3 scripts/check_hardcoded.py
   `GlResource`，没有 GL 上下文连构造都做不到。其中的纯逻辑（星级规则、编辑器
   格子几何、手柄焦点导航）已经抽成独立模块测过了。
 - Wayland 下窗口图标无法通过 SFML API 设置（协议限制）。
+- **macOS 的包没有在真 Mac 上启动过** —— CI 只做了静态校验（`.app` 数量、
+  资源位置、每个 Mach-O 的 `codesign --verify`、没有残留的绝对依赖路径），
+  Windows 的 NSIS 安装包同理（只验了安装树里有 SFML 的 DLL 和字体）。
+  手上有这几台机器的话麻烦实际跑一下。
+- **还有 132 / 193 个源文件不符合 `.clang-format`**。`format.yml` 只检查 PR
+  改动过的文件，所以新代码是干净的；一次性的全量整理见 README 的「格式化」一节。
 - **关卡内容待重做**：`level1.txt` 与 `editor.txt` 目前存在不可达元素，
   可以用 `validate_levels` 或编辑器里按 T 看到。
 

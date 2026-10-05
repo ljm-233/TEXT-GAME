@@ -251,6 +251,35 @@ SFML 3 移除了振动 API。项目通过 `GamepadVibration` 单例直接调底�
 CI 矩阵：Arch（系统包 SFML **3.1**）、Ubuntu（源码编译 SFML **3.0**）、
 macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 
+`build.yml` 有 **6 个 job**（前 4 个是平台构建，后 2 个是质量门）：
+
+| job | 干什么 |
+| :--- | :--- |
+| Arch Linux | 系统 SFML 3.1，构建 + 跑单测 |
+| Ubuntu 24.04 | 从源码编 SFML 3.0，构建 + 跑单测 |
+| macOS | Homebrew SFML 3.0，构建 + 跑单测 |
+| Windows | vcpkg SFML 3.0（MSVC），构建 + 跑单测 |
+| **Sanitizer** | Arch 容器 + `-DSANITIZE=ON`（ASan + UBSan + LSan） |
+| **clang-tidy** | 只 configure 拿 `compile_commands.json`，再跑 `run-clang-tidy` |
+
+质量门的原则：**闸门必须能过，过不了的闸门等于没有**。
+
+- `.clang-tidy` 只开「能当 BUG 修」的检查，并设 `WarningsAsErrors: '*'`。
+  带一堆假阳性的门禁会被无视，所以 `easily-swappable-parameters`、
+  `signed-bitwise`、`narrowing-conversions`、`clang-analyzer-optin.*`
+  这些"报得没错但改了没意义"的都排除了。
+- **加检查之前先确认当前代码能过**。本机跑：
+  `run-clang-tidy -p build/release -j $(nproc) src/`（先 configure 出
+  `compile_commands.json`）。
+- `format.yml` **只检查 PR 改动过的文件**。原因：仓库里 193 个源文件中有
+  132 个不符合 `.clang-format`，全仓库扫的写法在任何 PR 上都不可能绿。
+  想一次性清掉：
+  `clang-format -i $(find src include -name '*.cpp' -o -name '*.h')`
+  —— 约 7340 行纯机械改动，建议单独一个 commit。
+- `.clang-format` 里 `SortIncludes: Never` 与 `ReflowComments: false` 是**故意**的：
+  项目约定是「`.cpp` 首行必须是本文件对应的头」，而 clang-format 的排序会把它
+  排到后面去，直接冲突；注释是手写换行（尤其中文，全角宽度算不准）。
+
 ⚠️ **本地 GCC 绿灯不代表没问题**。下面几条都是本地正常、CI 连续红了几周才发现的：
 
 - **`sf::Event::getIf` 的非 const 重载是 SFML 3.1 才加的**。3.0.x 只有 const 版
@@ -266,12 +295,15 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
   `operator<<(ostream&, const void*)`。
 - **每个平台都要有 GamepadVibration 的实现**：Linux(evdev) / Windows(XInput) /
   其余平台兜底（`gamepad_vibration_stub.cpp`）。缺一个就是链接错误。
-- **`tests/CMakeLists.txt` 是手写源文件列表**（顶层 CMakeLists 是 GLOB）。
-  顶层新增源文件时，测试若也要链它必须手动补一行，否则本地可能没事、
-  换个平台就是链接错误。振动那一组已改成 GLOB 自动收集。
+- **源码只在顶层 CMakeLists 的 GLOB 里列一次**（`text_game_core` 静态库），
+  `text_game` / `validate_levels` / `unit_tests` 三个目标共用它。
+  以前 `tests/CMakeLists.txt` 里还有一份手写清单，漏一个文件就是链接错误
+  （macOS 漏掉 `gamepad_vibration_stub.cpp` 就是这么挂的）—— 已经不存在了。
+  新增 `src/` 一级子目录时仍然要往 GLOB 里加一行。
 
 改完这类东西**不要只看本地构建**：`git push` 之后用
-`gh run watch` 看四个平台的结果，这才是唯一能验证的地方。
+`gh run watch` 看 `build.yml` 六个 job 的结果（Arch / Ubuntu / macOS /
+Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 
 ### 项目自身
 
@@ -327,13 +359,30 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 
 **通用**：
 
-- `release.yml` 的两个 job 都带**自检步骤，不达标就红**：Linux 查 `lib/` 库数量
-  与 `ldd` 有没有 `not found`；macOS 查 `.app` 数量是不是 1、`Resources/assets`
-  在不在、每个 Mach-O 的 `codesign --verify`、以及有没有残留的绝对依赖路径。
-  这些检查都是用真实的翻车现场换来的，别删。
+- `release.yml` 现在有**三个平台 job**，一次出全：
+  Linux（tar.gz / zip / deb / rpm / AppImage）、macOS（tar.gz）、
+  Windows（NSIS 安装包）。`create-release` 把三个 artifact 目录全挂上去。
 - 想在不发版的前提下验证打包：`gh workflow run release.yml`。
   `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，手动触发只当演练。
-- `release.yml` 只产 `tar.gz` / `zip`；**AppImage / deb / rpm 仍需本机补传**。
+- **每个 job 都有自检步骤，不达标就红**：
+  - Linux：`lib/` 库数量 + 带 `LD_LIBRARY_PATH` 的 `ldd` 无 `not found`、
+    zip 有内容、deb 的 `Architecture` 非空且不是 i386、rpm 的 `ARCH=x86_64`、
+    AppImage 解包后 `usr/lib` 有库且 `ldd` 干净
+  - macOS：`.app` 数量为 1、`Contents/Resources/assets` 在、每个 Mach-O
+    `codesign --verify` 过、没有残留的绝对依赖路径
+  - Windows：安装包存在、安装树里有 `sfml-*.dll` 与 `font.ttf`
+  这些检查都是用真实的翻车现场换来的，别删。
+- **deb 那一条特别容易踩**：Arch 容器里不装 `dpkg`，CPackDeb 就拿不到
+  `dpkg --print-architecture`，打出来的包 `Architecture` 字段是**空的**，
+  装不上。同理 rpm 需要 `rpm-tools`。
+- **Windows 的 NSIS 有个坑**：`CPACK_PACKAGE_ICON` 会被当成
+  `MUI_HEADERIMAGE_BITMAP` 用，而那个宏只收 **BMP**。喂 `.ico` 进去
+  makensis 直接 abort（`Error in macro MUI_HEADERIMAGE_INIT`）。
+  安装程序图标走 `CPACK_NSIS_MUI_ICON`（那个才是收 .ico 的）。
+- **AppImage 脚本不自己维护库名清单**：它先 `cmake --install` 到 staging
+  （`BUNDLE_RUNTIME_DEPS` 会把完整闭包放进 `lib/`），再从 staging 组装 AppDir。
+  于是五种包共用同一套依赖闭包。CI 里要传 `TEXTGAME_BUILD_DIR=build`，
+  因为脚本默认找 `build/release-package`（本机 preset 的目录名）。
 - **发行版默认设置放 `assets/defaults/preferences.conf`**，由
   `config/bootstrap.cpp` 在用户没有配置文件时铺一次。**只放观感类设置**，
   个人与机器相关的键（`player_name` / `resolution_index` / `fullscreen` /
