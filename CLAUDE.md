@@ -187,6 +187,38 @@ code = app.exec();
     `include/utils` 与 `include/infrastructure` **刻意不在 include 路径里**，
     这样平铺写法根本编译不过，跨层依赖在 include 行上直接可见。
 
+### 语言文件的格式与它的三个坑
+
+格式极简：一行一条 `中文原文=译文`，解析时按**第一个 `=`** 切开。
+简单是有代价的，下面三条都"不报错，只是静默显示中文"：
+
+1. **中文原文里不能有 `=`**。`Str::EditorHint` 曾经写成 `Shift+拖动=矩形`，
+   于是它永远查不到译文（`=== TEXT-GAME 控制台 ===` 同理，它**以** `=` 开头）。
+   把原文里的 `=` 换成空格即可；**译文里的 `=` 无所谓** —— 切分只看第一个。
+2. **中文原文里不能有换行**。一行就是一条，`\n` 表示不了（`Str::CalcWhatWant`
+   就是这种，只能原样用中文）。需要多行的文案请拆成多条。
+3. **改中文原文 = 让旧译文静默失效**。键就是原文本身，改一个字，那条译文就再也
+   匹配不上，界面退回中文而且没有任何提示。改文案时**必须**在 4 个语言文件里
+   同步补一条新键（旧的那条留着变成死数据 —— 按约定不删已有行）。
+
+查有没有漏翻（或原文改过而译文没跟上），跑这段就够：
+
+```bash
+python3 -c "
+import re
+h = open('include/utils/text_strings.h', encoding='utf-8').read()
+consts = dict(re.findall(r'constexpr const char\* (\w+)\s*=\s*\"([^\"]*)\";', h))
+for lang in ['en', 'ja', 'ko', 'zh-TW']:
+    keys = {l.split('=', 1)[0] for l in open('assets/lang/' + lang + '.txt', encoding='utf-8')
+            if '=' in l and not l.startswith(('#', '//'))}
+    miss = [n for n, zh in consts.items() if zh and zh not in keys]
+    print(lang, '缺', len(miss), miss)
+"
+```
+
+目前只剩两条查不出来，都是上面第 1、2 条的已知无解项：`ConsoleTitle`
+（以 `=` 开头，且它本来就是原样使用的）与 `CalcWhatWant`（值里有换行）。
+
 ## 常见任务入口
 
 | 想改什么 | 去哪 |
@@ -196,7 +228,7 @@ code = app.exec();
 | 添加新场景 | `include/scene/` + `src/scene/`，在 `scene_id.h` 加枚举 + 在 `registerScenes()`（`src/scene/bootstrap.cpp`）加一行工厂。**不用改 Game** |
 | **添加新设置项** | 键加进 `include/config/keys.h`（含 `src/config/keys.cpp` 的 `allKeys()`）→ 在对应 Tab（`include/scene/tabs/xxx_tab.h/cpp`）加控件 → **在 `src/scene/settings_tab_id.cpp` 的归属表里登记**。不用改 SettingsScene |
 | **加/删一个设置页** | 枚举与标签在 `include/scene/settings_tab_id.h`，归属表在同名 .cpp；`SettingsScene` 里补 4 处分发（焦点/事件/更新/渲染）+ 一个 Tab 类。忘了补会收获 `-Wswitch` 警告 |
-| 加/换语言文案 | 中文原文写进 `include/utils/text_strings.h`，再往 `assets/lang/{en,ja,ko,zh-TW}.txt` 各补一行「中文=译文」。⚠️ key 里**不能有 `=`**（格式按第一个 `=` 切分，`=== TEXT-GAME 控制台 ===` 那条就因此永远翻不了，好在它原样使用、不需要翻译） |
+| 加/换语言文案 | 中文原文写进 `include/utils/text_strings.h`，再往 `assets/lang/{en,ja,ko,zh-TW}.txt` 各补一行「中文=译文」。**三条坑见「语言文件的格式与它的三个坑」** |
 | 添加新事件 | `include/game/event_bus.h` 加 struct + 加入 variant，然后 `GameWorld` emit + `GameScene` 订阅 |
 | 添加关卡 | `assets/levels/levelN.txt`，参考已有格式；用 `validate_levels` 验证 |
 | 加/换壁纸素材 | 直接丢进 `wallpaper/`（`.jpg` / `.jpeg` / `.png`），会被自动扫到。**不用改代码**；顺手补 `wallpaper/CREDITS.md` |

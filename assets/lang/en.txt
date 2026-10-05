@@ -177,6 +177,7 @@ TEXT-GAME=TEXT-GAME
 以下为排查问题用的设置，一般不需要修改=These settings are for troubleshooting; you normally do not need to change them
 恢复本页默认=Reset This Page
 只重置本页的设置项，不影响其它页=Only resets settings on this page
+内容超出屏幕，滚轮可上下滚动=Content is taller than the screen — scroll with the mouse wheel
 恢复本页默认设置？只影响本页=Reset this page to defaults? Only this page is affected
 日志=Logs
 文件位置=File Locations
@@ -431,3 +432,4 @@ TEXT-GAME 控制台=TEXT-GAME Console
 # ===== 速通 =====
 最佳: =Best: 
 ★ 新纪录！=★ New Record!
+左键画/拖动连画  Shift+拖动矩形  右键擦  T可达性  G网格  Ctrl+滚轮缩放  WASD移动  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+E导出  Ctrl+I导入  Ctrl+0重置缩放=LMB draw / drag to keep drawing  Shift+drag = rect  RMB erase  T reachability  G grid  Ctrl+Wheel zoom  WASD move  Ctrl+S save  Ctrl+Z undo  Ctrl+N next file  Ctrl+E export  Ctrl+I import  Ctrl+0 reset zoom
