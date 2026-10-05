@@ -26,7 +26,7 @@ jobs:
           pacman -Syu --noconfirm
           pacman -S --noconfirm \
             base-devel cmake ninja sfml git \
-            dpkg rpm-tools squashfs-tools file desktop-file-utils zsync
+            dpkg rpm-tools squashfs-tools file desktop-file-utils zsync unzip
 
       - uses: actions/checkout@v4
 
@@ -280,6 +280,14 @@ jobs:
         run: |
           cd build
           cpack -G NSIS
+
+      # CPack 只把 "Problem running NSIS command" 抛出来，真正的原因在
+      # NSISOutput.log 里。不把它打出来，就只能靠猜。
+      - name: Dump NSIS log on failure
+        if: failure()
+        run: |
+          Get-ChildItem -Recurse -Path build\_CPack_Packages -Filter NSISOutput.log -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "=== $($_.FullName) ==="; Get-Content $_.FullName }
 
       - name: Verify installer
         run: |
