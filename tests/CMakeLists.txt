@@ -33,6 +33,7 @@ add_executable(unit_tests
     test_particle_system.cpp
     test_keybindings.cpp
     test_playtest_request.cpp
+    test_stats.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )

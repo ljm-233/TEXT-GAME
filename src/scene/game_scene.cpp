@@ -255,6 +255,10 @@ void GameScene::subscribeWorldEvents() {
                             saveManager_->setLevelBestTime(save_.filename, levelIndex_,
                                                            levelTime_);
                         }
+                        // 每关最佳金币：成绩页要**按关**显示金币，而 save.coins 是跨关
+                        // 累计总数、拆不出来。setter 内部只增不减，所以直接调即可。
+                        saveManager_->setLevelBestCoins(save_.filename, levelIndex_,
+                                                        world_->coins());
                     }
 
                     SoundManager::instance().playLevelComplete();

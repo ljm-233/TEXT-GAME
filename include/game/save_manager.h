@@ -17,6 +17,11 @@ struct SaveInfo {
 
     // ⭐ 每关最佳通关时间（秒），0 = 无记录
     std::vector<float> levelBestTimes;
+
+    // ⭐ 每关单次最多拿到过多少金币，0 = 无记录。
+    //    和 levelStars / levelBestTimes 一样是**只增不减**的（取最好的一次）。
+    //    成绩页要按关显示金币，而 coins 那个字段是跨关累计总数，拆不出来。
+    std::vector<int> levelBestCoins;
 };
 
 class SaveManager {
@@ -36,6 +41,9 @@ public:
 
     // ⭐ 写入某关最佳时间（取最小，0 视为无记录）
     bool setLevelBestTime(const std::string& filename, int level, float seconds);
+
+    /// 记下"这一关单次拿到过的最多金币"。只在**超过**旧纪录时才写盘。
+    bool setLevelBestCoins(const std::string& filename, int level, int coins);
 
     void setPendingSave(const SaveInfo& info) { pending_ = info; }
     SaveInfo takePendingSave() {

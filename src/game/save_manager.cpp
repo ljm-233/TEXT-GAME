@@ -136,6 +136,10 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     out << "current_level=" << info.currentLevel << '\n';
     out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    // 存档是**整体重写**的，所以每一处写盘都必须带上所有字段 ——
+    // 漏掉一个，用另一个 setter 存一次就会把它悄悄抹掉。
+    // 新增字段时请搜 "level_best_times" 确认四处都补上了。
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
     out.flush();
     if (!out) {
         logger_->error("创建存档失败: 写入过程中断 " + path.string());
@@ -160,6 +164,9 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.currentLevel = 1;
     out.levelStars = std::vector<int>(9, 0);
     out.levelBestTimes = std::vector<float>(9, 0.f);
+    // 老存档没有这一行 —— 默认给 9 个 0，而不是空数组，否则 setter 会因
+    // "关卡序号越界"直接失败
+    out.levelBestCoins = std::vector<int>(9, 0);
 
     std::string line;
     while (std::getline(in, line)) {
@@ -197,6 +204,12 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
             out.levelBestTimes = parseTimes(v);
             if (out.levelBestTimes.size() < 9)
                 out.levelBestTimes.resize(9, 0.f);
+        } else if (k == "level_best_coins") {
+            // 0.3.9 新增。老存档没有这一行 —— 上面已经把默认值铺成 9 个 0 了，
+            // 所以这里读不到也不会是空数组
+            out.levelBestCoins = parseStars(v);
+            if (out.levelBestCoins.size() < 9)
+                out.levelBestCoins.resize(9, 0);
         }
     }
     return true;
@@ -236,6 +249,8 @@ bool SaveManager::updateProgress(const std::string& filename, int coins,
     out << "current_level=" << info.currentLevel << '\n';
     out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    // 同上：整体重写，一个字段都不能少
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
     return true;
 }
 
@@ -262,10 +277,55 @@ bool SaveManager::setLevelStar(const std::string& filename, int level, int stars
         out << "current_level=" << info.currentLevel << '\n';
         out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+        // 同上：整体重写，一个字段都不能少
+        out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
                       std::to_string(stars));
     }
+    return true;
+}
+
+bool SaveManager::setLevelBestCoins(const std::string& filename, int level, int coins) {
+    if (coins <= 0)
+        return false; // 没拿到金币不算纪录
+
+    SaveInfo info;
+    if (!loadSave(filename, info))
+        return false;
+    if (level < 1 || level > static_cast<int>(info.levelBestCoins.size()))
+        return false;
+
+    const int idx = level - 1;
+    // 只增不减：拿得比上次少不清空纪录
+    if (coins <= info.levelBestCoins[idx])
+        return false;
+
+    info.levelBestCoins[idx] = coins;
+    info.lastPlayed = currentTimestamp();
+
+    auto path = savePath(filename);
+    std::ofstream out(path);
+    if (!out) {
+        logger_->error("保存失败: 无法写入 " + path.string());
+        return false;
+    }
+    out << "name=" << info.name << '\n';
+    out << "created_at=" << info.createdAt << '\n';
+    out << "last_played=" << info.lastPlayed << '\n';
+    out << "coins=" << info.coins << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
+    out << "level_stars=" << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
+    out.flush();
+
+    if (!out) {
+        logger_->error("保存失败: 写入过程中断 " + path.string());
+        return false;
+    }
+    logger_->info("更新最佳金币: " + filename + " 第 " + std::to_string(level) + " 关 " +
+                  std::to_string(coins));
     return true;
 }
 
@@ -296,6 +356,8 @@ bool SaveManager::setLevelBestTime(const std::string& filename, int level,
         out << "current_level=" << info.currentLevel << '\n';
         out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+        // 同上：整体重写，一个字段都不能少
+        out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
                       std::to_string(seconds) + " 秒");

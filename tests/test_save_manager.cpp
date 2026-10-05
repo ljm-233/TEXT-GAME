@@ -419,3 +419,77 @@ TEST_CASE("SaveManager - pending save 取走之后就没了") {
     const SaveInfo again = box.saves->takePendingSave();
     CHECK(again.filename.empty());
 }
+
+// ============================================================
+// 每关最佳金币（0.3.9 新增字段）
+// ============================================================
+//
+// 这个字段是给"成绩页"用的：那一页要**按关**显示金币，而 `coins` 是跨关累计
+// 总数、拆不出来。加字段本身风险不大（存档是 key=value，缺键回落默认），
+// 真正危险的是**存档是整体重写的** —— 四个写盘点里漏掉一个，用另一个 setter
+// 存一次就会把新字段悄悄抹掉。下面这条测试就是盯这个。
+
+TEST_CASE("存档 - 每关最佳金币只增不减") {
+    Sandbox sb;
+    auto info = sb.saves->createSave("金币测试");
+
+    CHECK(sb.saves->setLevelBestCoins(info.filename, 1, 5));
+    // 拿得比上次少：不写盘，也不清空纪录
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 1, 3));
+    // 拿到更多：更新
+    CHECK(sb.saves->setLevelBestCoins(info.filename, 1, 8));
+    // 0 或负数不算纪录
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 2, 0));
+    // 越界的关卡序号
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 99, 5));
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    REQUIRE(back.levelBestCoins.size() >= 2);
+    CHECK(back.levelBestCoins[0] == 8);
+    CHECK(back.levelBestCoins[1] == 0);
+}
+
+TEST_CASE("存档 - 用别的 setter 存一次不会把最佳金币抹掉") {
+    Sandbox sb;
+    auto info = sb.saves->createSave("覆盖测试");
+
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 1, 7));
+    REQUIRE(sb.saves->setLevelStar(info.filename, 1, 3));       // 另一个写盘点
+    REQUIRE(sb.saves->setLevelBestTime(info.filename, 1, 12.5f)); // 再一个
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    // 三个字段都得在 —— 存档整体重写时漏一个字段就是这种翻车
+    CHECK(back.levelBestCoins[0] == 7);
+    CHECK(back.levelStars[0] == 3);
+    CHECK(back.levelBestTimes[0] == doctest::Approx(12.5f));
+}
+
+TEST_CASE("存档 - 老存档没有 level_best_coins 这一行也能读") {
+    Sandbox sb;
+
+    // 手写一份"旧版本"的存档：完全没有新字段
+    const fs::path dir = sb.paths->savesDir();
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const fs::path f = dir / "legacy.conf";
+    {
+        std::ofstream out(f);
+        out << "name=旧存档\n";
+        out << "created_at=2020-01-01 00:00:00\n";
+        out << "last_played=2020-01-01 00:00:00\n";
+        out << "coins=42\n";
+        out << "current_level=3\n";
+        out << "level_stars=3,2,0,0,0,0,0,0,0\n";
+        out << "level_best_times=10.00,20.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00\n";
+    }
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(f.string(), back));
+    CHECK(back.coins == 42);
+    CHECK(back.levelStars[0] == 3);
+    // 缺的字段回落到默认（9 个 0），而不是空的
+    REQUIRE(back.levelBestCoins.size() == 9);
+    CHECK(back.levelBestCoins[0] == 0);
+}
