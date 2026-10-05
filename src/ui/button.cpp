@@ -12,14 +12,11 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 }
 
-Button::Button(const std::string& label,
-               const sf::Font& font,
-               sf::Vector2f position,
-               sf::Vector2f size,
-               unsigned characterSize)
-    : text_(font, toSf(label), scaledFontSize(characterSize)),
-      position_(position),
-      size_(size) {
+Button::Button(const std::string& label, const sf::Font& font, sf::Vector2f position,
+               sf::Vector2f size, unsigned characterSize)
+      : text_(font, toSf(label), scaledFontSize(characterSize)),
+        position_(position),
+        size_(size) {
     shape_.setPosition(position_);
     text_.setFillColor(getTheme().textPrimary);
     refreshShape();
@@ -30,7 +27,7 @@ Button::Button(const std::string& label,
 void Button::setPosition(sf::Vector2f p) {
     position_ = p;
     shape_.setPosition(position_);
-    updateTextPosition();      // ⭐ 只更新位置，不重算 origin
+    updateTextPosition(); // ⭐ 只更新位置，不重算 origin
 }
 
 void Button::setSize(sf::Vector2f s) {
@@ -59,10 +56,9 @@ void Button::refreshShape() {
     const auto& style = getButtonStyle();
 
     // ⭐ 脏标记：size / focus / style 都没变则跳过
-    if (size_ == lastShapeSize_
-        && focused_ == lastShapeFocused_
-        && style.cornerRadius == lastShapeCorner_
-        && style.outlineThickness == lastShapeOutline_) {
+    if (size_ == lastShapeSize_ && focused_ == lastShapeFocused_ &&
+        style.cornerRadius == lastShapeCorner_ &&
+        style.outlineThickness == lastShapeOutline_) {
         return;
     }
 
@@ -97,13 +93,14 @@ void Button::refreshShape() {
 
     // 焦点按钮：加粗描边
     float outline = style.outlineThickness;
-    if (focused_) outline = std::max(outline, 4.f);
+    if (focused_)
+        outline = std::max(outline, 4.f);
     shape_.setOutlineThickness(outline);
 
     // ⭐ 记录本次状态
-    lastShapeSize_    = size_;
+    lastShapeSize_ = size_;
     lastShapeFocused_ = focused_;
-    lastShapeCorner_  = style.cornerRadius;
+    lastShapeCorner_ = style.cornerRadius;
     lastShapeOutline_ = style.outlineThickness;
 }
 
@@ -111,47 +108,47 @@ void Button::updateColors(float dt) {
     const auto& t = getTheme();
 
     sf::Color targetFill;
-    if (pressed_)                    targetFill = t.buttonPressed;
-    else if (hovered_)               targetFill = t.buttonHover;
+    if (pressed_)
+        targetFill = t.buttonPressed;
+    else if (hovered_)
+        targetFill = t.buttonHover;
     // 焦点与"选中"用同一个颜色。合成一个条件而不是写两遍 —— 原来两个分支
     // 完全一样，clang-tidy 的 bugprone-branch-clone 会报
     // "repeated branch body in conditional chain"。
-    else if (focused_ || selected_)  targetFill = t.buttonSelected;
-    else                             targetFill = t.buttonNormal;
+    else if (focused_ || selected_)
+        targetFill = t.buttonSelected;
+    else
+        targetFill = t.buttonNormal;
 
-    sf::Color targetOutline = focused_ ? sf::Color(255, 240, 120)
-                                       : t.outline;
-    sf::Color targetText    = t.textPrimary;
+    sf::Color targetOutline = focused_ ? sf::Color(255, 240, 120) : t.outline;
+    sf::Color targetText = t.textPrimary;
 
     if (!colorsInitialized_) {
-        currentFill_    = targetFill;
+        currentFill_ = targetFill;
         currentOutline_ = targetOutline;
-        currentText_    = targetText;
+        currentText_ = targetText;
         colorsInitialized_ = true;
         return;
     }
 
     // ⭐ 目标未变则跳过插值（省去 exp / lerp）
-    if (currentFill_ == targetFill
-        && currentOutline_ == targetOutline
-        && currentText_ == targetText) {
+    if (currentFill_ == targetFill && currentOutline_ == targetOutline &&
+        currentText_ == targetText) {
         return;
     }
 
-    currentFill_    = Anim::approach(currentFill_,    targetFill,    dt);
+    currentFill_ = Anim::approach(currentFill_, targetFill, dt);
     currentOutline_ = Anim::approach(currentOutline_, targetOutline, dt);
-    currentText_    = Anim::approach(currentText_,    targetText,    dt);
+    currentText_ = Anim::approach(currentText_, targetText, dt);
 }
 
 void Button::recomputeTextOrigin() {
     auto b = text_.getLocalBounds();
-    text_.setOrigin({b.position.x + b.size.x / 2.f,
-                     b.position.y + b.size.y / 2.f});
+    text_.setOrigin({b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
 }
 
 void Button::updateTextPosition() {
-    text_.setPosition({position_.x + size_.x / 2.f,
-                       position_.y + size_.y / 2.f});
+    text_.setPosition({position_.x + size_.x / 2.f, position_.y + size_.y / 2.f});
 }
 
 bool Button::contains(sf::Vector2f point) const {
@@ -161,20 +158,21 @@ bool Button::contains(sf::Vector2f point) const {
 
 void Button::handleEvent(const sf::Event& event) {
     if (const auto* mm = event.getIf<sf::Event::MouseMoved>()) {
-        hovered_ = contains({static_cast<float>(mm->position.x),
-                             static_cast<float>(mm->position.y)});
+        hovered_ = contains(
+            {static_cast<float>(mm->position.x), static_cast<float>(mm->position.y)});
     }
     if (const auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            hovered_ = contains({static_cast<float>(mb->position.x),
-                                 static_cast<float>(mb->position.y)});
-            if (hovered_) pressed_ = true;
+            hovered_ = contains(
+                {static_cast<float>(mb->position.x), static_cast<float>(mb->position.y)});
+            if (hovered_)
+                pressed_ = true;
         }
     }
     if (const auto* mb = event.getIf<sf::Event::MouseButtonReleased>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            bool inside = contains({static_cast<float>(mb->position.x),
-                                    static_cast<float>(mb->position.y)});
+            bool inside = contains(
+                {static_cast<float>(mb->position.x), static_cast<float>(mb->position.y)});
             if (pressed_ && inside) {
                 clicked_ = true;
                 SoundManager::instance().playClick();
@@ -194,7 +192,7 @@ void Button::render(sf::RenderTarget& target) {
     float dt = animClock_.restart().asSeconds();
     updateColors(dt);
 
-    refreshShape();   // 内部有脏标记，未变则早退
+    refreshShape(); // 内部有脏标记，未变则早退
 
     shape_.setFillColor(currentFill_);
     shape_.setOutlineColor(currentOutline_);

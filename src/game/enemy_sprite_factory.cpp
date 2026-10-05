@@ -4,11 +4,11 @@ std::shared_ptr<sf::Texture> EnemySpriteFactory::sheet_;
 
 namespace {
 
-const sf::Color kBody    (220, 80, 80);
-const sf::Color kDark    (140, 40, 40);
-const sf::Color kDarker  (100, 20, 20);
-const sf::Color kEye     (255, 255, 255);
-const sf::Color kPupil   (20, 20, 20);
+const sf::Color kBody(220, 80, 80);
+const sf::Color kDark(140, 40, 40);
+const sf::Color kDarker(100, 20, 20);
+const sf::Color kEye(255, 255, 255);
+const sf::Color kPupil(20, 20, 20);
 
 void drawEnemyFrame(sf::RenderTarget& rt, int frameIndex) {
     const float fx = static_cast<float>(frameIndex * 48);
@@ -21,25 +21,29 @@ void drawEnemyFrame(sf::RenderTarget& rt, int frameIndex) {
     const float bodyY = 4.f;
 
     // 腿偏移（根据帧决定）
-    float legLeftX  = bodyX + 4.f;
+    float legLeftX = bodyX + 4.f;
     float legRightX = bodyX + bodyW - 14.f;
-    float legLeftY  = bodyY + bodyH;
+    float legLeftY = bodyY + bodyH;
     float legRightY = bodyY + bodyH;
 
     switch (frameIndex) {
-        case 0: /* 站立：腿并拢 */ break;
-        case 1: /* 走路：左腿前，右腿后 */
-            legLeftX  += 2.f; legLeftY  -= 1.f;
-            legRightX -= 2.f;
-            break;
-        case 2: /* 站立 */ break;
-        case 3: /* 走路：右腿前，左腿后 */
-            legRightX -= 2.f; legRightY -= 1.f;
-            legLeftX  += 2.f;
-            break;
-        default:
-            // 帧号越界就按站立画，别让"没匹配上"看起来像漏了分支
-            break;
+    case 0: /* 站立：腿并拢 */
+        break;
+    case 1: /* 走路：左腿前，右腿后 */
+        legLeftX += 2.f;
+        legLeftY -= 1.f;
+        legRightX -= 2.f;
+        break;
+    case 2: /* 站立 */
+        break;
+    case 3: /* 走路：右腿前，左腿后 */
+        legRightX -= 2.f;
+        legRightY -= 1.f;
+        legLeftX += 2.f;
+        break;
+    default:
+        // 帧号越界就按站立画，别让"没匹配上"看起来像漏了分支
+        break;
     }
 
     // ===== 腿（先画，在身体底下）=====
@@ -107,7 +111,8 @@ void drawEnemyFrame(sf::RenderTarget& rt, int frameIndex) {
 } // namespace
 
 std::shared_ptr<sf::Texture> EnemySpriteFactory::getSheet() {
-    if (sheet_) return sheet_;
+    if (sheet_)
+        return sheet_;
 
     sf::RenderTexture rt;
     if (!rt.resize({kFrameW * kFrameCount, kFrameH})) {

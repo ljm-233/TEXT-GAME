@@ -32,7 +32,8 @@ inline std::size_t tileCount(int width, int height) {
 
 bool Level::loadFromFile(const std::string& path) {
     std::ifstream in(path);
-    if (!in) return false;
+    if (!in)
+        return false;
     std::stringstream ss;
     ss << in.rdbuf();
     return loadFromString(ss.str());
@@ -58,22 +59,26 @@ bool Level::loadFromString(const std::string& text) {
     std::string line;
     std::vector<std::string> lines;
     while (std::getline(iss, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         lines.push_back(line);
     }
-    if (lines.empty()) return false;
+    if (lines.empty())
+        return false;
 
     // 解析头部元数据：以 "# " 开头的行，支持 "# name: xxx" / "# author: xxx"
     // 注意: "####" 是墙，不是元数据（"#" 后是空格才算）
     {
         auto trim = [](const std::string& s) {
             std::size_t a = s.find_first_not_of(" \t");
-            if (a == std::string::npos) return std::string{};
+            if (a == std::string::npos)
+                return std::string{};
             std::size_t b = s.find_last_not_of(" \t");
             return s.substr(a, b - a + 1);
         };
         for (const auto& l : lines) {
-            if (l.size() < 2 || l[0] != '#' || l[1] != ' ') break;
+            if (l.size() < 2 || l[0] != '#' || l[1] != ' ')
+                break;
             // 匹配 "# name: xxx" / "# name = xxx" / "# author: xxx"
             const std::string body = l.substr(2);
             if (body.rfind("name:", 0) == 0) {
@@ -102,18 +107,53 @@ bool Level::loadFromString(const std::string& text) {
             float px = static_cast<float>(x * tileSize_);
             float py = static_cast<float>(y * tileSize_);
             switch (c) {
-                case 'P': playerSpawn_ = {px, py}; c = ' '; break;
-                case 'E': enemySpawns_.push_back({px, py}); c = ' '; break;
-                case 'C': coinSpawns_.push_back({px, py}); c = ' '; break;
-                case 'J': jumpPadSpawns_.push_back({px, py}); c = ' '; break;
-                case 'S': checkpointSpawns_.push_back({px, py}); c = ' '; break;
-                case 'M': movingPlatformSpawns_.push_back({px, py}); c = ' '; break;
-                case 'V': verticalPlatformSpawns_.push_back({px, py}); c = ' '; break;
-                case 'G': goalPos_ = {px, py}; hasGoal_ = true; c = ' '; break;
-                case 'K': keySpawns_.push_back({px, py}); c = ' '; break;
-                case 'L': doorSpawns_.push_back({px, py}); c = ' '; break;
-                case '^': spikeSpawns_.push_back({px, py}); c = ' '; break;
-                default: break;
+            case 'P':
+                playerSpawn_ = {px, py};
+                c = ' ';
+                break;
+            case 'E':
+                enemySpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'C':
+                coinSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'J':
+                jumpPadSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'S':
+                checkpointSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'M':
+                movingPlatformSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'V':
+                verticalPlatformSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'G':
+                goalPos_ = {px, py};
+                hasGoal_ = true;
+                c = ' ';
+                break;
+            case 'K':
+                keySpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'L':
+                doorSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case '^':
+                spikeSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            default:
+                break;
             }
             tiles_[tileIndex(x, y, width_)] = c;
         }
@@ -123,28 +163,34 @@ bool Level::loadFromString(const std::string& text) {
 }
 
 char Level::tileAt(int tx, int ty) const {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return ' ';
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return ' ';
     return tiles_[tileIndex(tx, ty, width_)];
 }
 
 bool Level::isSolid(int tx, int ty) const {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
-    if (tiles_[tileIndex(tx, ty, width_)] == '#') return true;
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return false;
+    if (tiles_[tileIndex(tx, ty, width_)] == '#')
+        return true;
     return dynamicSolid_[tileIndex(tx, ty, width_)];
 }
 
 void Level::setDynamicSolid(int tx, int ty, bool solid) {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return;
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return;
     dynamicSolid_[tileIndex(tx, ty, width_)] = solid;
 }
 
 bool Level::isDynamicSolid(int tx, int ty) const {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return false;
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return false;
     return dynamicSolid_[tileIndex(tx, ty, width_)];
 }
 
 void Level::setPseudo3D(bool b) {
-    if (pseudo3D_ == b) return;
+    if (pseudo3D_ == b)
+        return;
     pseudo3D_ = b;
     buildGeometry();
 }
@@ -156,24 +202,30 @@ void Level::setPseudo3D(bool b) {
 void Level::buildGeometry() {
     const float tsF = static_cast<float>(tileSize_);
 
-    const sf::Color kBody  (80, 80, 100);
-    const sf::Color kTop   (130, 130, 155);
-    const sf::Color kLeft  (100, 100, 120);
-    const sf::Color kRight (50, 50, 70);
+    const sf::Color kBody(80, 80, 100);
+    const sf::Color kTop(130, 130, 155);
+    const sf::Color kLeft(100, 100, 120);
+    const sf::Color kRight(50, 50, 70);
     const sf::Color kBottom(40, 40, 60);
 
     // ===== 第一步：统计顶点数 =====
     std::size_t vertexCount = 0;
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
-            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#')
+                continue;
 
-            vertexCount += 6;   // 主体
-            if (!pseudo3D_) continue;
-            if (!isSolid(x, y - 1)) vertexCount += 6;
-            if (!isSolid(x - 1, y)) vertexCount += 6;
-            if (!isSolid(x + 1, y)) vertexCount += 6;
-            if (!isSolid(x, y + 1)) vertexCount += 6;
+            vertexCount += 6; // 主体
+            if (!pseudo3D_)
+                continue;
+            if (!isSolid(x, y - 1))
+                vertexCount += 6;
+            if (!isSolid(x - 1, y))
+                vertexCount += 6;
+            if (!isSolid(x + 1, y))
+                vertexCount += 6;
+            if (!isSolid(x, y + 1))
+                vertexCount += 6;
         }
     }
 
@@ -197,14 +249,16 @@ void Level::buildGeometry() {
     // ===== 第三步：填充 =====
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
-            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#')
+                continue;
 
             float px = static_cast<float>(x) * tsF;
             float py = static_cast<float>(y) * tsF;
 
             addQuad(px, py, px + tsF, py + tsF, kBody);
 
-            if (!pseudo3D_) continue;
+            if (!pseudo3D_)
+                continue;
 
             if (!isSolid(x, y - 1))
                 addQuad(px, py, px + tsF, py + 5.f, kTop);
@@ -225,23 +279,29 @@ void Level::buildGeometry() {
 void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
     const float tsF = static_cast<float>(tileSize_);
 
-    const sf::Color kBody  (80, 80, 100);
-    const sf::Color kTop   (130, 130, 155);
-    const sf::Color kLeft  (100, 100, 120);
-    const sf::Color kRight (50, 50, 70);
+    const sf::Color kBody(80, 80, 100);
+    const sf::Color kTop(130, 130, 155);
+    const sf::Color kLeft(100, 100, 120);
+    const sf::Color kRight(50, 50, 70);
     const sf::Color kBottom(40, 40, 60);
 
     // 第一步：统计可见范围内需要的顶点数
     std::size_t vertexCount = 0;
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
-            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#')
+                continue;
             vertexCount += 6;
-            if (!pseudo3D_) continue;
-            if (!isSolid(x, y - 1)) vertexCount += 6;
-            if (!isSolid(x - 1, y)) vertexCount += 6;
-            if (!isSolid(x + 1, y)) vertexCount += 6;
-            if (!isSolid(x, y + 1)) vertexCount += 6;
+            if (!pseudo3D_)
+                continue;
+            if (!isSolid(x, y - 1))
+                vertexCount += 6;
+            if (!isSolid(x - 1, y))
+                vertexCount += 6;
+            if (!isSolid(x + 1, y))
+                vertexCount += 6;
+            if (!isSolid(x, y + 1))
+                vertexCount += 6;
         }
     }
 
@@ -261,18 +321,24 @@ void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
 
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
-            if (tiles_[tileIndex(x, y, width_)] != '#') continue;
+            if (tiles_[tileIndex(x, y, width_)] != '#')
+                continue;
 
             float px = static_cast<float>(x) * tsF;
             float py = static_cast<float>(y) * tsF;
 
             addQuad(px, py, px + tsF, py + tsF, kBody);
 
-            if (!pseudo3D_) continue;
-            if (!isSolid(x, y - 1)) addQuad(px, py, px + tsF, py + 5.f, kTop);
-            if (!isSolid(x - 1, y)) addQuad(px, py, px + 4.f, py + tsF, kLeft);
-            if (!isSolid(x + 1, y)) addQuad(px + tsF - 4.f, py, px + tsF, py + tsF, kRight);
-            if (!isSolid(x, y + 1)) addQuad(px, py + tsF - 4.f, px + tsF, py + tsF, kBottom);
+            if (!pseudo3D_)
+                continue;
+            if (!isSolid(x, y - 1))
+                addQuad(px, py, px + tsF, py + 5.f, kTop);
+            if (!isSolid(x - 1, y))
+                addQuad(px, py, px + 4.f, py + tsF, kLeft);
+            if (!isSolid(x + 1, y))
+                addQuad(px + tsF - 4.f, py, px + tsF, py + tsF, kRight);
+            if (!isSolid(x, y + 1))
+                addQuad(px, py + tsF - 4.f, px + tsF, py + tsF, kBottom);
         }
     }
 }
@@ -281,18 +347,19 @@ void Level::rebuildVisibleGeometry(int x0, int y0, int x1, int y1) const {
 // 渲染
 // ============================================================
 
-void Level::render(sf::RenderTarget& target,
-                   float camLeft, float camTop,
-                   float camW,    float camH) const {
+void Level::render(sf::RenderTarget& target, float camLeft, float camTop, float camW,
+                   float camH) const {
     float time = animClock_.getElapsedTime().asSeconds();
     const float tsF = static_cast<float>(tileSize_);
 
     // ===== ⭐ 视锥裁剪 =====
     // 计算相机视野覆盖的 tile 范围（额外留 1 格边界，避免边缘闪烁）
     int x0 = std::max(0, static_cast<int>(std::floor(camLeft / tsF)) - 1);
-    int x1 = std::min(width_  - 1, static_cast<int>(std::ceil((camLeft + camW) / tsF)) + 1);
-    int y0 = std::max(0, static_cast<int>(std::floor(camTop  / tsF)) - 1);
-    int y1 = std::min(height_ - 1, static_cast<int>(std::ceil((camTop  + camH) / tsF)) + 1);
+    int x1 =
+        std::min(width_ - 1, static_cast<int>(std::ceil((camLeft + camW) / tsF)) + 1);
+    int y0 = std::max(0, static_cast<int>(std::floor(camTop / tsF)) - 1);
+    int y1 =
+        std::min(height_ - 1, static_cast<int>(std::ceil((camTop + camH) / tsF)) + 1);
 
     // 相机覆盖整关？直接画全关（小关卡不折腾）
     bool fullVisible = (x0 == 0 && y0 == 0 && x1 == width_ - 1 && y1 == height_ - 1);
@@ -305,8 +372,10 @@ void Level::render(sf::RenderTarget& target,
         // 只在可见范围变化时重建
         if (x0 != lastX0_ || x1 != lastX1_ || y0 != lastY0_ || y1 != lastY1_) {
             rebuildVisibleGeometry(x0, y0, x1, y1);
-            lastX0_ = x0; lastX1_ = x1;
-            lastY0_ = y0; lastY1_ = y1;
+            lastX0_ = x0;
+            lastX1_ = x1;
+            lastY0_ = y0;
+            lastY1_ = y1;
         }
         if (visibleVA_.getVertexCount() > 0) {
             target.draw(visibleVA_);
@@ -345,8 +414,8 @@ void Level::render(sf::RenderTarget& target,
         sf::CircleShape dot(r3);
         dot.setOrigin({r3, r3});
         dot.setPosition({cx, cy});
-        dot.setFillColor(sf::Color(200, 235, 255,
-            static_cast<std::uint8_t>(std::clamp(dotAlpha, 0.f, 255.f))));
+        dot.setFillColor(sf::Color(
+            200, 235, 255, static_cast<std::uint8_t>(std::clamp(dotAlpha, 0.f, 255.f))));
         target.draw(dot);
     }
 
@@ -401,8 +470,8 @@ void Level::render(sf::RenderTarget& target,
             label.setOutlineColor(sf::Color(80, 40, 0));
 
             auto b = label.getLocalBounds();
-            label.setOrigin({b.position.x + b.size.x / 2.f,
-                             b.position.y + b.size.y / 2.f});
+            label.setOrigin(
+                {b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
             label.setPosition({gx + tsF * 0.5f, gy - tsF * 1.1f + labelBob});
             target.draw(label);
         }

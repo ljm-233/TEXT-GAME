@@ -15,7 +15,7 @@ constexpr std::array<size_t, kLogRotationSteps> kSizes = {
 };
 constexpr std::array<int, kLogRotationSteps> kKeeps = {1, 3, 5, 10};
 
-}  // namespace
+} // namespace
 
 size_t logRotationSizeAt(int index) {
     return kSizes[static_cast<size_t>(clampLogRotationIndex(index))];

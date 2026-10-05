@@ -11,15 +11,38 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 要跟 base 分支比对，浅克隆不够
+          fetch-depth: 0
 
       - name: Install clang-format
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-format
 
-      - name: Check format
+      # 只检查这个 PR **改动过**的文件。
+      #
+      # 以前是全仓库扫一遍，而仓库里 193 个源文件中有 132 个不符合
+      # .clang-format —— 也就是说这个 job 在任何 PR 上都不可能绿，
+      # 一个"注定失败"的闸门等于没有闸门，只会训练人忽略它。
+      #
+      # 改成只管改动：新写的代码必须合格式，老代码你碰到哪个就顺手理哪个。
+      # 想一次性把 132 个文件都清掉的话：
+      #   clang-format -i $(find src include -name '*.cpp' -o -name '*.h')
+      # 那是一次纯机械的改动，7340 行左右，建议单独一个 commit。
+      - name: Check format of changed files
         run: |
-          # 找出所有 .cpp 和 .h 文件
-          FILES=$(find src include -name "*.cpp" -o -name "*.h")
-          # 用 --dry-run 检查，有格式问题就报错
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD \
+                  -- 'src/**/*.cpp' 'src/**/*.h' 'include/**/*.h' 'include/**/*.cpp')
+
+          if [ -z "$FILES" ]; then
+            echo "没有改动 C++ 文件，跳过"
+            exit 0
+          fi
+
+          echo "检查这些文件："
+          echo "$FILES"
           clang-format --dry-run --Werror $FILES

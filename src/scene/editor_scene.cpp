@@ -24,18 +24,12 @@ struct BrushItem {
 };
 
 const BrushItem kBrushes[] = {
-    {'#', "墙",   sf::Color(120, 120, 145)},
-    {' ', "橡皮", sf::Color(180, 70, 70)},
-    {'P', "玩家", sf::Color(100, 180, 255)},
-    {'E', "敌人", sf::Color(240, 80, 80)},
-    {'C', "金币", sf::Color(255, 215, 65)},
-    {'G', "终点", sf::Color(80, 240, 120)},
-    {'^', "尖刺", sf::Color(200, 200, 210)},
-    {'J', "跳台", sf::Color(0, 200, 255)},
-    {'S', "存档", sf::Color(255, 128, 0)},
-    {'K', "钥匙", sf::Color(255, 210, 60)},
-    {'L', "门",   sf::Color(160, 100, 60)},
-    {'M', "横台", sf::Color(180, 100, 200)},
+    {'#', "墙", sf::Color(120, 120, 145)},   {' ', "橡皮", sf::Color(180, 70, 70)},
+    {'P', "玩家", sf::Color(100, 180, 255)}, {'E', "敌人", sf::Color(240, 80, 80)},
+    {'C', "金币", sf::Color(255, 215, 65)},  {'G', "终点", sf::Color(80, 240, 120)},
+    {'^', "尖刺", sf::Color(200, 200, 210)}, {'J', "跳台", sf::Color(0, 200, 255)},
+    {'S', "存档", sf::Color(255, 128, 0)},   {'K', "钥匙", sf::Color(255, 210, 60)},
+    {'L', "门", sf::Color(160, 100, 60)},    {'M', "横台", sf::Color(180, 100, 200)},
     {'V', "竖台", sf::Color(180, 100, 200)},
 };
 
@@ -53,245 +47,243 @@ void drawTileIcon(sf::RenderTarget& rt, char ch, float x, float y, float s) {
     const float cy = y + s * 0.5f;
 
     switch (ch) {
-        case 'P': {
-            sf::RectangleShape body({s * 0.55f, s * 0.55f});
-            body.setOrigin({s * 0.275f, s * 0.275f});
-            body.setPosition({cx, cy});
-            body.setFillColor(sf::Color(95, 190, 95));
-            body.setOutlineThickness(2.f);
-            body.setOutlineColor(sf::Color(45, 110, 45));
-            rt.draw(body);
+    case 'P': {
+        sf::RectangleShape body({s * 0.55f, s * 0.55f});
+        body.setOrigin({s * 0.275f, s * 0.275f});
+        body.setPosition({cx, cy});
+        body.setFillColor(sf::Color(95, 190, 95));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(45, 110, 45));
+        rt.draw(body);
 
-            sf::RectangleShape eye({s * 0.09f, s * 0.09f});
-            eye.setFillColor(sf::Color(15, 15, 15));
-            eye.setPosition({cx - s * 0.17f, cy - s * 0.08f});
-            rt.draw(eye);
-            eye.setPosition({cx + s * 0.08f, cy - s * 0.08f});
-            rt.draw(eye);
-            break;
+        sf::RectangleShape eye({s * 0.09f, s * 0.09f});
+        eye.setFillColor(sf::Color(15, 15, 15));
+        eye.setPosition({cx - s * 0.17f, cy - s * 0.08f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.08f, cy - s * 0.08f});
+        rt.draw(eye);
+        break;
+    }
+    case 'E': {
+        sf::RectangleShape body({s * 0.66f, s * 0.5f});
+        body.setOrigin({s * 0.33f, s * 0.25f});
+        body.setPosition({cx, cy});
+        body.setFillColor(sf::Color(220, 80, 80));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(140, 40, 40));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.14f, s * 0.14f});
+        eye.setFillColor(sf::Color(255, 255, 255));
+        eye.setPosition({cx - s * 0.22f, cy - s * 0.1f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.08f, cy - s * 0.1f});
+        rt.draw(eye);
+
+        sf::RectangleShape brow({s * 0.14f, s * 0.04f});
+        brow.setFillColor(sf::Color(100, 20, 20));
+        brow.setPosition({cx - s * 0.22f, cy - s * 0.17f});
+        rt.draw(brow);
+        brow.setPosition({cx + s * 0.08f, cy - s * 0.17f});
+        rt.draw(brow);
+        break;
+    }
+    case 'C': {
+        float r = s * 0.28f;
+        sf::CircleShape coin(r);
+        coin.setOrigin({r, r});
+        coin.setPosition({cx, cy});
+        coin.setFillColor(sf::Color(255, 215, 65));
+        coin.setOutlineThickness(2.f);
+        coin.setOutlineColor(sf::Color(170, 115, 15));
+        rt.draw(coin);
+
+        float ir = r * 0.55f;
+        sf::CircleShape inner(ir);
+        inner.setOrigin({ir, ir});
+        inner.setPosition({cx, cy});
+        inner.setFillColor(sf::Color::Transparent);
+        inner.setOutlineThickness(1.5f);
+        inner.setOutlineColor(sf::Color(240, 190, 45));
+        rt.draw(inner);
+        break;
+    }
+    case 'G': {
+        sf::RectangleShape pole({s * 0.08f, s * 0.72f});
+        pole.setPosition({cx - s * 0.18f, cy - s * 0.36f});
+        pole.setFillColor(sf::Color(230, 230, 240));
+        pole.setOutlineThickness(1.f);
+        pole.setOutlineColor(sf::Color(120, 120, 140));
+        rt.draw(pole);
+
+        sf::ConvexShape flag;
+        flag.setPointCount(3);
+        flag.setPoint(0, {cx - s * 0.1f, cy - s * 0.36f});
+        flag.setPoint(1, {cx - s * 0.1f, cy - s * 0.02f});
+        flag.setPoint(2, {cx + s * 0.34f, cy - s * 0.19f});
+        flag.setFillColor(sf::Color(230, 60, 60));
+        flag.setOutlineThickness(1.f);
+        flag.setOutlineColor(sf::Color(140, 20, 20));
+        rt.draw(flag);
+        break;
+    }
+    case '^': {
+        for (int i = 0; i < 3; ++i) {
+            float sx = x + s * 0.02f + static_cast<float>(i) * s * 0.33f;
+            sf::ConvexShape spike;
+            spike.setPointCount(3);
+            spike.setPoint(0, {sx, y + s});
+            spike.setPoint(1, {sx + s * 0.155f, y + s * 0.15f});
+            spike.setPoint(2, {sx + s * 0.31f, y + s});
+            spike.setFillColor(sf::Color(200, 200, 210));
+            spike.setOutlineThickness(1.f);
+            spike.setOutlineColor(sf::Color(120, 120, 140));
+            rt.draw(spike);
         }
-        case 'E': {
-            sf::RectangleShape body({s * 0.66f, s * 0.5f});
-            body.setOrigin({s * 0.33f, s * 0.25f});
-            body.setPosition({cx, cy});
-            body.setFillColor(sf::Color(220, 80, 80));
-            body.setOutlineThickness(2.f);
-            body.setOutlineColor(sf::Color(140, 40, 40));
-            rt.draw(body);
+        break;
+    }
+    case 'J': {
+        sf::RectangleShape base({s * 0.8f, s * 0.35f});
+        base.setOrigin({s * 0.4f, s * 0.175f});
+        base.setPosition({cx, cy + s * 0.2f});
+        base.setFillColor(sf::Color(60, 200, 90));
+        base.setOutlineThickness(2.f);
+        base.setOutlineColor(sf::Color(30, 120, 50));
+        rt.draw(base);
 
-            sf::RectangleShape eye({s * 0.14f, s * 0.14f});
-            eye.setFillColor(sf::Color(255, 255, 255));
-            eye.setPosition({cx - s * 0.22f, cy - s * 0.1f});
-            rt.draw(eye);
-            eye.setPosition({cx + s * 0.08f, cy - s * 0.1f});
-            rt.draw(eye);
+        sf::ConvexShape arrow;
+        arrow.setPointCount(3);
+        arrow.setPoint(0, {cx, cy - s * 0.36f});
+        arrow.setPoint(1, {cx - s * 0.15f, cy - s * 0.08f});
+        arrow.setPoint(2, {cx + s * 0.15f, cy - s * 0.08f});
+        arrow.setFillColor(sf::Color(180, 255, 180));
+        arrow.setOutlineThickness(1.f);
+        arrow.setOutlineColor(sf::Color(30, 120, 50));
+        rt.draw(arrow);
+        break;
+    }
+    case 'S': {
+        sf::RectangleShape pole({s * 0.1f, s * 0.7f});
+        pole.setPosition({cx - s * 0.05f, cy - s * 0.35f});
+        pole.setFillColor(sf::Color(150, 150, 160));
+        pole.setOutlineThickness(1.f);
+        pole.setOutlineColor(sf::Color(80, 80, 90));
+        rt.draw(pole);
 
-            sf::RectangleShape brow({s * 0.14f, s * 0.04f});
-            brow.setFillColor(sf::Color(100, 20, 20));
-            brow.setPosition({cx - s * 0.22f, cy - s * 0.17f});
-            rt.draw(brow);
-            brow.setPosition({cx + s * 0.08f, cy - s * 0.17f});
-            rt.draw(brow);
-            break;
+        sf::RectangleShape flag({s * 0.42f, s * 0.28f});
+        flag.setPosition({cx + s * 0.05f, cy - s * 0.3f});
+        flag.setFillColor(sf::Color(80, 220, 100));
+        flag.setOutlineThickness(1.f);
+        flag.setOutlineColor(sf::Color(40, 120, 60));
+        rt.draw(flag);
+        break;
+    }
+    case 'K': {
+        float r = s * 0.13f;
+        sf::CircleShape ring(r);
+        ring.setOrigin({r, r});
+        ring.setPosition({cx - s * 0.08f, cy - s * 0.18f});
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineThickness(3.f);
+        ring.setOutlineColor(sf::Color(255, 210, 60));
+        rt.draw(ring);
+
+        sf::RectangleShape shaft({s * 0.08f, s * 0.42f});
+        shaft.setPosition({cx - s * 0.12f, cy - s * 0.05f});
+        shaft.setFillColor(sf::Color(255, 210, 60));
+        rt.draw(shaft);
+
+        sf::RectangleShape tooth({s * 0.16f, s * 0.07f});
+        tooth.setPosition({cx - s * 0.04f, cy + s * 0.2f});
+        tooth.setFillColor(sf::Color(255, 210, 60));
+        rt.draw(tooth);
+        tooth.setPosition({cx - s * 0.04f, cy + s * 0.32f});
+        rt.draw(tooth);
+        break;
+    }
+    case 'L': {
+        sf::RectangleShape frame({s * 0.68f, s * 0.72f});
+        frame.setOrigin({s * 0.34f, s * 0.36f});
+        frame.setPosition({cx, cy});
+        frame.setFillColor(sf::Color(90, 60, 30));
+        frame.setOutlineThickness(2.f);
+        frame.setOutlineColor(sf::Color(50, 30, 15));
+        rt.draw(frame);
+
+        sf::RectangleShape panel({s * 0.5f, s * 0.6f});
+        panel.setOrigin({s * 0.25f, s * 0.3f});
+        panel.setPosition({cx, cy});
+        panel.setFillColor(sf::Color(140, 90, 50));
+        rt.draw(panel);
+
+        float kr = s * 0.055f;
+        sf::CircleShape knob(kr);
+        knob.setOrigin({kr, kr});
+        knob.setPosition({cx + s * 0.16f, cy});
+        knob.setFillColor(sf::Color(255, 210, 60));
+        knob.setOutlineThickness(1.f);
+        knob.setOutlineColor(sf::Color(120, 90, 20));
+        rt.draw(knob);
+        break;
+    }
+    case 'M':
+    case 'V': {
+        sf::RectangleShape plat({s * 0.86f, s * 0.36f});
+        plat.setOrigin({s * 0.43f, s * 0.18f});
+        plat.setPosition({cx, cy});
+        plat.setFillColor(sf::Color(160, 120, 80));
+        plat.setOutlineThickness(2.f);
+        plat.setOutlineColor(sf::Color(90, 60, 30));
+        rt.draw(plat);
+
+        sf::RectangleShape stripe({s * 0.86f, s * 0.06f});
+        stripe.setOrigin({s * 0.43f, s * 0.03f});
+        stripe.setPosition({cx, cy - s * 0.11f});
+        stripe.setFillColor(sf::Color(220, 180, 120));
+        rt.draw(stripe);
+
+        sf::ConvexShape arrow;
+        arrow.setPointCount(3);
+        if (ch == 'M') {
+            arrow.setPoint(0, {cx + s * 0.32f, cy + s * 0.4f});
+            arrow.setPoint(1, {cx + s * 0.18f, cy + s * 0.28f});
+            arrow.setPoint(2, {cx + s * 0.18f, cy + s * 0.5f});
+        } else {
+            arrow.setPoint(0, {cx + s * 0.32f, cy - s * 0.45f});
+            arrow.setPoint(1, {cx + s * 0.2f, cy - s * 0.3f});
+            arrow.setPoint(2, {cx + s * 0.44f, cy - s * 0.3f});
         }
-        case 'C': {
-            float r = s * 0.28f;
-            sf::CircleShape coin(r);
-            coin.setOrigin({r, r});
-            coin.setPosition({cx, cy});
-            coin.setFillColor(sf::Color(255, 215, 65));
-            coin.setOutlineThickness(2.f);
-            coin.setOutlineColor(sf::Color(170, 115, 15));
-            rt.draw(coin);
-
-            float ir = r * 0.55f;
-            sf::CircleShape inner(ir);
-            inner.setOrigin({ir, ir});
-            inner.setPosition({cx, cy});
-            inner.setFillColor(sf::Color::Transparent);
-            inner.setOutlineThickness(1.5f);
-            inner.setOutlineColor(sf::Color(240, 190, 45));
-            rt.draw(inner);
-            break;
-        }
-        case 'G': {
-            sf::RectangleShape pole({s * 0.08f, s * 0.72f});
-            pole.setPosition({cx - s * 0.18f, cy - s * 0.36f});
-            pole.setFillColor(sf::Color(230, 230, 240));
-            pole.setOutlineThickness(1.f);
-            pole.setOutlineColor(sf::Color(120, 120, 140));
-            rt.draw(pole);
-
-            sf::ConvexShape flag;
-            flag.setPointCount(3);
-            flag.setPoint(0, {cx - s * 0.1f, cy - s * 0.36f});
-            flag.setPoint(1, {cx - s * 0.1f, cy - s * 0.02f});
-            flag.setPoint(2, {cx + s * 0.34f, cy - s * 0.19f});
-            flag.setFillColor(sf::Color(230, 60, 60));
-            flag.setOutlineThickness(1.f);
-            flag.setOutlineColor(sf::Color(140, 20, 20));
-            rt.draw(flag);
-            break;
-        }
-        case '^': {
-            for (int i = 0; i < 3; ++i) {
-                float sx = x + s * 0.02f + static_cast<float>(i) * s * 0.33f;
-                sf::ConvexShape spike;
-                spike.setPointCount(3);
-                spike.setPoint(0, {sx, y + s});
-                spike.setPoint(1, {sx + s * 0.155f, y + s * 0.15f});
-                spike.setPoint(2, {sx + s * 0.31f, y + s});
-                spike.setFillColor(sf::Color(200, 200, 210));
-                spike.setOutlineThickness(1.f);
-                spike.setOutlineColor(sf::Color(120, 120, 140));
-                rt.draw(spike);
-            }
-            break;
-        }
-        case 'J': {
-            sf::RectangleShape base({s * 0.8f, s * 0.35f});
-            base.setOrigin({s * 0.4f, s * 0.175f});
-            base.setPosition({cx, cy + s * 0.2f});
-            base.setFillColor(sf::Color(60, 200, 90));
-            base.setOutlineThickness(2.f);
-            base.setOutlineColor(sf::Color(30, 120, 50));
-            rt.draw(base);
-
-            sf::ConvexShape arrow;
-            arrow.setPointCount(3);
-            arrow.setPoint(0, {cx, cy - s * 0.36f});
-            arrow.setPoint(1, {cx - s * 0.15f, cy - s * 0.08f});
-            arrow.setPoint(2, {cx + s * 0.15f, cy - s * 0.08f});
-            arrow.setFillColor(sf::Color(180, 255, 180));
-            arrow.setOutlineThickness(1.f);
-            arrow.setOutlineColor(sf::Color(30, 120, 50));
-            rt.draw(arrow);
-            break;
-        }
-        case 'S': {
-            sf::RectangleShape pole({s * 0.1f, s * 0.7f});
-            pole.setPosition({cx - s * 0.05f, cy - s * 0.35f});
-            pole.setFillColor(sf::Color(150, 150, 160));
-            pole.setOutlineThickness(1.f);
-            pole.setOutlineColor(sf::Color(80, 80, 90));
-            rt.draw(pole);
-
-            sf::RectangleShape flag({s * 0.42f, s * 0.28f});
-            flag.setPosition({cx + s * 0.05f, cy - s * 0.3f});
-            flag.setFillColor(sf::Color(80, 220, 100));
-            flag.setOutlineThickness(1.f);
-            flag.setOutlineColor(sf::Color(40, 120, 60));
-            rt.draw(flag);
-            break;
-        }
-        case 'K': {
-            float r = s * 0.13f;
-            sf::CircleShape ring(r);
-            ring.setOrigin({r, r});
-            ring.setPosition({cx - s * 0.08f, cy - s * 0.18f});
-            ring.setFillColor(sf::Color::Transparent);
-            ring.setOutlineThickness(3.f);
-            ring.setOutlineColor(sf::Color(255, 210, 60));
-            rt.draw(ring);
-
-            sf::RectangleShape shaft({s * 0.08f, s * 0.42f});
-            shaft.setPosition({cx - s * 0.12f, cy - s * 0.05f});
-            shaft.setFillColor(sf::Color(255, 210, 60));
-            rt.draw(shaft);
-
-            sf::RectangleShape tooth({s * 0.16f, s * 0.07f});
-            tooth.setPosition({cx - s * 0.04f, cy + s * 0.2f});
-            tooth.setFillColor(sf::Color(255, 210, 60));
-            rt.draw(tooth);
-            tooth.setPosition({cx - s * 0.04f, cy + s * 0.32f});
-            rt.draw(tooth);
-            break;
-        }
-        case 'L': {
-            sf::RectangleShape frame({s * 0.68f, s * 0.72f});
-            frame.setOrigin({s * 0.34f, s * 0.36f});
-            frame.setPosition({cx, cy});
-            frame.setFillColor(sf::Color(90, 60, 30));
-            frame.setOutlineThickness(2.f);
-            frame.setOutlineColor(sf::Color(50, 30, 15));
-            rt.draw(frame);
-
-            sf::RectangleShape panel({s * 0.5f, s * 0.6f});
-            panel.setOrigin({s * 0.25f, s * 0.3f});
-            panel.setPosition({cx, cy});
-            panel.setFillColor(sf::Color(140, 90, 50));
-            rt.draw(panel);
-
-            float kr = s * 0.055f;
-            sf::CircleShape knob(kr);
-            knob.setOrigin({kr, kr});
-            knob.setPosition({cx + s * 0.16f, cy});
-            knob.setFillColor(sf::Color(255, 210, 60));
-            knob.setOutlineThickness(1.f);
-            knob.setOutlineColor(sf::Color(120, 90, 20));
-            rt.draw(knob);
-            break;
-        }
-        case 'M':
-        case 'V': {
-            sf::RectangleShape plat({s * 0.86f, s * 0.36f});
-            plat.setOrigin({s * 0.43f, s * 0.18f});
-            plat.setPosition({cx, cy});
-            plat.setFillColor(sf::Color(160, 120, 80));
-            plat.setOutlineThickness(2.f);
-            plat.setOutlineColor(sf::Color(90, 60, 30));
-            rt.draw(plat);
-
-            sf::RectangleShape stripe({s * 0.86f, s * 0.06f});
-            stripe.setOrigin({s * 0.43f, s * 0.03f});
-            stripe.setPosition({cx, cy - s * 0.11f});
-            stripe.setFillColor(sf::Color(220, 180, 120));
-            rt.draw(stripe);
-
-            sf::ConvexShape arrow;
-            arrow.setPointCount(3);
-            if (ch == 'M') {
-                arrow.setPoint(0, {cx + s * 0.32f, cy + s * 0.4f});
-                arrow.setPoint(1, {cx + s * 0.18f, cy + s * 0.28f});
-                arrow.setPoint(2, {cx + s * 0.18f, cy + s * 0.5f});
-            } else {
-                arrow.setPoint(0, {cx + s * 0.32f, cy - s * 0.45f});
-                arrow.setPoint(1, {cx + s * 0.2f,  cy - s * 0.3f});
-                arrow.setPoint(2, {cx + s * 0.44f, cy - s * 0.3f});
-            }
-            arrow.setFillColor(sf::Color(220, 220, 240));
-            arrow.setOutlineThickness(1.f);
-            arrow.setOutlineColor(sf::Color(80, 80, 100));
-            rt.draw(arrow);
-            break;
-        }
-        default: {
-            float r = s * 0.2f;
-            sf::CircleShape dot(r);
-            dot.setOrigin({r, r});
-            dot.setPosition({cx, cy});
-            dot.setFillColor(sf::Color(150, 150, 150));
-            rt.draw(dot);
-            break;
-        }
+        arrow.setFillColor(sf::Color(220, 220, 240));
+        arrow.setOutlineThickness(1.f);
+        arrow.setOutlineColor(sf::Color(80, 80, 100));
+        rt.draw(arrow);
+        break;
+    }
+    default: {
+        float r = s * 0.2f;
+        sf::CircleShape dot(r);
+        dot.setOrigin({r, r});
+        dot.setPosition({cx, cy});
+        dot.setFillColor(sf::Color(150, 150, 150));
+        rt.draw(dot);
+        break;
+    }
     }
 }
 
 } // namespace
 
-EditorScene::EditorScene(std::shared_ptr<Background>  background,
-                         std::shared_ptr<Preferences> preferences,
-                         const sf::Font&              font,
-                         std::shared_ptr<Logger>      logger)
-    : background_(std::move(background)),
-      preferences_(std::move(preferences)),
-      logger_(std::move(logger)),
-      font_(&font),
-      hudText_(font, sf::String(), 18),
-      hintText_(font, sf::String(), 15),
-      flashDraw_(font, sf::String(), 24),
-      brushNameText_(font, sf::String(), 14) {
-
+EditorScene::EditorScene(std::shared_ptr<Background> background,
+                         std::shared_ptr<Preferences> preferences, const sf::Font& font,
+                         std::shared_ptr<Logger> logger)
+      : background_(std::move(background)),
+        preferences_(std::move(preferences)),
+        logger_(std::move(logger)),
+        font_(&font),
+        hudText_(font, sf::String(), 18),
+        hintText_(font, sf::String(), 15),
+        flashDraw_(font, sf::String(), 24),
+        brushNameText_(font, sf::String(), 14) {
     hudText_.setFillColor(sf::Color(240, 240, 250));
     hudText_.setOutlineThickness(2.f);
     hudText_.setOutlineColor(sf::Color(0, 0, 0, 180));
@@ -336,29 +328,34 @@ void EditorScene::scanLevelFiles() {
 
     if (std::filesystem::exists(dir) && std::filesystem::is_directory(dir)) {
         for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-            if (!entry.is_regular_file()) continue;
-            if (entry.path().extension() != ".txt") continue;
+            if (!entry.is_regular_file())
+                continue;
+            if (entry.path().extension() != ".txt")
+                continue;
             levelFiles_.push_back(entry.path().string());
         }
     }
     std::sort(levelFiles_.begin(), levelFiles_.end());
 
     std::string editorPath = preferences_->assetFile("levels/editor.txt").string();
-    if (std::find(levelFiles_.begin(), levelFiles_.end(), editorPath) == levelFiles_.end()) {
+    if (std::find(levelFiles_.begin(), levelFiles_.end(), editorPath) ==
+        levelFiles_.end()) {
         levelFiles_.push_back(editorPath);
         std::sort(levelFiles_.begin(), levelFiles_.end());
     }
 }
 
 std::string EditorScene::currentFileName() const {
-    if (levelFiles_.empty()) return savePath_;
+    if (levelFiles_.empty())
+        return savePath_;
     if (currentFileIdx_ < 0 || currentFileIdx_ >= static_cast<int>(levelFiles_.size()))
         return savePath_;
     return std::filesystem::path(levelFiles_[currentFileIdx_]).filename().string();
 }
 
 void EditorScene::switchToNextFile() {
-    if (levelFiles_.empty()) return;
+    if (levelFiles_.empty())
+        return;
     saveFile();
     currentFileIdx_ = (currentFileIdx_ + 1) % static_cast<int>(levelFiles_.size());
     savePath_ = levelFiles_[currentFileIdx_];
@@ -371,7 +368,8 @@ void EditorScene::switchToNextFile() {
 // ============================================================
 
 void EditorScene::pushUndo() {
-    if (!undoStack_.empty() && undoStack_.back() == lines_) return;
+    if (!undoStack_.empty() && undoStack_.back() == lines_)
+        return;
     undoStack_.push_back(lines_);
     if (undoStack_.size() > kMaxUndo) {
         undoStack_.erase(undoStack_.begin());
@@ -397,7 +395,8 @@ void EditorScene::refreshDimensions() {
     width_ = 0;
     for (const auto& l : lines_)
         width_ = std::max(width_, static_cast<int>(l.size()));
-    for (auto& l : lines_) l.resize(width_, ' ');
+    for (auto& l : lines_)
+        l.resize(width_, ' ');
 }
 
 // ============================================================
@@ -408,13 +407,14 @@ void EditorScene::resizeLevel(int newW, int newH) {
     newW = std::max(8, std::min(300, newW));
     newH = std::max(6, std::min(100, newH));
 
-    if (newW == width_ && newH == height_) return;
+    if (newW == width_ && newH == height_)
+        return;
 
     pushUndo();
 
     std::vector<std::string> newLines(newH, std::string(newW, ' '));
 
-    int copyW = std::min(width_,  newW);
+    int copyW = std::min(width_, newW);
     int copyH = std::min(height_, newH);
 
     for (int y = 0; y < copyH; ++y) {
@@ -433,7 +433,9 @@ void EditorScene::resizeLevel(int newW, int newH) {
     reachDirty_ = true;
     levelIconsDirty_ = true;
 
-    showFlash(Str::T(Str::EditorHudSize) + std::to_string(newW) + " x " + std::to_string(newH), 1.0f);
+    showFlash(Str::T(Str::EditorHudSize) + std::to_string(newW) + " x " +
+                  std::to_string(newH),
+              1.0f);
 }
 
 // ============================================================
@@ -457,19 +459,21 @@ void EditorScene::loadFile() {
             lines_[y][width_ - 1] = '#';
         }
         lines_[2][3] = 'P';
-        for (int x = 3; x <= 6; ++x) lines_[3][x] = '#';
+        for (int x = 3; x <= 6; ++x)
+            lines_[3][x] = '#';
 
         logger_->info("编辑器：创建新关卡 " + savePath_);
     } else {
         std::string line;
         while (std::getline(in, line)) {
-            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
             lines_.push_back(line);
         }
         refreshDimensions();
 
-        logger_->info("编辑器：加载 " + savePath_ + " " +
-                      std::to_string(width_) + "x" + std::to_string(height_));
+        logger_->info("编辑器：加载 " + savePath_ + " " + std::to_string(width_) + "x" +
+                      std::to_string(height_));
     }
 
     undoStack_.clear();
@@ -517,8 +521,8 @@ void EditorScene::exportShareCode() {
     out.flush();
 
     showFlash("已导出 (" + std::to_string(code.size()) + " 字符)", 2.0f);
-    logger_->info("分享码已导出到 " + path.string() +
-                  " (" + std::to_string(code.size()) + " 字符)");
+    logger_->info("分享码已导出到 " + path.string() + " (" + std::to_string(code.size()) +
+                  " 字符)");
     AchievementManager::instance().unlock("editor_export");
 }
 
@@ -548,7 +552,8 @@ void EditorScene::importShareCode() {
     std::istringstream iss(text);
     std::string line;
     while (std::getline(iss, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         lines_.push_back(line);
     }
     refreshDimensions();
@@ -565,22 +570,29 @@ void EditorScene::importShareCode() {
 // ============================================================
 
 char* EditorScene::tileAt(int tx, int ty) {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return nullptr;
-    if (ty >= static_cast<int>(lines_.size())) return nullptr;
-    if (tx >= static_cast<int>(lines_[ty].size())) return nullptr;
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return nullptr;
+    if (ty >= static_cast<int>(lines_.size()))
+        return nullptr;
+    if (tx >= static_cast<int>(lines_[ty].size()))
+        return nullptr;
     return &lines_[ty][tx];
 }
 
 const char* EditorScene::tileAt(int tx, int ty) const {
-    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_) return nullptr;
-    if (ty >= static_cast<int>(lines_.size())) return nullptr;
-    if (tx >= static_cast<int>(lines_[ty].size())) return nullptr;
+    if (tx < 0 || tx >= width_ || ty < 0 || ty >= height_)
+        return nullptr;
+    if (ty >= static_cast<int>(lines_.size()))
+        return nullptr;
+    if (tx >= static_cast<int>(lines_[ty].size()))
+        return nullptr;
     return &lines_[ty][tx];
 }
 
 void EditorScene::paintCell(int tx, int ty, char newChar) {
     char* p = tileAt(tx, ty);
-    if (!p) return;
+    if (!p)
+        return;
     if (*p != newChar) {
         *p = newChar;
         geometryDirty_ = true;
@@ -605,14 +617,20 @@ void EditorScene::enforceUniquePlayer(int keepX, int keepY) {
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
             char* c = tileAt(x, y);
-            if (!c || *c != 'P') continue;
+            if (!c || *c != 'P')
+                continue;
             if (keepX >= 0 && keepY >= 0) {
-                if (x == keepX && y == keepY) continue;
+                if (x == keepX && y == keepY)
+                    continue;
                 *c = ' ';
                 geometryDirty_ = true;
             } else {
-                if (!kept) { kept = true; }
-                else { *c = ' '; geometryDirty_ = true; }
+                if (!kept) {
+                    kept = true;
+                } else {
+                    *c = ' ';
+                    geometryDirty_ = true;
+                }
             }
         }
     }
@@ -621,7 +639,8 @@ void EditorScene::enforceUniquePlayer(int keepX, int keepY) {
 void EditorScene::paintAt(sf::Vector2i tile) {
     char newChar = rightDown_ ? ' ' : brush_;
     paintCell(tile.x, tile.y, newChar);
-    if (newChar == 'P') enforceUniquePlayer(tile.x, tile.y);
+    if (newChar == 'P')
+        enforceUniquePlayer(tile.x, tile.y);
 }
 
 // ============================================================
@@ -629,20 +648,22 @@ void EditorScene::paintAt(sf::Vector2i tile) {
 // ============================================================
 
 void EditorScene::rebuildGeometry() {
-    if (!geometryDirty_) return;
+    if (!geometryDirty_)
+        return;
 
     const float ts = static_cast<float>(tileSize_);
 
     tileVA_.clear();
     tileVA_.setPrimitiveType(sf::PrimitiveType::Triangles);
 
-    const sf::Color kBody (70, 70, 90);
-    const sf::Color kTop  (120, 120, 145);
+    const sf::Color kBody(70, 70, 90);
+    const sf::Color kTop(120, 120, 145);
 
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
             const char* c = tileAt(x, y);
-            if (!c || *c != '#') continue;
+            if (!c || *c != '#')
+                continue;
 
             float px = static_cast<float>(x) * ts;
             float py = static_cast<float>(y) * ts;
@@ -727,15 +748,14 @@ sf::FloatRect EditorScene::brushButtonRect(int idx, sf::Vector2u winSize) const 
     const float startX = (winW - totalW) * 0.5f;
     const float barY = winH - kBrushBarHeight;
     const float btnY = barY + (kBrushBarHeight - kButtonH) * 0.5f;
-    return sf::FloatRect(
-        {startX + idx * (kButtonW + kButtonGap), btnY},
-        {kButtonW, kButtonH});
+    return sf::FloatRect({startX + idx * (kButtonW + kButtonGap), btnY},
+                         {kButtonW, kButtonH});
 }
 
 int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const {
     for (int i = 0; i < kBrushCount; ++i) {
-        if (brushButtonRect(i, winSize).contains(
-                {static_cast<float>(pixel.x), static_cast<float>(pixel.y)})) {
+        if (brushButtonRect(i, winSize)
+                .contains({static_cast<float>(pixel.x), static_cast<float>(pixel.y)})) {
             return i;
         }
     }
@@ -772,8 +792,8 @@ void EditorScene::handleEvent(const sf::Event& event) {
         // 网格开关
         if (kp->code == sf::Keyboard::Key::G && !kp->control) {
             showGrid_ = !showGrid_;
-            showFlash(showGrid_ ? Str::T(Str::EditorGridOn)
-                                : Str::T(Str::EditorGridOff), 0.8f);
+            showFlash(showGrid_ ? Str::T(Str::EditorGridOn) : Str::T(Str::EditorGridOff),
+                      0.8f);
             return;
         }
 
@@ -782,13 +802,13 @@ void EditorScene::handleEvent(const sf::Event& event) {
             showReachability_ = !showReachability_;
             reachDirty_ = true;
             showFlash(showReachability_ ? Str::T(Str::EditorReachOn)
-                                        : Str::T(Str::EditorReachOff), 0.8f);
+                                        : Str::T(Str::EditorReachOff),
+                      0.8f);
             return;
         }
 
         // 缩放：0 键重置为 100%
-        if (kp->code == sf::Keyboard::Key::Num0 &&
-            (kp->control || kp->system)) {
+        if (kp->code == sf::Keyboard::Key::Num0 && (kp->control || kp->system)) {
             zoom_ = 1.0f;
             showFlash(Str::T(Str::EditorZoomReset), 0.8f);
             return;
@@ -818,8 +838,8 @@ void EditorScene::handleEvent(const sf::Event& event) {
     }
 
     auto shiftDown = []() {
-        return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift)
-            || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+        return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+               sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
     };
 
     if (const auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
@@ -836,19 +856,20 @@ void EditorScene::handleEvent(const sf::Event& event) {
             leftDown_ = true;
             auto t = screenToTile(mb->position, lastWinSize_);
             dragStartTile_ = t;
-            dragLastTile_  = t;
+            dragLastTile_ = t;
             // Shift 按下：矩形模式，松手时才填充
             if (!shiftDown()) {
                 paintAt(t);
             }
         }
         if (mb->button == sf::Mouse::Button::Right) {
-            if (hitTestBrushBar(mb->position, lastWinSize_) >= 0) return;
+            if (hitTestBrushBar(mb->position, lastWinSize_) >= 0)
+                return;
             pushUndo();
             rightDown_ = true;
             auto t = screenToTile(mb->position, lastWinSize_);
             dragStartTile_ = t;
-            dragLastTile_  = t;
+            dragLastTile_ = t;
             paintAt(t);
         }
         if (mb->button == sf::Mouse::Button::Middle) {
@@ -860,32 +881,35 @@ void EditorScene::handleEvent(const sf::Event& event) {
 
     if (const auto* mb = event.getIf<sf::Event::MouseButtonReleased>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            if (leftDown_ && shiftDown()
-                && dragStartTile_.x >= 0) {
+            if (leftDown_ && shiftDown() && dragStartTile_.x >= 0) {
                 auto t = screenToTile(mb->position, lastWinSize_);
                 paintRect(dragStartTile_, t, brush_);
-                if (brush_ == 'P') enforceUniquePlayer(-1, -1);
+                if (brush_ == 'P')
+                    enforceUniquePlayer(-1, -1);
             }
             leftDown_ = false;
             dragStartTile_ = {-1, -1};
-            dragLastTile_  = {-1, -1};
+            dragLastTile_ = {-1, -1};
         }
         if (mb->button == sf::Mouse::Button::Right) {
             rightDown_ = false;
             dragStartTile_ = {-1, -1};
-            dragLastTile_  = {-1, -1};
+            dragLastTile_ = {-1, -1};
         }
-        if (mb->button == sf::Mouse::Button::Middle) middleDown_ = false;
+        if (mb->button == sf::Mouse::Button::Middle)
+            middleDown_ = false;
     }
 
     if (const auto* mm = event.getIf<sf::Event::MouseMoved>()) {
-        if (hitTestBrushBar(mm->position, lastWinSize_) >= 0) return;
+        if (hitTestBrushBar(mm->position, lastWinSize_) >= 0)
+            return;
         auto t = screenToTile(mm->position, lastWinSize_);
 
         if (leftDown_) {
             if (!shiftDown()) {
                 paintLine(dragLastTile_, t, brush_);
-                if (brush_ == 'P') enforceUniquePlayer(t.x, t.y);
+                if (brush_ == 'P')
+                    enforceUniquePlayer(t.x, t.y);
                 dragLastTile_ = t;
             } else {
                 // 矩形模式：只更新预览终点
@@ -899,12 +923,12 @@ void EditorScene::handleEvent(const sf::Event& event) {
     }
 
     if (const auto* ws = event.getIf<sf::Event::MouseWheelScrolled>()) {
-        if (ws->wheel != sf::Mouse::Wheel::Vertical) return;
+        if (ws->wheel != sf::Mouse::Wheel::Vertical)
+            return;
 
         // Ctrl + 滚轮 = 缩放
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) ||
             sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl)) {
-
             sf::Vector2i mp = ws->position;
 
             float w = static_cast<float>(lastWinSize_.x);
@@ -942,7 +966,8 @@ void EditorScene::handleEvent(const sf::Event& event) {
 // ============================================================
 
 void EditorScene::update(float dt) {
-    if (flashTimer_ > 0.f) flashTimer_ -= dt;
+    if (flashTimer_ > 0.f)
+        flashTimer_ -= dt;
 
     const float speed = 400.f * dt / zoom_;
 
@@ -965,7 +990,7 @@ void EditorScene::update(float dt) {
     // clamp 考虑 zoom（视野大小）
     float viewW = kLogicalW / zoom_;
     float viewH = kLogicalH / zoom_;
-    float maxX = static_cast<float>(width_  * tileSize_) - viewW * 0.5f;
+    float maxX = static_cast<float>(width_ * tileSize_) - viewW * 0.5f;
     float maxY = static_cast<float>(height_ * tileSize_) - viewH * 0.5f;
     camera_.x = std::clamp(camera_.x, -viewW * 0.3f, std::max(-viewW * 0.3f, maxX));
     camera_.y = std::clamp(camera_.y, -viewH * 0.3f, std::max(-viewH * 0.3f, maxY));
@@ -986,7 +1011,8 @@ void EditorScene::render(Window& window) {
     sf::View screenView(sf::FloatRect({0.f, 0.f}, {winW, winH}));
     rt.setView(screenView);
     rt.clear(sf::Color(30, 30, 40));
-    if (background_) background_->render(rt);
+    if (background_)
+        background_->render(rt);
 
     // ===== 世界层 =====
     sf::View worldView = buildWorldView(winSize);
@@ -1021,7 +1047,10 @@ void EditorScene::render(Window& window) {
         if (reachDirty_) {
             Level tmp;
             std::string text;
-            for (const auto& l : lines_) { text += l; text += '\n'; }
+            for (const auto& l : lines_) {
+                text += l;
+                text += '\n';
+            }
             tmp.loadFromString(text);
             reachReport_ = LevelValidator::validate(tmp);
             reachDirty_ = false;
@@ -1038,8 +1067,8 @@ void EditorScene::render(Window& window) {
                 // 平台顶面
                 if (reachReport_.allPlatformTops.count({x, y})) {
                     color = reachReport_.reachablePlatformTops.count({x, y})
-                        ? sf::Color(80, 220, 100, 100)    // 可达：淡绿
-                        : sf::Color(230, 70, 70, 100);    // 不可达：淡红
+                                ? sf::Color(80, 220, 100, 100) // 可达：淡绿
+                                : sf::Color(230, 70, 70, 100); // 不可达：淡红
                     has = true;
                 }
 
@@ -1057,8 +1086,8 @@ void EditorScene::render(Window& window) {
                 }
 
                 // 出生点
-                if (reachReport_.spawnTile.first == x
-                    && reachReport_.spawnTile.second == y) {
+                if (reachReport_.spawnTile.first == x &&
+                    reachReport_.spawnTile.second == y) {
                     color = sf::Color(80, 160, 255, 180);
                     has = true;
                 }
@@ -1074,8 +1103,8 @@ void EditorScene::render(Window& window) {
 
     // ⭐ Shift 矩形拖拽预览
     if (leftDown_ && dragStartTile_.x >= 0) {
-        bool shift = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift)
-                  || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+        bool shift = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift) ||
+                     sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
         if (shift) {
             const float tsF = static_cast<float>(tileSize_);
             int x0 = std::min(dragStartTile_.x, dragLastTile_.x);
@@ -1083,10 +1112,7 @@ void EditorScene::render(Window& window) {
             int y0 = std::min(dragStartTile_.y, dragLastTile_.y);
             int y1 = std::max(dragStartTile_.y, dragLastTile_.y);
 
-            sf::RectangleShape rect({
-                (x1 - x0 + 1) * tsF,
-                (y1 - y0 + 1) * tsF
-            });
+            sf::RectangleShape rect({(x1 - x0 + 1) * tsF, (y1 - y0 + 1) * tsF});
             rect.setPosition({x0 * tsF, y0 * tsF});
             rect.setFillColor(sf::Color(255, 240, 120, 80));
             rect.setOutlineThickness(2.f / zoom_);
@@ -1104,19 +1130,42 @@ void EditorScene::render(Window& window) {
     for (int y = 0; y < height_; ++y) {
         for (int x = 0; x < width_; ++x) {
             const char* c = tileAt(x, y);
-            if (!c || *c == ' ' || *c == '#') continue;
+            if (!c || *c == ' ' || *c == '#')
+                continue;
             switch (*c) {
-                case 'P': ++statPlayer; break;
-                case 'E': ++statEnemy; break;
-                case 'C': ++statCoin; break;
-                case 'G': ++statGoal; break;
-                case '^': ++statSpike; break;
-                case 'J': ++statJump; break;
-                case 'S': ++statCheckpoint; break;
-                case 'K': ++statKey; break;
-                case 'L': ++statDoor; break;
-                case 'M': case 'V': ++statPlatform; break;
-                default: break;
+            case 'P':
+                ++statPlayer;
+                break;
+            case 'E':
+                ++statEnemy;
+                break;
+            case 'C':
+                ++statCoin;
+                break;
+            case 'G':
+                ++statGoal;
+                break;
+            case '^':
+                ++statSpike;
+                break;
+            case 'J':
+                ++statJump;
+                break;
+            case 'S':
+                ++statCheckpoint;
+                break;
+            case 'K':
+                ++statKey;
+                break;
+            case 'L':
+                ++statDoor;
+                break;
+            case 'M':
+            case 'V':
+                ++statPlatform;
+                break;
+            default:
+                break;
             }
         }
     }
@@ -1127,19 +1176,16 @@ void EditorScene::render(Window& window) {
         unsigned rth = static_cast<unsigned>(height_ * tileSize_);
         if (rtw == 0 || rth == 0 || rtw > 4096 || rth > 4096) {
             levelIconsRTAvailable_ = false;
-        } else if (levelIconsDirty_
-                   || rtw != levelIconsRTW_
-                   || rth != levelIconsRTH_) {
+        } else if (levelIconsDirty_ || rtw != levelIconsRTW_ || rth != levelIconsRTH_) {
             if (levelIconsRT_.resize({rtw, rth})) {
                 levelIconsRT_.clear(sf::Color::Transparent);
                 for (int y = 0; y < height_; ++y) {
                     for (int x = 0; x < width_; ++x) {
                         const char* c = tileAt(x, y);
-                        if (!c || *c == ' ' || *c == '#') continue;
-                        drawTileIcon(levelIconsRT_, *c,
-                                     static_cast<float>(x) * ts,
-                                     static_cast<float>(y) * ts,
-                                     ts);
+                        if (!c || *c == ' ' || *c == '#')
+                            continue;
+                        drawTileIcon(levelIconsRT_, *c, static_cast<float>(x) * ts,
+                                     static_cast<float>(y) * ts, ts);
                     }
                 }
                 levelIconsRT_.display();
@@ -1160,18 +1206,17 @@ void EditorScene::render(Window& window) {
         for (int y = 0; y < height_; ++y) {
             for (int x = 0; x < width_; ++x) {
                 const char* c = tileAt(x, y);
-                if (!c || *c == ' ' || *c == '#') continue;
-                drawTileIcon(rt, *c,
-                             static_cast<float>(x) * ts,
-                             static_cast<float>(y) * ts,
-                             ts);
+                if (!c || *c == ' ' || *c == '#')
+                    continue;
+                drawTileIcon(rt, *c, static_cast<float>(x) * ts,
+                             static_cast<float>(y) * ts, ts);
             }
         }
     }
 
     {
-        sf::RectangleShape border({static_cast<float>(width_) * ts,
-                                   static_cast<float>(height_) * ts});
+        sf::RectangleShape border(
+            {static_cast<float>(width_) * ts, static_cast<float>(height_) * ts});
         border.setFillColor(sf::Color::Transparent);
         border.setOutlineThickness(2.f);
         border.setOutlineColor(sf::Color(120, 120, 160));
@@ -1185,8 +1230,8 @@ void EditorScene::render(Window& window) {
             auto t = screenToTile(mp, winSize);
             if (t.x >= 0 && t.x < width_ && t.y >= 0 && t.y < height_) {
                 sf::RectangleShape hl({ts, ts});
-                hl.setPosition({static_cast<float>(t.x) * ts,
-                                static_cast<float>(t.y) * ts});
+                hl.setPosition(
+                    {static_cast<float>(t.x) * ts, static_cast<float>(t.y) * ts});
                 hl.setFillColor(sf::Color(255, 255, 255, 40));
                 hl.setOutlineThickness(2.f / zoom_);
                 hl.setOutlineColor(sf::Color(255, 240, 120, 220));
@@ -1204,36 +1249,37 @@ void EditorScene::render(Window& window) {
 
     const char* brushName = "?";
     for (int i = 0; i < kBrushCount; ++i) {
-        if (kBrushes[i].ch == brush_) { brushName = kBrushes[i].name; break; }
+        if (kBrushes[i].ch == brush_) {
+            brushName = kBrushes[i].name;
+            break;
+        }
     }
 
     int zoomPct = static_cast<int>(std::lround(zoom_ * 100.f));
 
     std::ostringstream h1;
-    h1 << Str::T(Str::EditorHudFile)  << currentFileName()
-       << "    " << Str::T(Str::EditorHudBrush) << Str::T(brushName)
-       << "    " << Str::T(Str::EditorHudSize)  << width_ << " x " << height_
-       << "    " << Str::T(Str::EditorHudZoom)  << zoomPct << "%"
-       << "    " << Str::T(Str::EditorHudGrid)  << (showGrid_ ? Str::T(Str::On) : Str::T(Str::Off))
-       << "    " << Str::T(Str::EditorHudUndo)  << undoStack_.size()
-       << "    " << (showReachability_ ? Str::T(Str::EditorReachOn)
-                                       : Str::T(Str::EditorReachOff));
+    h1 << Str::T(Str::EditorHudFile) << currentFileName() << "    "
+       << Str::T(Str::EditorHudBrush) << Str::T(brushName) << "    "
+       << Str::T(Str::EditorHudSize) << width_ << " x " << height_ << "    "
+       << Str::T(Str::EditorHudZoom) << zoomPct << "%"
+       << "    " << Str::T(Str::EditorHudGrid)
+       << (showGrid_ ? Str::T(Str::On) : Str::T(Str::Off)) << "    "
+       << Str::T(Str::EditorHudUndo) << undoStack_.size() << "    "
+       << (showReachability_ ? Str::T(Str::EditorReachOn) : Str::T(Str::EditorReachOff));
     hudText_.setString(toSf(h1.str()));
     hudText_.setPosition({20.f, 10.f});
     rt.draw(hudText_);
 
     // 元素统计（第二行）
     std::ostringstream h2;
-    h2 << Str::T(Str::BrushPlayer)     << " " << statPlayer
-       << " | " << Str::T(Str::BrushEnemy)      << " " << statEnemy
-       << " | " << Str::T(Str::BrushCoin)       << " " << statCoin
-       << " | " << Str::T(Str::BrushGoal)       << " " << statGoal
-       << " | " << Str::T(Str::BrushSpike)      << " " << statSpike
-       << " | " << Str::T(Str::BrushJumpPad)    << " " << statJump
-       << " | " << Str::T(Str::BrushCheckpoint) << " " << statCheckpoint
-       << " | " << Str::T(Str::BrushKey)        << " " << statKey
-       << " | " << Str::T(Str::BrushDoor)       << " " << statDoor
-       << " | " << Str::T(Str::StatPlatform)    << " " << statPlatform;
+    h2 << Str::T(Str::BrushPlayer) << " " << statPlayer << " | "
+       << Str::T(Str::BrushEnemy) << " " << statEnemy << " | " << Str::T(Str::BrushCoin)
+       << " " << statCoin << " | " << Str::T(Str::BrushGoal) << " " << statGoal << " | "
+       << Str::T(Str::BrushSpike) << " " << statSpike << " | "
+       << Str::T(Str::BrushJumpPad) << " " << statJump << " | "
+       << Str::T(Str::BrushCheckpoint) << " " << statCheckpoint << " | "
+       << Str::T(Str::BrushKey) << " " << statKey << " | " << Str::T(Str::BrushDoor)
+       << " " << statDoor << " | " << Str::T(Str::StatPlatform) << " " << statPlatform;
     hudText_.setString(toSf(h2.str()));
     hudText_.setPosition({20.f, 46.f});
     rt.draw(hudText_);
@@ -1252,10 +1298,9 @@ void EditorScene::render(Window& window) {
     sf::Vector2i mousePos = sf::Mouse::getPosition(window.native());
     int hoverIdx = hitTestBrushBar(mousePos, winSize);
 
-    if (brushBarDirty_
-        || hoverIdx != lastBrushBarHover_
-        || brush_ != lastBrushBarSelected_
-        || static_cast<unsigned>(winW) != lastBrushBarWinW_) {
+    if (brushBarDirty_ || hoverIdx != lastBrushBarHover_ ||
+        brush_ != lastBrushBarSelected_ ||
+        static_cast<unsigned>(winW) != lastBrushBarWinW_) {
         unsigned bw = static_cast<unsigned>(winW);
         unsigned bh = static_cast<unsigned>(kBrushBarHeight);
         if (brushBarRT_.resize({bw, bh})) {
@@ -1272,12 +1317,11 @@ void EditorScene::render(Window& window) {
             for (int i = 0; i < kBrushCount; ++i) {
                 const auto& b = kBrushes[i];
                 sf::FloatRect r = brushButtonRect(i, winSize);
-                sf::FloatRect localR(
-                    {r.position.x, r.position.y - barY},
-                    {r.size.x, r.size.y});
+                sf::FloatRect localR({r.position.x, r.position.y - barY},
+                                     {r.size.x, r.size.y});
 
                 const bool selected = (b.ch == brush_);
-                const bool hovered  = (i == hoverIdx);
+                const bool hovered = (i == hoverIdx);
 
                 sf::RectangleShape btn({localR.size.x, localR.size.y});
                 btn.setPosition({localR.position.x, localR.position.y});
@@ -1298,16 +1342,16 @@ void EditorScene::render(Window& window) {
 
                 brushNameText_.setString(toSf(Str::T(b.name)));
                 auto nb = brushNameText_.getLocalBounds();
-                brushNameText_.setOrigin({nb.position.x + nb.size.x / 2.f,
-                                          nb.position.y + nb.size.y / 2.f});
+                brushNameText_.setOrigin(
+                    {nb.position.x + nb.size.x / 2.f, nb.position.y + nb.size.y / 2.f});
                 brushNameText_.setPosition({localR.position.x + localR.size.x / 2.f,
                                             localR.position.y + localR.size.y - 12.f});
                 brushBarRT_.draw(brushNameText_);
             }
             brushBarRT_.display();
-            lastBrushBarHover_    = hoverIdx;
+            lastBrushBarHover_ = hoverIdx;
             lastBrushBarSelected_ = brush_;
-            lastBrushBarWinW_     = static_cast<unsigned>(winW);
+            lastBrushBarWinW_ = static_cast<unsigned>(winW);
             brushBarDirty_ = false;
         }
     }
@@ -1322,8 +1366,8 @@ void EditorScene::render(Window& window) {
     if (flashTimer_ > 0.f) {
         flashDraw_.setString(toSf(flashText_));
         auto b = flashDraw_.getLocalBounds();
-        flashDraw_.setOrigin({b.position.x + b.size.x / 2.f,
-                              b.position.y + b.size.y / 2.f});
+        flashDraw_.setOrigin(
+            {b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
         flashDraw_.setPosition({winW / 2.f, winH / 2.f - 100.f});
         rt.draw(flashDraw_);
     }

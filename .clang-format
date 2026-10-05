@@ -48,9 +48,23 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 
 # 头文件排序
-SortIncludes: CaseSensitive
+#
+# ⚠️ SortIncludes 必须是 Never。
+#    项目约定是「.cpp 首行必须是本文件对应的头」（见 CLAUDE.md），
+#    而 clang-format 的排序会把 achievement.h 排到 console_scene.h 前面 ——
+#    与那条约定直接冲突。排序不是排版，是会改动语义顺序的事，交给人决定。
+SortIncludes: Never
 IncludeBlocks: Preserve
 
 # 其他
-ReflowComments: true
+#
+# ReflowComments: false —— 注释是**手写换行**的，很多地方一行就是一句话，
+# 折行位置有意为之；尤其中文，clang-format 对全角字符算不准宽度，
+# 重排会把整段揉成一团。
+ReflowComments: false
+
+# 长字符串不拆。
+# 默认的 BreakStringLiterals 会把超宽的字面量拆成多个相邻字面量拼接 ——
+# 语义不变，但这个项目满是中文界面文案，拆完源码变成一地碎片。
+BreakStringLiterals: false
 Standard: c++20
