@@ -1,0 +1,15 @@
+pkgbase = text-game
+	pkgdesc = 用 C++20 + SFML 3 从零手写的 2D 平台跳跃游戏
+	pkgver = 0.3.6
+	pkgrel = 1
+	url = https://github.com/ljm-233/TEXT-GAME
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cmake
+	makedepends = ninja
+	depends = sfml
+	source = text-game-0.3.6.tar.gz::https://github.com/ljm-233/TEXT-GAME/archive/refs/tags/v0.3.6.tar.gz
+	sha256sums = a213c1c8e799e9c8c450174a0339d3343cc14e11bd722968e1280b6a9fd90f79
+
+pkgname = text-game

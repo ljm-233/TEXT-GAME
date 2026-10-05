@@ -1,0 +1,78 @@
+# Maintainer: ljm-233 <2836583630@qq.com>
+#
+# TEXT-GAME 的 AUR 包。
+#
+# 与发行版 tarball 的区别：这里**不打包依赖库**。
+# Arch 仓库里本来就有 SFML 3，用系统的那份更合适 —— 出安全更新时跟着系统走，
+# 也不会把 glibc/GL 驱动钉死在包里。所以不开 BUNDLE_RUNTIME_DEPS。
+#
+# ⚠️ 安装布局有个硬约束：**二进制与 assets/wallpaper 必须同级**。
+#    Paths 判定「打包模式」看的是可执行文件旁边有没有 assets/
+#    （include/core/paths.h）。按 FHS 把资源丢进 /usr/share、二进制丢进 /usr/bin
+#    的话，游戏会退回「开发模式」，去用编译期的 PROJECT_ROOT ——
+#    用户机器上那个路径根本不存在，结果是字体和关卡都加载不了。
+#    所以两者一起放 /usr/lib/text-game/，/usr/bin 下只放一个启动器。
+#
+# 更新版本：改 pkgver，跑 `makepkg --printsrcinfo > .SRCINFO`。
+# 校验和用 `updpkgsums` 重算。
+#
+# 只有 x86_64 在 CI 上实测过；aarch64 是同一份源码，理论上可用但没验过。
+
+pkgname=text-game
+pkgver=0.3.6
+pkgrel=1
+pkgdesc='用 C++20 + SFML 3 从零手写的 2D 平台跳跃游戏'
+arch=('x86_64' 'aarch64')
+url='https://github.com/ljm-233/TEXT-GAME'
+license=('MIT')
+depends=('sfml')
+makedepends=('cmake' 'ninja')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('a213c1c8e799e9c8c450174a0339d3343cc14e11bd722968e1280b6a9fd90f79')
+
+# GitHub 生成的 tag 归档解出来的顶层目录是 <仓库名>-<tag>，不是 pkgname-pkgver
+_srcdir="TEXT-GAME-${pkgver}"
+
+build() {
+    cd "$_srcdir"
+    cmake -S . -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DBUILD_TESTS=ON
+    cmake --build build -j "$(nproc)"
+}
+
+check() {
+    # 跑一遍单元测试（无 DISPLAY 也应该全绿）
+    cd "$_srcdir"
+    ctest --test-dir build --output-on-failure
+}
+
+package() {
+    cd "$_srcdir"
+
+    install -d "$pkgdir/usr/lib/$pkgname"
+    install -Dm755 build/text_game "$pkgdir/usr/lib/$pkgname/text_game"
+    cp -r assets wallpaper "$pkgdir/usr/lib/$pkgname/"
+
+    install -Dm644 README.md -t "$pkgdir/usr/share/doc/$pkgname/"
+    install -Dm644 LICENSE   -t "$pkgdir/usr/share/doc/$pkgname/"
+
+    # 启动器。资源与二进制同级，所以不需要设任何库路径 —— 用系统 SFML。
+    install -d "$pkgdir/usr/bin"
+    cat > "$pkgdir/usr/bin/$pkgname" <<EOF
+#!/bin/sh
+exec /usr/lib/$pkgname/text_game "\$@"
+EOF
+    chmod 755 "$pkgdir/usr/bin/$pkgname"
+
+    install -Dm644 packaging/linux/text-game.desktop \
+        "$pkgdir/usr/share/applications/$pkgname.desktop"
+    sed -i "s|^Exec=.*|Exec=$pkgname|; s|^Icon=.*|Icon=$pkgname|" \
+        "$pkgdir/usr/share/applications/$pkgname.desktop"
+
+    for size in 16 32 48 64 128 256; do
+        install -Dm644 "packaging/icons/${size}x${size}.png" \
+            "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$pkgname.png"
+    done
+}

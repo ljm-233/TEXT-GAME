@@ -52,6 +52,32 @@
 > `assets/font.ttf`（15.7MB 的完整 Noto Sans CJK）**没有动** —— 子集化能再省 10MB，
 > 但代价是玩家名里的生僻字会变豆腐块，所以保留了完整字形。
 
+### Arch Linux（AUR）
+
+不用下上面那些包，直接从 AUR 装，跟着系统的 SFML 走：
+
+```bash
+yay -S text-game          # 或 paru -S text-game / 手动 makepkg -si
+text-game                 # 装完命令行直接跑；桌面菜单里也有
+```
+
+PKGBUILD 在 [`packaging/aur/`](packaging/aur/)，也可以在本地自己构建：
+
+```bash
+git clone https://aur.archlinux.org/text-game.git
+cd text-game
+makepkg -si
+```
+
+> 与发行包的区别：AUR 包**不打包依赖库**，用系统仓库里的 SFML 3 ——
+> 出安全更新时跟着系统走，也不会把 glibc / GL 驱动钉死。
+> 安装布局是 `/usr/lib/text-game/{text_game,assets,wallpaper}` +
+> `/usr/bin/text-game` 启动器：二进制与资源必须同级，因为程序靠
+> 「可执行文件旁边有没有 `assets/`」判定自己是不是打包模式。
+>
+> 更新 AUR 包：改 `pkgver` → `updpkgsums` → `makepkg --printsrcinfo > .SRCINFO`。
+> CI 里有一个 job 每次 push 都真跑一遍 `makepkg`，PKGBUILD 烂了会立刻红。
+
 ---
 
 ## 🚀 快速开始
