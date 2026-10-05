@@ -14,6 +14,7 @@ add_executable(unit_tests
     test_logger.cpp
     test_application.cpp
     test_scene_registry.cpp
+    test_scene_manager.cpp
     test_layers.cpp
     test_entities.cpp
     test_game_world.cpp
@@ -98,6 +99,7 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/main_loop.cpp
     ${CMAKE_SOURCE_DIR}/src/core/application.cpp
     ${CMAKE_SOURCE_DIR}/src/core/scene_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/scene_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/core/scene_id.cpp
     ${CMAKE_SOURCE_DIR}/src/log/type.cpp
     ${CMAKE_SOURCE_DIR}/src/log/logger.cpp

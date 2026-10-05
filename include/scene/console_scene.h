@@ -39,6 +39,8 @@ public:
     ~ConsoleScene() override;
 
     void onEnter() override;
+    void onResume() override;  // ⭐ onPause 拆掉的流重定向 / worker 要装回来
+    void onPause() override;   // ⭐ 真正的清理点：离开场景（pop / push / replace）走的是 onPause
     void onExit() override;
 
     void handleEvent(const sf::Event& event) override;
@@ -48,6 +50,7 @@ public:
     SceneId nextScene() const override;
 
 private:
+    void attach();           // 装上流重定向 + worker（onEnter / onResume 共用）
     void startCommandLoop();
     void stopWorker();
     void dispatchCommand(const std::string& line);

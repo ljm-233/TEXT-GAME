@@ -60,10 +60,7 @@ ConsoleScene::ConsoleScene(std::shared_ptr<Background> background,
     logger_->info("控制台场景已创建（等待 onEnter）");
 }
 
-void ConsoleScene::onEnter() {
-    pendingScene_ = static_cast<int>(SceneId::None);
-
-    // ⭐ 每次进入才重定向 iostream + 启动 worker
+void ConsoleScene::attach() {
     if (!redirect_) {
         redirect_ = std::make_unique<ConsoleStreamRedirect>(console_.get());
     }
@@ -72,6 +69,13 @@ void ConsoleScene::onEnter() {
         workerDone_ = false;
         startCommandLoop();
     }
+}
+
+void ConsoleScene::onEnter() {
+    pendingScene_ = static_cast<int>(SceneId::None);
+
+    // ⭐ 每次进入才重定向 iostream + 启动 worker
+    attach();
 
     printWelcome();
 
@@ -79,13 +83,27 @@ void ConsoleScene::onEnter() {
     AchievementManager::instance().unlock("console_used");
 }
 
-void ConsoleScene::onExit() {
+void ConsoleScene::onResume() {
+    // ⭐ 场景常驻 + 清理挂在 onPause 上，所以被 pop 回来时要重新装回去。
+    //    走得到这条路：在控制台里敲 `scene settings` 会 push 出设置场景，
+    //    再返回时 console 拿到的就是 onResume（不是 onEnter）。
+    pendingScene_ = static_cast<int>(SceneId::None);
+    attach();
+}
+
+// ⭐ 清理必须挂在 onPause 上：SceneManager 离开一个场景走的是
+//    pop / push / replace，它们都只调 onPause()；onExit() 只在程序退出
+//    （~SceneManager）时才调。原来的清理只写在 onExit 里，于是离开控制台后
+//    cin/cout/cerr 一直指向控制台缓冲区（终端里再也看不到日志）、worker
+//    线程也一直活着 —— 而且因为 attach() 里有 !redirect_ / !joinable()
+//    判断，再进控制台看着还是正常的，所以这个 bug 是静默的。
+void ConsoleScene::onPause() {
     stopWorker();
     redirect_.reset();   // ⭐ 恢复 cin/cout/cerr
+}
 
-    // ⭐ 双重保险：强制恢复标准流
-    std::cout.rdbuf(std::cout.rdbuf());
-    std::cerr.rdbuf(std::cerr.rdbuf());
+void ConsoleScene::onExit() {
+    onPause();
 }
 
 ConsoleScene::~ConsoleScene() {
