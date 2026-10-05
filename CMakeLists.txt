@@ -654,6 +654,17 @@ add_executable(settings_smoke tools/settings_smoke.cpp)
 target_link_libraries(settings_smoke PRIVATE text_game_core)
 
 # ============================================================
+# 场景冒烟测试（独立目标，**需要 DISPLAY，手动跑**）
+# ============================================================
+# 场景类构造要 sf::Font / RenderTexture（GlResource），写不了单测；
+# 这个工具把它们构造出来、onEnter + 渲染几帧，专抓构造期/排版期崩溃，
+# 外加试玩模式的标志泄漏（那个 bug 会让正式关卡静默不写存档）。
+#
+#   ./build/release/scene_smoke
+add_executable(scene_smoke tools/scene_smoke.cpp)
+target_link_libraries(scene_smoke PRIVATE text_game_core)
+
+# ============================================================
 # clang-tidy（-DCLANG_TIDY=ON 开启）
 # ============================================================
 option(CLANG_TIDY "Run clang-tidy during build" OFF)

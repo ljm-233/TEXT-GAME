@@ -38,6 +38,7 @@ ctest --preset tests
 # 冒烟测试（**都需要 DISPLAY，手动跑**）
 ./build/release/wallpaper_smoke   # 壁纸：淡入淡出 / 窗口适配 / 缩略图
 ./build/release/settings_smoke    # 设置：点某一页的控件只改这一页的键
+./build/release/scene_smoke       # 场景：构造 + 渲染几帧（抓构造期/排版期崩溃）
 
 # Sanitizer
 cmake --preset asan
@@ -534,6 +535,36 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 新增字段本身是**向后兼容**的：老存档没有那一行 → 解析端回落默认值。
 但默认值要么在 `loadSave` 开头铺好（`levelBestCoins` 就是 9 个 0），
 要么在解析分支里补到 9 项 —— 给成空数组的话 setter 会因"关卡序号越界"直接失败。
+
+### 场景为什么需要冒烟工具
+
+场景类**写不了单元测试**：构造要 `sf::Font` / `sf::RenderTexture`，而它们是
+`sf::GlResource`，没有 GL 上下文时**构造就 SIGABRT**；而且场景只在进入时才由
+注册表工厂创建，所以"跑一下游戏"也抓不到**构造期**崩溃。
+
+`tools/scene_smoke.cpp` 补这一块：把场景真的构造出来、`onEnter()`、渲染几帧、
+再喂一个事件。它一跑起来就抓到了一个真 bug（见下），所以别把它当成形式主义。
+
+⚠️ 这个工具的 DISPLAY 判断**必须用 `DISPLAY`（X11）**，`WAYLAND_DISPLAY` 不算数：
+这份 SFML 是 X11 后端，只有 `WAYLAND_DISPLAY` 而没有 `DISPLAY` 时构造窗口照样
+SIGABRT（实测 exit=134 而不是工具自己的 exit=2）。判断错的话，"没有 DISPLAY 时
+优雅退出"这条保护就形同虚设。
+
+### ⚠️ 加载失败时 `GameScene` 的 `world_` 是空的
+
+`GameScene::onEnter()` 里 `loadLevel()` 失败时**只记日志 + 发通知**，`world_`
+保持 null。而 `render()` / `update()` 里有十来处 `world_->…` ——
+`scene_smoke` 第一次跑起来就是在这里**每帧 SIGSEGV**：用户永远看不到那句
+"关卡加载失败"，只看到程序崩了。
+
+现在的做法是三道一起上：`onEnter` 失败即 `nextScene_ = SceneId::Back`（离开场景）、
+`update()` / `render()` 开头各有 `if (!world_) return;` 挡住。
+
+**真实可达路径**：存档里的 `currentLevel` 超出现有关卡文件数（关卡文件被删过、
+或存档来自关卡更多的版本）、关卡文件缺失或损坏。
+
+教训：**"出错时继续往下走"的代码，必须检查那条路上每个使用者都容得下空状态**。
+这里 `onEnter` 很体贴地发了通知，然后 `render` 就把通知连同窗口一起崩掉了。
 
 ### 项目自身
 

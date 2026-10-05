@@ -155,6 +155,11 @@ void GameScene::onEnter() {
         logger_->error("加载关卡 " + std::to_string(levelIndex_) + " 失败");
         NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
                                             NotificationType::Error, 5.f);
+        // 加载失败就离开本场景：留在这里只会看到一片空背景（世界是空的，
+        // update/render 都被 !world_ 挡住了），而通知会告诉用户发生了什么。
+        // 真实可达路径：存档里的 currentLevel 超出现有关卡文件数、关卡文件缺失或损坏。
+        nextScene_ = SceneId::Back;
+        return;
     }
 
     logger_->info("进入游戏场景，存档: " + save_.filename);
@@ -928,6 +933,10 @@ void GameScene::update(float dt) {
     perfFrameMs_ = perfFrameClock_.restart().asSeconds() * 1000.f;
     ScopeTimer timer(perfUpdateMs_);
 
+    // 关卡没加载出来时没有世界可更新（见 render 里同一条守卫的注释）
+    if (!world_)
+        return;
+
     if (screenFlashTimer_ > 0.f)
         screenFlashTimer_ -= dt;
 
@@ -1055,6 +1064,13 @@ void GameScene::render(Window& window) {
     rt.clear(sf::Color::Black);
     if (background_)
         background_->render(rt);
+
+    // ⚠️ 关卡加载失败时 `world_` 是空的（`onEnter` 只记日志 + 发通知，不重建世界）。
+    //    这里必须挡住：下面有十来处 `world_->`，漏一处就是**每帧 SIGSEGV** ——
+    //    而不是把"关卡加载失败"那条通知显示给用户。
+    //    （真实可达路径：存档里的 currentLevel 超出现有关卡文件数、关卡文件缺失或损坏。）
+    if (!world_)
+        return;
 
     if (winW != lastViewWinW_ || winH != lastViewWinH_) {
         lastViewWinW_ = winW;
