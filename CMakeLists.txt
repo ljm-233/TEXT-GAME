@@ -108,36 +108,38 @@ file(GLOB_RECURSE TEXTGAME_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/ui/*.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/*.cpp
 )
+# main() 只能留在可执行文件里 —— 进了库会让两个可执行目标各带一份 main
+list(REMOVE_ITEM TEXTGAME_SOURCES ${CMAKE_SOURCE_DIR}/src/core/main.cpp)
 list(LENGTH TEXTGAME_SOURCES TEXTGAME_SOURCES_COUNT)
 message(STATUS "=== 源文件扫描 ===")
-message(STATUS "  共 ${TEXTGAME_SOURCES_COUNT} 个 .cpp 文件")
+message(STATUS "  text_game_core: ${TEXTGAME_SOURCES_COUNT} 个 .cpp（不含 main.cpp）")
 
 # ============================================================
-# 可执行文件
+# 核心静态库
 # ============================================================
+#
+# ⭐ 全部源码**只列一次**（就是上面那份 GLOB），三个目标共用：
+#
+#     text_game       游戏本体（只剩 main.cpp）
+#     validate_levels 关卡校验工具
+#     unit_tests      单元测试
+#
+# 以前是"顶层 GLOB + validate_levels 手写 3 个文件 + tests/CMakeLists.txt
+# 手写几十行"三份清单。手写那两份漏一个文件，本地可能没事、换个平台就是
+# 链接错误 —— macOS 上漏掉 gamepad_vibration_stub.cpp 就是这么挂的，
+# 而且当时还专门加了个 GLOB 打补丁。
+#
+# 现在漏不了：新文件进了上面的 GLOB 就自动进这三个目标。
+add_library(text_game_core STATIC ${TEXTGAME_SOURCES})
 
-# ⭐ Windows 必须先启用 RC 语言（在任何 target_sources 之前）
-if(WIN32)
-    enable_language(RC)
-endif()
-
-# ⭐ add_executable 必须在所有 target_* 之前
-add_executable(text_game ${TEXTGAME_SOURCES})
-
-# ⭐ Windows: 添加 .rc 资源文件（在 add_executable 之后）
-if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/windows/text-game.rc")
-    target_sources(text_game PRIVATE packaging/windows/text-game.rc)
-endif()
-
-if(WIN32)
-    target_link_libraries(text_game PRIVATE xinput)
-endif()
+# 这些 .o 既要进 PIE 可执行文件，也（将来）可能进共享库，统一开 PIC 省心
+set_target_properties(text_game_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # 注意：utils / infrastructure 两层刻意**不**加入下面的 include 路径。
 # 不在路径里，就只能写限定形式 #include "utils/utf8.h"，
 # 于是跨层依赖在 include 行上直接可见、也能被 grep 出来，
 # 而不是像平铺写法那样"看着像同层"。老层保留平铺写法是为了不制造无谓改动。
-target_include_directories(text_game PRIVATE
+target_include_directories(text_game_core PUBLIC
     include
     include/common
     include/core
@@ -150,29 +152,54 @@ target_include_directories(text_game PRIVATE
 
 string(TIMESTAMP BUILD_DATE "%Y-%m-%d")
 
-target_compile_definitions(text_game PRIVATE
+target_compile_definitions(text_game_core PUBLIC
     PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
     PROJECT_VERSION="${PROJECT_VERSION}"
     BUILD_DATE="${BUILD_DATE}"
 )
 
 if(WIN32)
-    target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_WINDOWS)
+    target_compile_definitions(text_game_core PUBLIC TEXTGAME_PLATFORM_WINDOWS)
 elseif(APPLE)
-    target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_MACOS)
+    target_compile_definitions(text_game_core PUBLIC TEXTGAME_PLATFORM_MACOS)
 elseif(UNIX)
-    target_compile_definitions(text_game PRIVATE TEXTGAME_PLATFORM_LINUX)
+    target_compile_definitions(text_game_core PUBLIC TEXTGAME_PLATFORM_LINUX)
 endif()
 
 find_package(OpenGL REQUIRED)
 
-target_link_libraries(text_game PRIVATE
+target_link_libraries(text_game_core PUBLIC
     SFML::Graphics
     SFML::Window
     SFML::System
     SFML::Audio
     OpenGL::GL
 )
+
+# Windows 的振动实现用 XInput。MSVC 靠源码里的
+# #pragma comment(lib, "xinput.lib") 自动链接，MinGW 没这个机制、
+# 必须显式给。放在库里 PUBLIC，所有消费者就都有了 ——
+# 以前只在 text_game 上写了这一句，MinGW 下 unit_tests 会链接失败。
+if(WIN32)
+    target_link_libraries(text_game_core PUBLIC xinput)
+endif()
+
+# ============================================================
+# 主可执行文件：只剩 main.cpp
+# ============================================================
+
+# ⭐ Windows 必须先启用 RC 语言（在任何 target_sources 之前）
+if(WIN32)
+    enable_language(RC)
+endif()
+
+add_executable(text_game src/core/main.cpp)
+target_link_libraries(text_game PRIVATE text_game_core)
+
+# ⭐ Windows: 添加 .rc 资源文件（在 add_executable 之后）
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/windows/text-game.rc")
+    target_sources(text_game PRIVATE packaging/windows/text-game.rc)
+endif()
 
 # ⭐ Windows: 隐藏控制台窗口（Release / RelWithDebInfo / MinSizeRel）
 #   注意用生成器表达式，避免 Debug 下也隐藏
@@ -580,22 +607,10 @@ endif()
 # ============================================================
 # 关卡验证工具（独立目标）
 # ============================================================
-add_executable(validate_levels
-    tools/validate_levels.cpp
-    src/game/level.cpp
-    src/game/level_validator.cpp
-)
-target_include_directories(validate_levels PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/core
-    ${CMAKE_SOURCE_DIR}/include/game
-)
-target_compile_definitions(validate_levels PRIVATE
-    PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-)
-target_link_libraries(validate_levels PRIVATE
-    SFML::Graphics
-)
+# 以前这里手写了 3 个源文件 + 3 个 include 目录，是源码清单的第二份。
+# 现在只链 text_game_core —— 清单只剩顶层那一份。
+add_executable(validate_levels tools/validate_levels.cpp)
+target_link_libraries(validate_levels PRIVATE text_game_core)
 
 # ============================================================
 # clang-tidy（-DCLANG_TIDY=ON 开启）
