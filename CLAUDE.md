@@ -281,6 +281,23 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
   （初始化时 + 每 5 秒 + 退出时各一次），成就是解锁即 `save()`。
   往析构函数里塞持久化才是危险的 —— `_Exit` 不会执行它们。
 
+### 打包
+
+- **`release-package` preset 开了 `BUNDLE_RUNTIME_DEPS`**：用
+  `GET_RUNTIME_DEPENDENCIES` 把 SFML 及其依赖收进 `lib/`，并装一个 `TEXT-GAME`
+  启动器。**必须用启动器而不是 `text_game`** —— 只设可执行文件的 RPATH 不够，
+  间接依赖（SFML 依赖的 freetype / harfbuzz / X11）是用【那个库自己的 RUNPATH】
+  解析的，会静默回退到系统库。
+- `file(INSTALL)` 要用 `FOLLOW_SYMLINK_CHAIN`：依赖给出来的往往是软链
+  （`libsfml-graphics.so.3.1 -> .3.1.0`），不加这个选项只拷软链，装出来是断链，
+  开发机上一切正常、纯净机器上起不来。
+- **GL 驱动库绝不打包**（`libGL` / `libGLX` / `libGLdispatch` / `libOpenGL` /
+  `libEGL` / `libdrm` / `libgbm`），glibc 家族同理 —— 必须用系统那份。
+- **发行版默认设置放 `assets/defaults/preferences.conf`**，由
+  `config/bootstrap.cpp` 在用户没有配置文件时铺一次。**只放观感类设置**，
+  个人与机器相关的键（`player_name` / `resolution_index` / `fullscreen` /
+  `ui_scale` / `current_wallpaper` / `key_*`）一律不放。
+
 ### 编辑器
 
 - 笔刷条和关卡图标预渲染到 `RenderTexture`，静止时每帧仅 3 个 draw call。

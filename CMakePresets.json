@@ -36,7 +36,8 @@
             "inherits": "release",
             "displayName": "Release (packaging)",
             "cacheVariables": {
-                "BUILD_TESTS": "OFF"
+                "BUILD_TESTS": "OFF",
+                "BUNDLE_RUNTIME_DEPS": "ON"
             }
         },
         {

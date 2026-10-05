@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(text_game VERSION 0.3.0 LANGUAGES CXX)
+project(text_game VERSION 0.3.1 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
@@ -214,6 +214,87 @@ elseif(WIN32)
 else()
     install(TARGETS text_game
             RUNTIME DESTINATION .
+            COMPONENT Runtime)
+endif()
+
+# ============================================================
+# Linux: 打包运行时依赖库
+# ============================================================
+#
+# Windows 的 vcpkg 构建会拷 DLL，AppImage 也自带一整套 .so —— 只有 Linux 的
+# deb / rpm / tar.gz 一直是"裸二进制 + 假设系统装了 SFML"。而这个假设在
+# Debian / Ubuntu 上根本不成立：**SFML 3 还没进它们的仓库**，所以打出来的包
+# 装上能启动、一跑就报 "libsfml-graphics.so.3.1: cannot open shared object"。
+#
+# 打开这个开关就把依赖一起打进包里，并给可执行文件设 $ORIGIN/lib 的 RPATH。
+# 注意 **GL 驱动相关的库绝不能打**（libGL / libGLX / libGLdispatch / libOpenGL /
+# libEGL / libdrm / libgbm）—— 那些和显卡驱动绑定，打进去换台机器就崩。
+# glibc 家族同理，必须用系统那份。
+option(BUNDLE_RUNTIME_DEPS "把运行时依赖库一起打进包（让 Linux 包自带 SFML）" OFF)
+
+if(BUNDLE_RUNTIME_DEPS AND UNIX AND NOT APPLE)
+    set_target_properties(text_game PROPERTIES
+        INSTALL_RPATH "$ORIGIN/lib"
+        BUILD_WITH_INSTALL_RPATH FALSE)
+
+    install(CODE [[
+        file(GET_RUNTIME_DEPENDENCIES
+            EXECUTABLES "$<TARGET_FILE:text_game>"
+            RESOLVED_DEPENDENCIES_VAR _deps
+            UNRESOLVED_DEPENDENCIES_VAR _unresolved
+            PRE_EXCLUDE_REGEXES
+                "^ld-linux.*"
+                "^libc\\.so"
+                "^libm\\.so"
+                "^libdl\\.so"
+                "^libpthread\\.so"
+                "^librt\\.so"
+                "^libgcc_s\\.so"
+                "^libstdc\\+\\+\\.so"
+            POST_EXCLUDE_REGEXES
+                ".*/ld-linux.*"
+                ".*/libc\\.so.*"
+                ".*/libm\\.so.*"
+                ".*/libdl\\.so.*"
+                ".*/libpthread\\.so.*"
+                ".*/librt\\.so.*"
+                ".*/libgcc_s\\.so.*"
+                ".*/libstdc\\+\\+\\.so.*"
+                # GL：跟显卡驱动绑定，必须用系统那份
+                ".*/libGL\\.so.*"
+                ".*/libGLX.*"
+                ".*/libGLdispatch.*"
+                ".*/libOpenGL\\.so.*"
+                ".*/libEGL\\.so.*"
+                ".*/libgbm\\.so.*"
+                ".*/libdrm\\.so.*"
+                # 系统服务/驱动层，各发行版差异大，不掺和
+                ".*/libudev\\.so.*"
+                ".*/libsystemd\\.so.*"
+        )
+        # FOLLOW_SYMLINK_CHAIN 是必须的：GET_RUNTIME_DEPENDENCIES 给出的往往是
+        # 软链（libsfml-graphics.so.3.1 -> libsfml-graphics.so.3.1.0），
+        # 不加这个选项就只拷软链、不拷目标文件，装出来是个**断链** ——
+        # 加载器找不到就静默回退到系统库，在开发机上一切正常，
+        # 到了没装 SFML 的机器上照样起不来。
+        foreach(_dep ${_deps})
+            file(INSTALL "${_dep}"
+                 DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
+                 FOLLOW_SYMLINK_CHAIN)
+        endforeach()
+        list(LENGTH _deps _n)
+        message(STATUS "已捆绑 ${_n} 个运行时依赖库到 lib/")
+        if(_unresolved)
+            message(WARNING "有未解析的依赖，可能是构建机的 RPATH 问题: ${_unresolved}")
+        endif()
+    ]])
+
+    # 只设可执行文件的 RPATH 不够：间接依赖（SFML 依赖的 freetype / harfbuzz /
+    # X11 …）用的是【那个库自己的 RUNPATH】，包里那些库没设，于是会回退到系统。
+    # 所以额外装一个启动器，靠 LD_LIBRARY_PATH 让直接 + 间接依赖都走包内。
+    install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/linux/launch.sh"
+            DESTINATION .
+            RENAME TEXT-GAME
             COMPONENT Runtime)
 endif()
 

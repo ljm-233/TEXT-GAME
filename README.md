@@ -7,7 +7,7 @@
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**222 个单元测试用例 / 4703 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**227 个单元测试用例 / 4719 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -18,13 +18,20 @@
 | 产物 | 平台 | 说明 |
 | :--- | :--- | :--- |
 | `TEXT-GAME-<版本>-x86_64.AppImage` | Linux | **推荐**。自包含，双击即用，不装任何依赖 |
-| `TEXT-GAME-<版本>-Linux.tar.gz` | Linux | 解压运行，**需要系统已装 SFML 3** |
+| `TEXT-GAME-<版本>-Linux.tar.gz` | Linux | 解压后运行里面的 `TEXT-GAME`（**自带依赖**，见下） |
 | `TEXT-GAME-<版本>-Linux.zip` | Linux | 同上 |
-| `TEXT-GAME-<版本>-Linux.deb` | Debian/Ubuntu | 需要系统已装 SFML 3（见下方说明） |
+| `TEXT-GAME-<版本>-Linux.deb` | Debian/Ubuntu | 安装后运行 `TEXT-GAME`，同样自带依赖 |
 | `TEXT-GAME-<版本>-Linux.rpm` | Fedora/RHEL | 同上 |
 | `TEXT-GAME-<版本>-macOS.tar.gz` | macOS | 需要 `brew install sfml` |
 
-> ⚠️ **SFML 3 目前没进 Debian / Ubuntu 的软件仓库**，所以 `.deb` / `.rpm` 里无法声明这个依赖，装上后需要自己准备 SFML 3 运行库。**想开箱即用请选 AppImage** —— 它把 SFML 一起打进去了。
+> **Linux 包自带运行库**：`lib/` 里打包了 SFML 及其依赖（freetype / harfbuzz / X11 / FLAC …），
+> 所以**不需要系统预装 SFML 3** —— 这一点很重要，因为 SFML 3 还没进 Debian / Ubuntu 的仓库。
+>
+> 请运行包里的 **`TEXT-GAME`**（启动脚本）而不是 `text_game`：前者会设置
+> `LD_LIBRARY_PATH`，让**间接**依赖也从 `lib/` 解析。直接跑 `text_game` 在没装
+> SFML 的机器上会起不来。
+>
+> GL 驱动相关的库（`libGL` / `libGLX` / `libEGL` …）**刻意没有打包** —— 那些必须用系统那份。
 
 ---
 
@@ -523,7 +530,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，222 个用例 / 4703 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，227 个用例 / 4719 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer
 - **覆盖率**：gcov + lcov
@@ -619,12 +626,15 @@ cmake --build --preset release-package -j
 **通用 CPack**：
 
 ```bash
-cmake --preset release-package
+cmake --preset release-package     # 这个 preset 已开 BUNDLE_RUNTIME_DEPS=ON
 cmake --build --preset release-package
 cd build/release-package
 cpack                                   # 默认 TGZ + ZIP
 cpack -G "DEB;RPM"                      # 需要 dpkg-deb / rpmbuild
 ```
+
+> `BUNDLE_RUNTIME_DEPS=ON` 会用 CMake 的 `GET_RUNTIME_DEPENDENCIES` 收集运行库塞进 `lib/`，
+> 并额外装一个 `TEXT-GAME` 启动器。单独 `cmake --preset release` 打出来的包则不带这些。
 
 **Windows NSIS 安装包**：
 
@@ -679,6 +689,26 @@ python3 scripts/check_hardcoded.py
 
 ---
 
+## 🚧 已知问题与路线
+
+### 已知问题
+
+- **场景与 UI 组件本身没有单元测试** —— 它们的构造需要 `sf::Font`，而那是
+  `GlResource`，没有 GL 上下文连构造都做不到。其中的纯逻辑（星级规则、编辑器
+  格子几何、手柄焦点导航）已经抽成独立模块测过了。
+- Wayland 下窗口图标无法通过 SFML API 设置（协议限制）。
+- **关卡内容待重做**：`level1.txt` 与 `editor.txt` 目前存在不可达元素，
+  可以用 `validate_levels` 或编辑器里按 T 看到。
+
+### 短期路线
+
+1. 依次重做 `level2` ~ `level5`
+
+> 更细的开发说明（分层规则、装配与生命周期、已知陷阱）见
+> [CLAUDE.md](CLAUDE.md)。
+
+---
+
 ## 🧭 开发约定
 
 1. **新增 `src/` 一级子目录时，要在 `CMakeLists.txt` 的 GLOB 列表里加一行**（`.cpp` 文件本身会被自动扫描）。
@@ -697,6 +727,9 @@ python3 scripts/check_hardcoded.py
 12. **游戏事件走 EventBus**，不要从 `GameWorld` 直接调 SoundManager / ParticleSystem / Gamepad。
 13. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
 14. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
+15. **发行版的默认设置改 `assets/defaults/preferences.conf`**。它只在用户**没有**配置文件时
+    铺一次（`config/bootstrap.cpp`），之后永远归用户所有。**不要把个人或机器相关的键放进去**
+    （玩家名 / 分辨率 / 全屏 / UI 缩放 / 壁纸 / 键位）——那会让每个新用户都继承开发机的状态。
 
 ### 代码格式化
 

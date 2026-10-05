@@ -22,6 +22,7 @@ add_executable(unit_tests
     test_score_rules.cpp
     test_editor_tools.cpp
     test_focus_nav.cpp
+    test_config_seeding.cpp
 )
 
 target_include_directories(unit_tests PRIVATE
@@ -81,6 +82,8 @@ target_sources(unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/game/score_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/editor_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/focus_nav.cpp
+    # 首次运行的默认设置播种逻辑就在这里面
+    ${CMAKE_SOURCE_DIR}/src/config/bootstrap.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/lang.cpp
     # game_world.cpp 里定义了 SpriteSheets::fromFactories()，引用了这三个工厂，
     # 所以链接期必须有它们的实现。仅仅是"被链接"不会触发 GL ——
