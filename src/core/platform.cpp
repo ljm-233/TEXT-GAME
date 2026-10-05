@@ -179,7 +179,13 @@ namespace {
 /// FD_CLOEXEC 的 fd 在 exec 时自动关掉，不用手工清理。
 /// 返回 posix_spawn 的错误码（0 = 进程已起），找不到可执行文件时是 ENOENT。
 /// 不 waitpid —— 那又阻塞了；代价是子进程退出后留下一个僵尸。
-/// ponytail: 一次点击才一个，进程退出时一起回收；要常驻调用再上 SIGCHLD。
+///
+/// ponytail: 这是有意的取舍 —— 调用点是"用户在设置页点了一下打开目录"，
+/// 一次点击最多一个僵尸，而且进程退出时会一起回收。真到了需要常驻调用的
+/// 地步，**不要**用 `signal(SIGCHLD, SIG_IGN)` —— 那是进程级副作用，
+/// 会让之后所有 `waitpid` 静默返回 ECHILD（拿不到退出码还没有报错）。
+/// 改成把上一个 pid 记下来、下次调用时 `waitpid(WNOHANG)` 收一下，
+/// 或者干脆双 fork。
 int spawnDetached(const char* program, const std::vector<const char*>& args) {
     std::vector<char*> argv;
     argv.reserve(args.size() + 2);
