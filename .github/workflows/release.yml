@@ -86,42 +86,50 @@ jobs:
           cpack
 
       # macOS 的包一旦"看起来能打出来但其实起不来"，下载的人只会看到
-      # 一句 SIGKILL / Library not loaded，很难查。所以这里把两件最容易
+      # 一句 SIGKILL / Library not loaded，很难查。所以这里把三件最容易
       # 悄悄坏掉的事钉成硬检查：
-      #   1. Mach-O 的代码签名还有效（strip / install_name_tool 都会毁掉它，
+      #   1. 资源在可执行文件旁边 —— Paths 就是靠这个判定"打包模式"的，
+      #      不在的话会退回开发模式，去用编译期的 PROJECT_ROOT
+      #   2. Mach-O 的代码签名还有效（strip / install_name_tool 都会毁掉它，
       #      Apple Silicon 上内核随后直接 SIGKILL）
-      #   2. 主程序与每个包内 dylib 的非系统依赖，都能在 lib/ 里找到同名文件
-      #      （启动器靠 DYLD_LIBRARY_PATH 按叶子名去找，找得到就能跑）
+      #   3. 没有任何指向系统之外的绝对 install name 残留，且每个依赖
+      #      都能在 Contents/Frameworks/ 里找到
       - name: Verify bundle is self-contained
         run: |
           cd build
           mkdir -p /tmp/verify
           tar xzf TEXT-GAME-*-macOS.tar.gz -C /tmp/verify
-          test -x /tmp/verify/TEXT-GAME
 
-          count=$(ls /tmp/verify/lib/*.dylib 2>/dev/null | wc -l)
+          APP=/tmp/verify/TEXT-GAME.app
+          BIN="$APP/Contents/MacOS/text_game"
+          FW="$APP/Contents/Frameworks"
+          test -x "$BIN"
+
+          echo "== 布局 =="
+          test -f "$APP/Contents/MacOS/assets/font.ttf" \
+            || { echo "assets 不在可执行文件旁边，Paths 会退回开发模式"; exit 1; }
+
+          count=$(ls "$FW"/*.dylib 2>/dev/null | wc -l)
           echo "包内 dylib 数量: $count"
-          [ "$count" -ge 5 ] || { echo "lib/ 几乎是空的，依赖没打进去"; exit 1; }
+          [ "$count" -ge 5 ] || { echo "Frameworks 几乎是空的，依赖没打进去"; exit 1; }
 
           echo "== 代码签名 =="
-          codesign --verify --verbose=2 /tmp/verify/text_game
-          for f in /tmp/verify/lib/*.dylib; do
+          for f in "$BIN" "$FW"/*.dylib; do
             codesign --verify "$f" || { echo "签名失效: $f"; exit 1; }
           done
 
           echo "== 依赖是否都在包内 =="
-          for target in /tmp/verify/text_game /tmp/verify/lib/*.dylib; do
+          for target in "$BIN" "$FW"/*.dylib; do
             for dep in $(otool -L "$target" | tail -n +2 | awk '{print $1}'); do
               case "$dep" in
                 /usr/lib/*|/System/*) continue ;;
+                /*) echo "残留绝对依赖: $target -> $dep"; exit 1 ;;
               esac
               base=$(basename "$dep")
-              if [ ! -f "/tmp/verify/lib/$base" ]; then
-                echo "缺少依赖: $target -> $dep"
-                exit 1
-              fi
+              [ -f "$FW/$base" ] || { echo "依赖不在包内: $target -> $dep"; exit 1; }
             done
           done
+          echo "全部通过"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

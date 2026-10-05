@@ -301,43 +301,108 @@ if(BUNDLE_RUNTIME_DEPS AND UNIX AND NOT APPLE)
             COMPONENT Runtime)
 
 elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
-    # macOS 走另一条路：**一个字节都不改 Mach-O**，依赖原样拷进 lib/，
-    # 再由 TEXT-GAME 启动器设 DYLD_LIBRARY_PATH 把它找出来。
+    # macOS：依赖收进 TEXT-GAME.app/Contents/Frameworks/，改写 install name，
+    # 最后 ad-hoc 重签名。
     #
-    # 为什么不用 install_name_tool 改写 install name：
-    #   Apple Silicon 上一切可执行代码都必须带有效签名（至少 ad-hoc），
-    #   而 install_name_tool / strip 这类写文件的工具会立刻让签名失效，
-    #   内核随后 SIGKILL（"Code Signature Invalid"）。原样拷贝则签名还在。
-    #   DYLD_LIBRARY_PATH 的查找发生在按 install name 解析之前、且按叶子名
-    #   匹配，所以绝对路径的 install name 照样能被包内的同名文件顶替。
+    # 为什么必须"改写 + 重签名"成套做：
+    #   Apple Silicon 要求一切可执行代码都带有效签名（ld 会自动加 ad-hoc），
+    #   而 install_name_tool 一写文件签名就失效，内核随后直接 SIGKILL
+    #   （"Code Signature Invalid"）。所以改写完必须 codesign --force --sign -
+    #   重新签一遍，只做前半截等于把包做坏。
+    #
+    # 为什么不用 DYLD_LIBRARY_PATH + 启动器：
+    #   那样只有从终端跑 ./TEXT-GAME 才拿得到环境变量，Finder 双击 .app
+    #   是没有的。改写 install name 之后双击也能跑，还省掉一个启动器脚本。
     install(CODE [[
+        set(_bundle "${CMAKE_INSTALL_PREFIX}/TEXT-GAME.app")
+        set(_fw     "${_bundle}/Contents/Frameworks")
+        set(_bin    "${_bundle}/Contents/MacOS/text_game")
+
+        # /usr/lib 与 /System 是系统自带的（真机上走 dyld 共享缓存），不打
         file(GET_RUNTIME_DEPENDENCIES
             EXECUTABLES "$<TARGET_FILE:text_game>"
             RESOLVED_DEPENDENCIES_VAR _deps
             UNRESOLVED_DEPENDENCIES_VAR _unresolved
-            # /usr/lib 与 /System 是系统自带的（真机上走 dyld 共享缓存），不打
             PRE_EXCLUDE_REGEXES
                 "^/usr/lib/.*"
                 "^/System/.*"
             POST_EXCLUDE_REGEXES
                 ".*/libSystem\\..*"
         )
+
+        file(MAKE_DIRECTORY "${_fw}")
         foreach(_dep ${_deps})
-            file(INSTALL "${_dep}"
-                 DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
-                 FOLLOW_SYMLINK_CHAIN)
+            # FOLLOW_SYMLINK_CHAIN：依赖给出来的往往是软链
+            # （libfreetype.6.dylib -> libfreetype.6.20.1.dylib），不加这个
+            # 选项只拷软链、不拷目标，装出来是断链 —— 而且断得很难查。
+            file(INSTALL "${_dep}" DESTINATION "${_fw}" FOLLOW_SYMLINK_CHAIN)
         endforeach()
         list(LENGTH _deps _n)
-        message(STATUS "已捆绑 ${_n} 个 dylib 到 lib/")
+        message(STATUS "已捆绑 ${_n} 个 dylib 到 Contents/Frameworks/")
         if(_unresolved)
             message(WARNING "有未解析的依赖，可能是构建机的 RPATH 问题: ${_unresolved}")
         endif()
-    ]])
 
-    install(PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/macos/launch.sh"
-            DESTINATION .
-            RENAME TEXT-GAME
-            COMPONENT Runtime)
+        # 把包内某段引用换成包内相对路径。
+        # prefix: 主程序用 @executable_path/../Frameworks，库之间用 @loader_path
+        function(_tg_rewrite target prefix)
+            execute_process(COMMAND otool -L "${target}" OUTPUT_VARIABLE _out)
+            string(REPLACE "\n" ";" _lines "${_out}")
+            if(_lines)
+                list(REMOVE_AT _lines 0)      # 第一行是文件自己的名字
+            endif()
+            foreach(_line ${_lines})
+                string(REGEX MATCH "^[ \t]+([^ \t]+)" _m "${_line}")
+                set(_ref "${CMAKE_MATCH_1}")
+                get_filename_component(_refname "${_ref}" NAME)
+                if(EXISTS "${_fw}/${_refname}")
+                    execute_process(COMMAND install_name_tool -change
+                                    "${_ref}" "${prefix}/${_refname}" "${target}")
+                endif()
+            endforeach()
+        endfunction()
+
+        # 先改库：库自己的 id + 库与库之间的引用
+        file(GLOB _fw_libs "${_fw}/*.dylib")
+        foreach(_lib ${_fw_libs})
+            get_filename_component(_name "${_lib}" NAME)
+            execute_process(COMMAND install_name_tool -id "@rpath/${_name}" "${_lib}")
+            _tg_rewrite("${_lib}" "@loader_path")
+        endforeach()
+
+        # 再改主程序：指向 Frameworks 里那份
+        _tg_rewrite("${_bin}" "@executable_path/../Frameworks")
+
+        # 兜底自检：改写完不该再剩下任何指向系统之外的绝对路径。
+        # 漏一个，用户机器上就是一句 "Library not loaded" 且很难查。
+        foreach(_f "${_bin}" ${_fw_libs})
+            execute_process(COMMAND otool -L "${_f}" OUTPUT_VARIABLE _o)
+            string(REPLACE "\n" ";" _ls "${_o}")
+            if(_ls)
+                list(REMOVE_AT _ls 0)
+            endif()
+            foreach(_l ${_ls})
+                string(REGEX MATCH "^[ \t]+([^ \t]+)" _m "${_l}")
+                set(_r "${CMAKE_MATCH_1}")
+                if(_r MATCHES "^/usr/lib/" OR _r MATCHES "^/System/")
+                    continue()
+                endif()
+                if(_r MATCHES "^/")
+                    message(FATAL_ERROR "install name 没改写干净: ${_f} -> ${_r}")
+                endif()
+            endforeach()
+        endforeach()
+
+        # 改写过的每一个 Mach-O 都要重签名，否则 arm64 上内核拒绝启动
+        foreach(_f "${_bin}" ${_fw_libs})
+            execute_process(COMMAND codesign --force --sign - "${_f}"
+                            RESULT_VARIABLE _rc)
+            if(NOT _rc EQUAL 0)
+                message(FATAL_ERROR "重签名失败(${_rc}): ${_f}")
+            endif()
+        endforeach()
+        message(STATUS "已改写 install name 并 ad-hoc 重签名")
+    ]])
 endif()
 
 # ============================================================
@@ -374,8 +439,23 @@ endif()
 # ============================================================
 # 资源文件
 # ============================================================
-install(DIRECTORY assets/    DESTINATION assets    COMPONENT Runtime)
-install(DIRECTORY wallpaper/ DESTINATION wallpaper COMPONENT Runtime)
+#
+# ⚠️ macOS 上资源必须装进 bundle 里，不能放 tar 根目录。
+#    Paths 判定"打包模式"看的是**可执行文件旁边**有没有 assets/
+#    （include/core/paths.h:20），而 macOS 的可执行文件在
+#    TEXT-GAME.app/Contents/MacOS/ 下。装到根目录等于找不到 ——
+#    那样 Paths 会退回"开发模式"，去用编译期的 PROJECT_ROOT
+#    （构建机的路径），用户机器上根本不存在，字体和关卡都加载不了。
+if(APPLE)
+    set(TEXTGAME_ASSET_DEST      "TEXT-GAME.app/Contents/MacOS/assets")
+    set(TEXTGAME_WALLPAPER_DEST  "TEXT-GAME.app/Contents/MacOS/wallpaper")
+else()
+    set(TEXTGAME_ASSET_DEST      "assets")
+    set(TEXTGAME_WALLPAPER_DEST  "wallpaper")
+endif()
+
+install(DIRECTORY assets/    DESTINATION "${TEXTGAME_ASSET_DEST}"     COMPONENT Runtime)
+install(DIRECTORY wallpaper/ DESTINATION "${TEXTGAME_WALLPAPER_DEST}" COMPONENT Runtime)
 install(FILES README.md LICENSE DESTINATION .      COMPONENT Runtime)
 
 # ============================================================
