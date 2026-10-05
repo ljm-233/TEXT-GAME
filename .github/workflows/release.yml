@@ -100,9 +100,15 @@ jobs:
           mkdir -p /tmp/verify
           tar xzf TEXT-GAME-*-macOS.tar.gz -C /tmp/verify
 
-          APP=/tmp/verify/TEXT-GAME.app
-          BIN="$APP/Contents/MacOS/text_game"
+          APP=$(ls -d /tmp/verify/*.app | head -1)
+          test -n "$APP" || { echo "包根下没有 .app"; exit 1; }
+          # 从 Info.plist 问出可执行文件名，别按 target 名猜 ——
+          # MACOSX_BUNDLE_BUNDLE_NAME 只写 plist，不改 .app 目录名与文件名
+          EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")
+          BIN="$APP/Contents/MacOS/$EXE"
           FW="$APP/Contents/Frameworks"
+          echo "bundle: $APP"
+          echo "可执行文件: $EXE"
           test -x "$BIN"
 
           echo "== 布局 =="

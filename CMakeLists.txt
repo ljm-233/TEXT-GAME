@@ -314,9 +314,19 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
     #   那样只有从终端跑 ./TEXT-GAME 才拿得到环境变量，Finder 双击 .app
     #   是没有的。改写 install name 之后双击也能跑，还省掉一个启动器脚本。
     install(CODE [[
-        set(_bundle "${CMAKE_INSTALL_PREFIX}/TEXT-GAME.app")
-        set(_fw     "${_bundle}/Contents/Frameworks")
-        set(_bin    "${_bundle}/Contents/MacOS/text_game")
+        # ⚠️ bundle 的目录名不是 target 名 —— MACOSX_BUNDLE_BUNDLE_NAME 只写进
+        #    Info.plist，不影响 .app 的目录名（实际是 text_game.app）。所以这里
+        #    一律从 install 的结果里问出来，不写死。
+        file(GLOB _bundles "${CMAKE_INSTALL_PREFIX}/*.app")
+        if(NOT _bundles)
+            message(FATAL_ERROR "install 之后在 ${CMAKE_INSTALL_PREFIX} 里找不到 .app")
+        endif()
+        list(GET _bundles 0 _bundle)
+        set(_bin "${_bundle}/Contents/MacOS/$<TARGET_FILE_NAME:text_game>")
+        if(NOT EXISTS "${_bin}")
+            message(FATAL_ERROR "bundle 里找不到可执行文件: ${_bin}")
+        endif()
+        set(_fw "${_bundle}/Contents/Frameworks")
 
         # /usr/lib 与 /System 是系统自带的（真机上走 dyld 共享缓存），不打
         file(GET_RUNTIME_DEPENDENCIES
