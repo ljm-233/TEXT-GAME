@@ -1,4 +1,5 @@
 #include "doctest.h"
+#include "config/config.h"
 #include "config/keys.h"
 #include "scene/settings_tab_id.h"
 
@@ -132,4 +133,79 @@ TEST_CASE("设置归属 - 机器绑定的键不出现在可携带白名单里") 
 
     CHECK(ConfigKey::portableKeyCount() > 0);
     CHECK(ConfigKey::portableKeyCount() < static_cast<int>(ConfigKey::allKeys().size()));
+}
+
+// ============================================================
+// 「恢复本页默认」的机制
+// ============================================================
+
+TEST_CASE("恢复本页默认 - 只清掉本页的键，别的页原样保留") {
+    // Config 用裸路径构造（不需要资源表，这里只验键的增删）
+    namespace fs = std::filesystem;
+    static int counter = 0;
+    const fs::path root =
+        fs::temp_directory_path() / ("textgame_resettab_" + std::to_string(++counter));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+
+    {
+        Config cfg(root / "preferences.conf");
+        cfg.set(ConfigKey::kTheme, "2");               // 界面
+        cfg.set(ConfigKey::kUiScale, "1.75");          // 界面
+        cfg.set(ConfigKey::kParticles, "false");       // 画面
+        cfg.set(ConfigKey::kPostGrain, "0.5");         // 画面
+        cfg.set(ConfigKey::kAudioMasterVolume, "0.3"); // 音频
+        cfg.set(ConfigKey::kKeyJump, "42");            // 操作
+        cfg.set(ConfigKey::kInitialLives, "10");       // 游戏
+
+        const std::size_t before = cfg.size();
+
+        // 只重置「画面」页
+        std::vector<std::string> graphicsKeys;
+        for (const char* k : keysForTab(SettingsTab::Graphics))
+            graphicsKeys.emplace_back(k);
+
+        // 数一数这些键里**实际存在**的有几个 —— 本页拥有 19 个键，
+        // 但上面只设了 2 个，直接拿 before 减 19 会无符号下溢
+        constexpr const char* kAbsent = "\x01__absent__";
+        std::size_t present = 0;
+        for (const auto& k : graphicsKeys)
+            if (cfg.get(k, kAbsent) != kAbsent)
+                ++present;
+
+        cfg.resetKeys(graphicsKeys);
+
+        // 画面页的键应当全部消失 —— 于是读取处会回落到各自的兜底值
+        CHECK(cfg.get(ConfigKey::kParticles, "没了") == "没了");
+        CHECK(cfg.get(ConfigKey::kPostGrain, "没了") == "没了");
+        // 别的页一根汗毛都不能动
+        CHECK(cfg.get(ConfigKey::kTheme, "?") == "2");
+        CHECK(cfg.get(ConfigKey::kUiScale, "?") == "1.75");
+        CHECK(cfg.get(ConfigKey::kAudioMasterVolume, "?") == "0.3");
+        CHECK(cfg.get(ConfigKey::kKeyJump, "?") == "42");
+        CHECK(cfg.get(ConfigKey::kInitialLives, "?") == "10");
+        CHECK(cfg.size() == before - present);
+    }
+    fs::remove_all(root, ec);
+}
+
+TEST_CASE("恢复本页默认 - 重置本来就干净的页是无害的") {
+    namespace fs = std::filesystem;
+    const fs::path f = fs::temp_directory_path() / "textgame_resettab_clean.conf";
+    std::error_code ec;
+    fs::remove(f, ec);
+
+    Config cfg(f);
+    cfg.set(ConfigKey::kTheme, "1");
+
+    std::vector<std::string> consoleKeys;
+    for (const char* k : keysForTab(SettingsTab::Console))
+        consoleKeys.emplace_back(k);
+    cfg.resetKeys(consoleKeys); // 一项都没有
+
+    CHECK(cfg.get(ConfigKey::kTheme, "?") == "1");
+    CHECK(cfg.size() == 1);
+
+    fs::remove(f, ec);
 }
