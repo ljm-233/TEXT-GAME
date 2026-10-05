@@ -235,10 +235,14 @@ jobs:
     container: archlinux:latest
 
     steps:
+      # sfml 既是 runtime 依赖（PKGBUILD 里 depends=('sfml')），也是构建依赖
+      # （CMake 的 find_package(SFML 3)）。不装的话 makepkg 会先卡在
+      # "Missing dependencies: -> sfml"。
+      # 用户那边是 makepkg -si 自己装，CI 里得手动装上。
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git
+          pacman -S --noconfirm base-devel git sfml
 
       - uses: actions/checkout@v4
 
