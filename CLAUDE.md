@@ -177,8 +177,13 @@ code = app.exec();
 
 - `onEnter()`：首次进入 + 每次重新进入都调用
 - `onResume()`：从 pop 恢复时调用
-- `onPause()`：被上层覆盖时调用
-- **`onExit()` 只在程序退出时调用**
+- `onPause()`：**离开本场景**时调用（start 换掉当前 / push / pop / replace 都走它）
+- **`onExit()` 只在程序退出时调用 —— 它不是"离开场景"**
+
+⚠️ **离开场景的清理必须挂在 `onPause`**。`ConsoleScene` 踩过这个坑：它把
+"恢复 cin/cout/cerr + 停 worker 线程"只写在 `onExit` 里，于是离开控制台后标准流
+一直被劫持、线程一直活着，而且因为装配有 `if (!redirect_)` 判断，再进去看着还是
+正常的 —— 完全静默。这条契约由 `tests/test_scene_manager.cpp` 守着。
 
 场景状态必须能在 `onEnter` 里重置（如 `GameScene::onEnter` 会检查 pending save）。
 
@@ -283,8 +288,12 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 
 ### 打包
 
-- **`release-package` preset 开了 `BUNDLE_RUNTIME_DEPS`**：用
-  `GET_RUNTIME_DEPENDENCIES` 把 SFML 及其依赖收进 `lib/`，并装一个 `TEXT-GAME`
+`BUNDLE_RUNTIME_DEPS` 在**本机 `release-package` preset 与 `release.yml` 两个 job
+里都开着**。CI 产的包和本机打的包现在是同一套东西，不用再手工覆盖。
+
+**Linux**：
+
+- 用 `GET_RUNTIME_DEPENDENCIES` 把 SFML 及其依赖收进 `lib/`，并装一个 `TEXT-GAME`
   启动器。**必须用启动器而不是 `text_game`** —— 只设可执行文件的 RPATH 不够，
   间接依赖（SFML 依赖的 freetype / harfbuzz / X11）是用【那个库自己的 RUNPATH】
   解析的，会静默回退到系统库。
@@ -293,6 +302,38 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
   开发机上一切正常、纯净机器上起不来。
 - **GL 驱动库绝不打包**（`libGL` / `libGLX` / `libGLdispatch` / `libOpenGL` /
   `libEGL` / `libdrm` / `libgbm`），glibc 家族同理 —— 必须用系统那份。
+
+**macOS**（同一条 `BUNDLE_RUNTIME_DEPS` 分支）：
+
+- 依赖进 `text_game.app/Contents/Frameworks/`，**资源进 `Contents/Resources/`**
+  （`Paths::resourceRootFor()` 就是为这个布局存在的）。
+  **资源绝不能放 `Contents/MacOS/`** —— codesign 会把那里的目录当成嵌套代码
+  逐个验签，直接报 `code object is not signed at all`，包都做不出来。
+  资源还必须**在签名之前**装进 bundle，否则封条盖不住它们。
+- install name 全部改写成 `@executable_path/../Frameworks`（主程序）与
+  `@loader_path`（库之间），不改写就仍指向构建机的 `/opt/homebrew/...`。
+- **改写完必须 `codesign --force --sign -` 重签名**，两者是一套的：arm64 要求
+  一切可执行代码都有有效签名，`install_name_tool` 一写文件签名就失效，内核
+  随后 SIGKILL（不是报错，是直接被杀）。
+- **先签库、最后签主程序**。在 bundle 里签主程序会给整个 bundle 盖章
+  （`Contents/_CodeSignature/CodeResources` 记着每个嵌套代码的哈希），顺序反了
+  立刻变成 `nested code is modified or invalid`。
+- **`CPACK_STRIP_FILES` 在 `APPLE` 上必须是 `FALSE`**：strip 同样会让签名失效。
+  Homebrew 在 ARM 上不 strip 也是这个原因。代价是符号留着、包大几 MB。
+- **bundle 目录名 = `<OUTPUT_NAME>.app`**，`MACOSX_BUNDLE_BUNDLE_NAME` 只写进
+  Info.plist、不改目录名。所以实际是 `text_game.app` / `text_game`，不是
+  `TEXT-GAME.app`。**永远不要在任何地方写死这个名字** —— 写死过一次，结果包里
+  凭空多出一个只装资源的空 bundle，而 glob 按字典序正好让它挡住了真的那个。
+
+**通用**：
+
+- `release.yml` 的两个 job 都带**自检步骤，不达标就红**：Linux 查 `lib/` 库数量
+  与 `ldd` 有没有 `not found`；macOS 查 `.app` 数量是不是 1、`Resources/assets`
+  在不在、每个 Mach-O 的 `codesign --verify`、以及有没有残留的绝对依赖路径。
+  这些检查都是用真实的翻车现场换来的，别删。
+- 想在不发版的前提下验证打包：`gh workflow run release.yml`。
+  `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，手动触发只当演练。
+- `release.yml` 只产 `tar.gz` / `zip`；**AppImage / deb / rpm 仍需本机补传**。
 - **发行版默认设置放 `assets/defaults/preferences.conf`**，由
   `config/bootstrap.cpp` 在用户没有配置文件时铺一次。**只放观感类设置**，
   个人与机器相关的键（`player_name` / `resolution_index` / `fullscreen` /
@@ -336,6 +377,7 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 | :--- | :--- |
 | Vec2 / AABB / Config / Level / Camera / Animator / Player / MovingPlatform / JumpPad | ✅ |
 | Container / Application 五阶段 / MainLoop / Logger / SceneRegistry | ✅ |
+| SceneManager（常驻复用 + 钩子契约，含"离开场景走 onPause 不是 onExit"） | ✅ |
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
 | GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |

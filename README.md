@@ -22,7 +22,7 @@
 | `TEXT-GAME-<版本>-Linux.zip` | Linux | 同上 |
 | `TEXT-GAME-<版本>-Linux.deb` | Debian/Ubuntu | 安装后运行 `TEXT-GAME`，同样自带依赖 |
 | `TEXT-GAME-<版本>-Linux.rpm` | Fedora/RHEL | 同上 |
-| `TEXT-GAME-<版本>-macOS.tar.gz` | macOS | 需要 `brew install sfml` |
+| `TEXT-GAME-<版本>-macOS.tar.gz` | macOS | 解压后双击 `text_game.app`（**自带依赖**，见下） |
 
 > **Linux 包自带运行库**：`lib/` 里打包了 SFML 及其依赖（freetype / harfbuzz / X11 / FLAC …），
 > 所以**不需要系统预装 SFML 3** —— 这一点很重要，因为 SFML 3 还没进 Debian / Ubuntu 的仓库。
@@ -32,6 +32,14 @@
 > SFML 的机器上会起不来。
 >
 > GL 驱动相关的库（`libGL` / `libGLX` / `libEGL` …）**刻意没有打包** —— 那些必须用系统那份。
+>
+> **macOS 包同样自带依赖**，不需要 `brew install sfml`：SFML 及其依赖都在
+> `text_game.app/Contents/Frameworks/` 里，install name 已全部改写成包内相对路径，
+> 并做了 ad-hoc 重签名（arm64 上没签名内核会直接 SIGKILL）。资源在
+> `Contents/Resources/`，所以整个 `.app` 可以随便挪位置。
+>
+> 包里的可执行文件叫 `text_game`、bundle 目录叫 `text_game.app` ——
+> `MACOSX_BUNDLE_BUNDLE_NAME` 只影响 Info.plist 里的显示名，不改目录名。
 
 ---
 
@@ -435,7 +443,7 @@ TEXT-GAME/
 │   ├── levels/*.txt          # ASCII 关卡
 │   ├── shaders/*.frag        # GLSL 着色器（5 个）
 │   ├── lang/*.txt            # 翻译文件
-│   └── font.otf              # 字体（需自备，见下文）
+│   └── font.ttf              # 字体（名字固定，见下文）
 ├── packaging/                # 图标生成 / AppImage / Windows 资源
 ├── scripts/                  # 硬编码检测 / 测试 / 桌面集成 / 关卡生成
 ├── docs/screenshots/         # README 用的截图
@@ -567,17 +575,19 @@ vcpkg install sfml:x64-windows
 
 ### 准备字体
 
-项目需要中文字体文件 `assets/font.otf`：
+项目需要中文字体文件 `assets/font.ttf`（代码里写死的就是这个文件名，
+见 `src/core/bootstrap.cpp`）：
 
 ```bash
 python3 -c "
 from fontTools.ttLib import TTCollection
 ttc = TTCollection('/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc')
-ttc.fonts[2].save('assets/font.otf')
+ttc.fonts[2].save('assets/font.ttf')
 "
 ```
 
-或者从 [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Sans+SC) 下载 `NotoSansSC-Regular.otf` 重命名为 `font.otf`。
+或者从 [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Sans+SC) 下载一份
+Noto Sans SC，**重命名为 `font.ttf`**（哪怕拿到的是 `.otf`，文件名也必须是 `.ttf`）。
 
 ### 编译运行
 
@@ -645,7 +655,16 @@ cd build/release
 cpack -G NSIS
 ```
 
-> 打 tag（形如 `v1.2.3`）会触发 `.github/workflows/release.yml`，在 CI 上构建 Linux + macOS 包并自动建 Release。AppImage / deb / rpm 需要本机补传。
+> 打 tag（形如 `v1.2.3`）会触发 `.github/workflows/release.yml`，在 CI 上构建 Linux + macOS 包并自动建 Release。
+> 两个包都开了 `BUNDLE_RUNTIME_DEPS`，自带依赖；每个 job 里都有一道自检
+> （Linux 查 `ldd` 有没有 `not found`，macOS 查代码签名 + 有没有残留的绝对依赖路径），
+> 不达标的包不会发出去。
+>
+> **AppImage / deb / rpm 目前仍需要本机补传** —— `release.yml` 只产 `tar.gz` / `zip`。
+
+> 想在不发版的情况下验证打包：`gh workflow run release.yml`。
+> `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，
+> 手动触发只当打包演练用，不会创建 release，跑完能从 artifacts 里下载包。
 
 ### 单元测试
 
