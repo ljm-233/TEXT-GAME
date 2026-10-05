@@ -4,6 +4,7 @@
 #include "game_world.h"
 #include "save_manager.h"
 #include "preferences.h"
+#include "playtest_request.h"
 #include "resource_manager.h"
 #include "pause_menu.h"
 #include "parallax.h"
@@ -18,7 +19,8 @@ public:
     GameScene(std::shared_ptr<Background> background, const sf::Font& font,
               std::shared_ptr<Logger> logger, std::shared_ptr<SaveManager> saveManager,
               std::shared_ptr<Preferences> preferences,
-              std::shared_ptr<ResourceManager> resources);
+              std::shared_ptr<ResourceManager> resources,
+              std::shared_ptr<PlaytestRequest> playtest);
 
     void onEnter() override;
     void onResume() override;
@@ -33,6 +35,13 @@ public:
 
 private:
     bool loadLevel(int index);
+
+    /// 把关卡装进 GameWorld 并重置每关状态（不含 PB、不含开场白）。
+    ///
+    /// 从 `loadLevel` 里抽出来，是为了让"试玩编辑器里那份未保存的草稿"能复用
+    /// 同一段装配 —— 复制一份的下场是两边迟早不一致（而且只在试玩时表现得不一样，
+    /// 最难查）。
+    bool buildWorld(std::unique_ptr<Level> level, int index);
     bool advanceToNextLevel();
     void syncFocus();
     void subscribeWorldEvents();
@@ -53,6 +62,8 @@ private:
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<SaveManager> saveManager_;
     std::shared_ptr<Preferences> preferences_;
+    // 「试玩」交接通道：编辑器按 F5 时把未保存的关卡放进来
+    std::shared_ptr<PlaytestRequest> playtest_;
     std::shared_ptr<ResourceManager> resources_;
     SaveInfo save_;
     const sf::Font* font_ = nullptr;
@@ -108,6 +119,12 @@ private:
     std::vector<std::unique_ptr<Button>> overlayButtons_;
 
     SceneId nextScene_ = SceneId::None;
+
+    // ===== 试玩模式 =====
+    // 为 true 时：关卡来自编辑器内存而非磁盘，且**不写任何存档/PB/成就** ——
+    // 试玩是"看看改得怎么样"，不该污染真实进度。
+    bool playtestMode_ = false;
+    std::string playtestSource_;
 
     // ⭐ 调试工具
     bool debugHud_ = false;

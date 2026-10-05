@@ -97,6 +97,11 @@ constexpr const char* HintAdvanced = "以下为排查问题用的设置，一般
 constexpr const char* ButtonResetTab = "恢复本页默认";
 constexpr const char* HintResetTab = "只重置本页的设置项，不影响其它页";
 constexpr const char* HintScroll = "内容超出屏幕，滚轮可上下滚动";
+
+// ===== 编辑器试玩 =====
+constexpr const char* HintPlaytest = "F5 试玩当前编辑内容（退出后回到编辑器）";
+constexpr const char* PlaytestBadge = "试玩";
+constexpr const char* PlaytestNoPlayer = "关卡里没有玩家出生点（P），先放一个再试玩";
 constexpr const char* ResetTabConfirm = "恢复本页默认设置？只影响本页";
 
 // 操作页
@@ -331,6 +336,10 @@ constexpr const char* BrushKey = "钥匙";
 constexpr const char* BrushDoor = "门";
 constexpr const char* BrushPlatformH = "横台";
 constexpr const char* BrushPlatformV = "竖台";
+// 三种新敌人的笔刷名（W 巡逻 / F 飞行 / B 跳跃）
+constexpr const char* BrushPatrol = "巡逻";
+constexpr const char* BrushFlyer  = "飞行";
+constexpr const char* BrushJumper = "跳跃";
 // ===== 编辑器元素统计 =====
 constexpr const char* StatPlatform = "移动平台";
 

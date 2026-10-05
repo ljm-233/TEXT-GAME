@@ -61,6 +61,10 @@ struct Deps {
     std::shared_ptr<WallpaperLoader> wallpaperLoader() {
         return container.require<WallpaperLoader>("wallpaper_loader");
     }
+    // 「试玩」的交接通道：编辑器写、关卡场景读
+    std::shared_ptr<PlaytestRequest> playtest() {
+        return container.require<PlaytestRequest>("playtest_request");
+    }
 
     /// 字体由 FontHolder 这个容器单例持有，生命周期到进程结束，
     /// 所以这里返回引用是安全的（临时 shared_ptr 析构不影响对象本身）。
@@ -71,6 +75,11 @@ struct Deps {
 
 void registerScenes(Container& container) {
     auto registry = container.require<SceneRegistry>("scene_registry");
+
+    // 「试玩」的交接通道。注册在这里而不是 registerCore：它是纯场景层的东西
+    // （两个场景之间递一份草稿），core 层不该认识它。
+    container.reg<PlaytestRequest>("playtest_request",
+                                   []() { return std::make_shared<PlaytestRequest>(); });
 
     // ---------------- 主菜单 ----------------
     registry->add(SceneId::MainMenu, [&container]() {
@@ -98,7 +107,7 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<GameScene>(deps.background(), deps.font(), deps.logger(),
                                            deps.saveManager(), deps.preferences(),
-                                           deps.resources());
+                                           deps.resources(), deps.playtest());
     });
 
     // ---------------- 设置 ----------------
@@ -123,7 +132,7 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<EditorScene>(deps.background(), deps.preferences(),
                                              deps.font(), deps.logger(), deps.resources(),
-                                             deps.paths());
+                                             deps.paths(), deps.playtest());
     });
 
     // ---------------- 成就 ----------------

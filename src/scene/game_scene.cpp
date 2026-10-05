@@ -47,11 +47,15 @@ GameScene::GameScene(std::shared_ptr<Background> background, const sf::Font& fon
                      std::shared_ptr<Logger> logger,
                      std::shared_ptr<SaveManager> saveManager,
                      std::shared_ptr<Preferences> preferences,
-                     std::shared_ptr<ResourceManager> resources)
+                     std::shared_ptr<ResourceManager> resources,
+                     std::shared_ptr<PlaytestRequest> playtest)
       : background_(std::move(background)),
         logger_(std::move(logger)),
         saveManager_(std::move(saveManager)),
         preferences_(std::move(preferences)),
+        // 顺序必须与头文件里的声明顺序一致（playtest_ 声明在 resources_ 之前），
+        // 否则 -Wreorder 会报
+        playtest_(std::move(playtest)),
         resources_(std::move(resources)),
         font_(&font),
         hudText_(font, sf::String(), 20),
@@ -83,6 +87,43 @@ GameScene::GameScene(std::shared_ptr<Background> background, const sf::Font& fon
 
 void GameScene::onEnter() {
     nextScene_ = SceneId::None;
+
+    // ⭐ 「试玩」优先：编辑器按 F5 会把**未保存**的草稿放进交接通道。
+    //    这条路必须在读 pending save 之前走 —— 试玩跟存档没有任何关系。
+    //    用 take() 的返回值直接判断，而不是先 has() 再 take()：既少一次判空，
+    //    也把"两次调用之间状态会变"这件事从根上消掉。
+    if (auto req = playtest_ ? playtest_->take() : std::nullopt) {
+        playtestMode_ = true;
+        playtestSource_ = req->sourceName;
+
+        std::string text;
+        for (const auto& line : req->lines) {
+            text += line;
+            text += '\n';
+        }
+        auto level = std::make_unique<Level>();
+        if (!level->loadFromString(text) || !buildWorld(std::move(level), 0)) {
+            logger_->error("试玩关卡解析失败: " + playtestSource_);
+            NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
+                                                NotificationType::Error, 5.f);
+            playtestMode_ = false;
+            nextScene_ = SceneId::Back; // 退回编辑器，而不是把用户丢在主菜单
+            return;
+        }
+        parallax_ = std::make_unique<ParallaxBackground>();
+        logger_->info("试玩进入: " + playtestSource_);
+        // 明说一句"这是试玩、不计进度"。只靠窗口标题不够显眼，
+        // 而"为什么刚才那关的星星没记上"正是试玩最容易让人困惑的地方。
+        NotificationSystem::instance().push(std::string(Str::T(Str::PlaytestBadge)) +
+                                                " - " + playtestSource_,
+                                            NotificationType::Info, 4.f);
+        return;
+    }
+
+    // ⚠️ 正式关卡要把上一次试玩的标志清掉。不清的话，"试玩 → 退出 → 从选关页
+    //    进正式关卡"这一串会让正式关卡也**不写存档**，而且完全不报错。
+    playtestMode_ = false;
+    playtestSource_.clear();
     // ⭐ 场景常驻后，onEnter 可能被多次调用。
     //    pending save 为空时沿用上次的 save_
     //
@@ -133,6 +174,10 @@ void GameScene::onResume() {
 }
 
 std::string GameScene::windowTitleHint() const {
+    // 试玩时明确标出来：否则用户会奇怪"为什么刚才那关的进度没记上"
+    if (playtestMode_) {
+        return std::string(Str::T(Str::PlaytestBadge)) + " - " + playtestSource_;
+    }
     if (paused_) {
         return Str::T(Str::WinTitleLevelPrefix) + std::to_string(levelIndex_) +
                Str::T(Str::WinTitlePausedSuffix);
@@ -198,14 +243,18 @@ void GameScene::subscribeWorldEvents() {
                     finalCoins_ = world_->coins();
                     finalTotalCoins_ = world_->totalCoins();
                     finalStars_ = calcStars();
-                    applyStars();
-                    saveManager_->updateProgress(save_.filename, world_->coins(),
-                                                 levelIndex_);
+                    // 试玩不写任何存档/PB/成就 —— 那是"看看改得怎么样"，
+                    // 不该污染真实进度
+                    if (!playtestMode_) {
+                        applyStars();
+                        saveManager_->updateProgress(save_.filename, world_->coins(),
+                                                     levelIndex_);
 
-                    newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
-                    if (newRecord_) {
-                        saveManager_->setLevelBestTime(save_.filename, levelIndex_,
-                                                       levelTime_);
+                        newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
+                        if (newRecord_) {
+                            saveManager_->setLevelBestTime(save_.filename, levelIndex_,
+                                                           levelTime_);
+                        }
                     }
 
                     SoundManager::instance().playLevelComplete();
@@ -217,8 +266,9 @@ void GameScene::subscribeWorldEvents() {
                     // ⭐ 庆祝振动
                     gp.vibrate(0.70f, 0.80f, 0.40f);
 
-                    // ⭐ 检查成就
-                    checkAchievements();
+                    // ⭐ 检查成就（试玩不解锁）
+                    if (!playtestMode_)
+                        checkAchievements();
 
                     screenFlashTimer_ = 0.35f;
                     screenFlashDuration_ = 0.35f;
@@ -257,11 +307,38 @@ bool GameScene::loadLevel(int index) {
         return false;
     }
 
-    level->setFont(font_);
-
     logger_->info("关卡已加载: level" + std::to_string(index) + " " +
                   std::to_string(level->width()) + "x" + std::to_string(level->height()) +
                   " 瓦片");
+
+    if (!buildWorld(std::move(level), index))
+        return false;
+
+    // ⭐ 读取新关的 PB（试玩不走这里 —— 试玩没有"关卡序号"这回事）
+    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[index - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
+
+    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
+        if (!intro_) {
+            intro_ = std::make_unique<LevelIntro>(*font_);
+        }
+        intro_->restart(index, static_cast<float>(world_->totalCoins()),
+                        world_->level().name());
+        introActive_ = true;
+    } else {
+        introActive_ = false;
+    }
+    return true;
+}
+
+bool GameScene::buildWorld(std::unique_ptr<Level> level, int index) {
+    if (!level)
+        return false;
+
+    level->setFont(font_);
 
     world_ = std::make_unique<GameWorld>(std::move(level), index,
                                          GameWorld::SpriteSheets::fromFactories());
@@ -284,24 +361,8 @@ bool GameScene::loadLevel(int index) {
     finalTotalCoins_ = 0;
     newRecord_ = false;
     tookDamageThisLevel_ = false;
-
-    // ⭐ 读取新关的 PB
-    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
-        prevBestTime_ = save_.levelBestTimes[index - 1];
-    } else {
-        prevBestTime_ = 0.f;
-    }
-
-    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
-        if (!intro_) {
-            intro_ = std::make_unique<LevelIntro>(*font_);
-        }
-        intro_->restart(index, static_cast<float>(world_->totalCoins()),
-                        world_->level().name());
-        introActive_ = true;
-    } else {
-        introActive_ = false;
-    }
+    // 试玩不放开场白：那个界面显示的是"关卡 N"，而试玩根本没有序号
+    introActive_ = false;
 
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
@@ -563,7 +624,8 @@ bool GameScene::advanceToNextLevel() {
                                             std::to_string(levelIndex_) +
                                             Str::T(Str::NotifLevelSuffix),
                                         NotificationType::Info);
-    saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
+    if (!playtestMode_)
+        saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
     return true;
 }
 

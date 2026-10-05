@@ -6,6 +6,7 @@
 #include "resource_manager.h"
 #include "log/logger.h"
 #include "level_validator.h"
+#include "playtest_request.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <string>
@@ -16,7 +17,8 @@ public:
     EditorScene(std::shared_ptr<Background> background,
                 std::shared_ptr<Preferences> preferences, const sf::Font& font,
                 std::shared_ptr<Logger> logger,
-                std::shared_ptr<ResourceManager> resources, std::shared_ptr<Paths> paths);
+                std::shared_ptr<ResourceManager> resources, std::shared_ptr<Paths> paths,
+                std::shared_ptr<PlaytestRequest> playtest);
 
     void onEnter() override;
 
@@ -29,6 +31,10 @@ public:
 private:
     void loadFile();
     void saveFile();
+
+    /// 按 F5：把**当前编辑中**（未保存）的内容交给关卡场景试玩。
+    /// 退出时走 `SceneId::Back` 就会回到编辑器 —— 编辑器是被 push 在下面的那一层。
+    void startPlaytest();
     void exportShareCode();
     void importShareCode();
 
@@ -66,6 +72,7 @@ private:
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<ResourceManager> resources_;
     std::shared_ptr<Paths> paths_;
+    std::shared_ptr<PlaytestRequest> playtest_;
     const sf::Font* font_ = nullptr;
 
     std::vector<std::string> lines_;
@@ -123,6 +130,9 @@ private:
 
     sf::Text hudText_;
     sf::Text hintText_;
+    // 试玩提示单独一行：**不**并进 EditorHint —— 改那条原文会让已有的四个语言
+    // 译文静默失效（lang 的键就是原文），而那条译文刚刚才补好
+    sf::Text playtestHintText_;
     sf::Text flashDraw_;
     sf::Text brushNameText_; // ⭐ 复用，不每帧构造/析构
 

@@ -303,6 +303,8 @@ R 重试    ESC 返回=R retry    ESC back
 门=Door
 横台=Platform H
 竖台=Platform V
+巡逻=Patrol
+飞行=Flyer
 
 # ===== 编辑器元素统计 =====
 移动平台=Platform
@@ -433,3 +435,6 @@ TEXT-GAME 控制台=TEXT-GAME Console
 最佳: =Best: 
 ★ 新纪录！=★ New Record!
 左键画/拖动连画  Shift+拖动矩形  右键擦  T可达性  G网格  Ctrl+滚轮缩放  WASD移动  Ctrl+S保存  Ctrl+Z撤销  Ctrl+N切文件  Ctrl+E导出  Ctrl+I导入  Ctrl+0重置缩放=LMB draw / drag to keep drawing  Shift+drag = rect  RMB erase  T reachability  G grid  Ctrl+Wheel zoom  WASD move  Ctrl+S save  Ctrl+Z undo  Ctrl+N next file  Ctrl+E export  Ctrl+I import  Ctrl+0 reset zoom
+F5 试玩当前编辑内容（退出后回到编辑器）=F5 playtest the current edit (exit returns to the editor)
+试玩=Playtest
+关卡里没有玩家出生点（P），先放一个再试玩=No player spawn (P) in this level - place one before playtesting

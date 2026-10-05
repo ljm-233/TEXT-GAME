@@ -24,13 +24,24 @@ struct BrushItem {
 };
 
 const BrushItem kBrushes[] = {
-    {'#', "墙", sf::Color(120, 120, 145)},   {' ', "橡皮", sf::Color(180, 70, 70)},
-    {'P', "玩家", sf::Color(100, 180, 255)}, {'E', "敌人", sf::Color(240, 80, 80)},
-    {'C', "金币", sf::Color(255, 215, 65)},  {'G', "终点", sf::Color(80, 240, 120)},
-    {'^', "尖刺", sf::Color(200, 200, 210)}, {'J', "跳台", sf::Color(0, 200, 255)},
-    {'S', "存档", sf::Color(255, 128, 0)},   {'K', "钥匙", sf::Color(255, 210, 60)},
-    {'L', "门", sf::Color(160, 100, 60)},    {'M', "横台", sf::Color(180, 100, 200)},
+    {'#', "墙", sf::Color(120, 120, 145)},
+    {' ', "橡皮", sf::Color(180, 70, 70)},
+    {'P', "玩家", sf::Color(100, 180, 255)},
+    {'E', "敌人", sf::Color(240, 80, 80)},
+    {'C', "金币", sf::Color(255, 215, 65)},
+    {'G', "终点", sf::Color(80, 240, 120)},
+    {'^', "尖刺", sf::Color(200, 200, 210)},
+    {'J', "跳台", sf::Color(0, 200, 255)},
+    {'S', "存档", sf::Color(255, 128, 0)},
+    {'K', "钥匙", sf::Color(255, 210, 60)},
+    {'L', "门", sf::Color(160, 100, 60)},
+    {'M', "横台", sf::Color(180, 100, 200)},
     {'V', "竖台", sf::Color(180, 100, 200)},
+    // 三种新敌人。名字走 Str:: 常量（翻译表的键就是中文原文），
+    // 颜色刻意与 E 的红色拉开：橙 / 蓝 / 绿。
+    {'W', Str::BrushPatrol, sf::Color(250, 160, 70)},
+    {'F', Str::BrushFlyer, sf::Color(120, 190, 250)},
+    {'B', Str::BrushJumper, sf::Color(130, 230, 140)},
 };
 
 constexpr int kBrushCount = static_cast<int>(sizeof(kBrushes) / sizeof(kBrushes[0]));
@@ -259,6 +270,112 @@ void drawTileIcon(sf::RenderTarget& rt, char ch, float x, float y, float s) {
         rt.draw(arrow);
         break;
     }
+    case 'W': {
+        // 巡逻：橙色身体 + 脚下的双向箭头（来回走）
+        sf::RectangleShape body({s * 0.58f, s * 0.4f});
+        body.setOrigin({s * 0.29f, s * 0.2f});
+        body.setPosition({cx, cy - s * 0.1f});
+        body.setFillColor(sf::Color(250, 160, 70));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(160, 90, 30));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.1f, s * 0.1f});
+        eye.setFillColor(sf::Color(50, 25, 0));
+        eye.setPosition({cx - s * 0.17f, cy - s * 0.16f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.07f, cy - s * 0.16f});
+        rt.draw(eye);
+
+        sf::RectangleShape track({s * 0.72f, s * 0.05f});
+        track.setOrigin({s * 0.36f, s * 0.025f});
+        track.setPosition({cx, cy + s * 0.28f});
+        track.setFillColor(sf::Color(255, 235, 200));
+        rt.draw(track);
+
+        sf::ConvexShape tip;
+        tip.setPointCount(3);
+        tip.setFillColor(sf::Color(255, 235, 200));
+        tip.setPoint(0, {cx - s * 0.44f, cy + s * 0.28f});
+        tip.setPoint(1, {cx - s * 0.28f, cy + s * 0.18f});
+        tip.setPoint(2, {cx - s * 0.28f, cy + s * 0.38f});
+        rt.draw(tip);
+        tip.setPoint(0, {cx + s * 0.44f, cy + s * 0.28f});
+        tip.setPoint(1, {cx + s * 0.28f, cy + s * 0.18f});
+        tip.setPoint(2, {cx + s * 0.28f, cy + s * 0.38f});
+        rt.draw(tip);
+        break;
+    }
+    case 'F': {
+        // 飞行：蓝色身体 + 翅膀 + 右侧的上下浮动箭头
+        sf::ConvexShape wing;
+        wing.setPointCount(3);
+        wing.setFillColor(sf::Color(150, 210, 255));
+        wing.setOutlineThickness(1.f);
+        wing.setOutlineColor(sf::Color(60, 130, 190));
+
+        wing.setPoint(0, {cx - s * 0.46f, cy - s * 0.26f});
+        wing.setPoint(1, {cx - s * 0.06f, cy - s * 0.06f});
+        wing.setPoint(2, {cx - s * 0.14f, cy + s * 0.2f});
+        rt.draw(wing);
+
+        wing.setPoint(0, {cx + s * 0.46f, cy - s * 0.26f});
+        wing.setPoint(1, {cx + s * 0.06f, cy - s * 0.06f});
+        wing.setPoint(2, {cx + s * 0.14f, cy + s * 0.2f});
+        rt.draw(wing);
+
+        float r = s * 0.2f;
+        sf::CircleShape body(r);
+        body.setOrigin({r, r});
+        body.setPosition({cx, cy});
+        body.setFillColor(sf::Color(120, 190, 250));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(40, 100, 160));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.09f, s * 0.09f});
+        eye.setFillColor(sf::Color(255, 255, 255));
+        eye.setPosition({cx - s * 0.13f, cy - s * 0.09f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.04f, cy - s * 0.09f});
+        rt.draw(eye);
+        break;
+    }
+    case 'B': {
+        // 跳跃：绿色身体贴地 + 头顶的起跳箭头
+        sf::RectangleShape ground({s * 0.76f, s * 0.06f});
+        ground.setOrigin({s * 0.38f, s * 0.03f});
+        ground.setPosition({cx, cy + s * 0.4f});
+        ground.setFillColor(sf::Color(90, 160, 90));
+        rt.draw(ground);
+
+        float r = s * 0.24f;
+        sf::CircleShape body(r);
+        body.setOrigin({r, r});
+        body.setPosition({cx, cy + s * 0.12f});
+        body.setFillColor(sf::Color(130, 230, 140));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(40, 130, 60));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.09f, s * 0.09f});
+        eye.setFillColor(sf::Color(20, 60, 25));
+        eye.setPosition({cx - s * 0.14f, cy + s * 0.06f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.05f, cy + s * 0.06f});
+        rt.draw(eye);
+
+        sf::ConvexShape arrow;
+        arrow.setPointCount(3);
+        arrow.setPoint(0, {cx, cy - s * 0.44f});
+        arrow.setPoint(1, {cx - s * 0.16f, cy - s * 0.2f});
+        arrow.setPoint(2, {cx + s * 0.16f, cy - s * 0.2f});
+        arrow.setFillColor(sf::Color(200, 255, 200));
+        arrow.setOutlineThickness(1.f);
+        arrow.setOutlineColor(sf::Color(40, 130, 60));
+        rt.draw(arrow);
+        break;
+    }
     default: {
         float r = s * 0.2f;
         sf::CircleShape dot(r);
@@ -277,15 +394,18 @@ EditorScene::EditorScene(std::shared_ptr<Background> background,
                          std::shared_ptr<Preferences> preferences, const sf::Font& font,
                          std::shared_ptr<Logger> logger,
                          std::shared_ptr<ResourceManager> resources,
-                         std::shared_ptr<Paths> paths)
+                         std::shared_ptr<Paths> paths,
+                         std::shared_ptr<PlaytestRequest> playtest)
       : background_(std::move(background)),
         preferences_(std::move(preferences)),
         logger_(std::move(logger)),
         resources_(std::move(resources)),
         paths_(std::move(paths)),
+        playtest_(std::move(playtest)),
         font_(&font),
         hudText_(font, sf::String(), 18),
         hintText_(font, sf::String(), 15),
+        playtestHintText_(font, sf::String(), 15),
         flashDraw_(font, sf::String(), 24),
         brushNameText_(font, sf::String(), 14) {
     hudText_.setFillColor(sf::Color(240, 240, 250));
@@ -301,6 +421,10 @@ EditorScene::EditorScene(std::shared_ptr<Background> background,
     hintText_.setFillColor(sf::Color(200, 200, 220));
     hintText_.setOutlineThickness(2.f);
     hintText_.setOutlineColor(sf::Color(0, 0, 0, 180));
+    // 试玩提示用亮一点的颜色：它是这一屏最值得先看到的一句话
+    playtestHintText_.setFillColor(sf::Color(140, 230, 170));
+    playtestHintText_.setOutlineThickness(2.f);
+    playtestHintText_.setOutlineColor(sf::Color(0, 0, 0, 180));
 
     flashDraw_.setFillColor(sf::Color(120, 255, 150));
     flashDraw_.setOutlineThickness(2.f);
@@ -484,6 +608,19 @@ void EditorScene::loadFile() {
     geometryDirty_ = true;
     reachDirty_ = true;
     levelIconsDirty_ = true;
+}
+
+void EditorScene::startPlaytest() {
+    // ⚠️ 不落盘：试玩的语义就是"玩你现在改到一半的那份"。
+    //    顺手存一下看着贴心，其实会在用户没按 Ctrl+S 的时候覆盖磁盘上的关卡。
+    if (!PlaytestRequest::hasPlayerSpawn(lines_)) {
+        showFlash(Str::T(Str::PlaytestNoPlayer), 2.5f);
+        return;
+    }
+    if (playtest_) {
+        playtest_->request(lines_, currentFileName());
+        nextScene_ = SceneId::Game;
+    }
 }
 
 void EditorScene::saveFile() {
@@ -748,12 +885,17 @@ sf::Vector2i EditorScene::screenToTile(sf::Vector2i pixel, sf::Vector2u winSize)
 sf::FloatRect EditorScene::brushButtonRect(int idx, sf::Vector2u winSize) const {
     const float winW = static_cast<float>(winSize.x);
     const float winH = static_cast<float>(winSize.y);
-    const float totalW = kBrushCount * kButtonW + (kBrushCount - 1) * kButtonGap;
+    // 笔刷从 13 个涨到 16 个之后，固定 84px 在 1280 宽的窗口里就摆不下了
+    // （首尾两个按钮会被切掉一半，还看不出来）。这里按窗口宽度自适应收窄，
+    // 命中测试与笔刷条预渲染共用这同一份几何，所以不会出现"看到的位置点不到"。
+    const float btnW =
+        std::min(kButtonW, (winW - (kBrushCount - 1) * kButtonGap) / kBrushCount);
+    const float totalW = kBrushCount * btnW + (kBrushCount - 1) * kButtonGap;
     const float startX = (winW - totalW) * 0.5f;
     const float barY = winH - kBrushBarHeight;
     const float btnY = barY + (kBrushBarHeight - kButtonH) * 0.5f;
-    return sf::FloatRect({startX + idx * (kButtonW + kButtonGap), btnY},
-                         {kButtonW, kButtonH});
+    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY},
+                         {btnW, kButtonH});
 }
 
 int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const {
@@ -772,6 +914,10 @@ int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const
 
 void EditorScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (kp->code == sf::Keyboard::Key::F5) {
+            startPlaytest();
+            return;
+        }
         if (kp->code == sf::Keyboard::Key::Escape) {
             nextScene_ = SceneId::Back;
             return;
@@ -1141,7 +1287,10 @@ void EditorScene::render(Window& window) {
                 ++statPlayer;
                 break;
             case 'E':
-                ++statEnemy;
+            case 'W':
+            case 'F':
+            case 'B':
+                ++statEnemy; // 三种新敌人也算进「敌人」统计，别让它们漏掉
                 break;
             case 'C':
                 ++statCoin;
@@ -1297,6 +1446,10 @@ void EditorScene::render(Window& window) {
     hintText_.setString(toSf(Str::T(Str::EditorHint)));
     hintText_.setPosition({20.f, winH - kBrushBarHeight - 22.f});
     rt.draw(hintText_);
+
+    playtestHintText_.setString(toSf(Str::T(Str::HintPlaytest)));
+    playtestHintText_.setPosition({20.f, winH - kBrushBarHeight - 44.f});
+    rt.draw(playtestHintText_);
 
     // ⭐ 笔刷条预渲染
     sf::Vector2i mousePos = sf::Mouse::getPosition(window.native());

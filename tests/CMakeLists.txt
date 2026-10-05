@@ -17,6 +17,7 @@ add_executable(unit_tests
     test_scene_manager.cpp
     test_layers.cpp
     test_entities.cpp
+    test_enemy.cpp
     test_game_world.cpp
     test_level_codec.cpp
     test_save_manager.cpp
@@ -31,6 +32,7 @@ add_executable(unit_tests
     test_settings_share.cpp
     test_particle_system.cpp
     test_keybindings.cpp
+    test_playtest_request.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )

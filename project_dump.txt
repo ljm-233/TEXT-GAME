@@ -1,4 +1,660 @@
 
+===== ./include/scene/playtest_request.h =====
+#pragma once
+#include <optional>
+#include <string>
+#include <vector>
+
+/// 编辑器「试玩」的交接通道：把**当前编辑中**（未保存）的关卡从编辑器交给关卡场景。
+///
+/// 为什么需要它：`GameScene` 只认磁盘上的关卡序号（`levelIndex_`），而试玩的语义
+/// 恰恰是"玩你现在改到一半的那份"。既有的交接范式是"共享服务持有待处理数据"
+/// （`SaveManager::setPendingSave`），这里照抄那个形状 —— 而不是给场景加一堆
+/// 只有试玩才用得上的字段。
+///
+/// ⚠️ **取走是一次性的**：`take()` 之后请求就没了。否则试玩结束回到编辑器、
+///  以后再从选关页进普通关卡，会莫名其妙又玩到那份旧草稿 —— 而且没有任何提示，
+///  看起来就像"关卡加载错了"。
+class PlaytestRequest {
+public:
+    struct Request {
+        std::vector<std::string> lines; ///< 关卡的 ASCII 文本（一行一条）
+        std::string sourceName;         ///< 来源文件名，只用于显示
+    };
+
+    /// 编辑器按 F5 时调用
+    void request(std::vector<std::string> lines, std::string sourceName) {
+        pending_ = Request{std::move(lines), std::move(sourceName)};
+    }
+
+    /// 取走（取一次就清空）。没有待处理请求时返回 nullopt。
+    std::optional<Request> take() {
+        auto out = std::move(pending_);
+        pending_.reset();
+        return out;
+    }
+
+    bool has() const { return pending_.has_value(); }
+    void clear() { pending_.reset(); }
+
+    /// 这份草稿能不能试玩 —— 至少要有一个玩家出生点 'P'。
+    ///
+    /// 没有 'P' 的话关卡**确实**能构造出来，但玩家会被摆在 (0,0)，
+    /// 大概率正好卡在边界墙里：画面在动、按什么都没反应。与其让用户对着一个
+    /// 动不了的画面发愣，不如在按 F5 的时候就说清楚。
+    static bool hasPlayerSpawn(const std::vector<std::string>& lines) {
+        for (const auto& line : lines)
+            if (line.find('P') != std::string::npos)
+                return true;
+        return false;
+    }
+
+private:
+    std::optional<Request> pending_;
+};
+
+===== ./tests/test_enemy.cpp =====
+#include "doctest.h"
+#include "enemy.h"
+#include "game_constants.h"
+#include "game_world.h"
+#include "level.h"
+
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
+
+// 三种新敌人（W 巡逻 / F 飞行 / B 跳跃）的行为与生成。
+//
+// 和 test_entities.cpp 一样，这里**一个 render() 都不调**，全部走
+// "无 sprite 模式"（构造 Enemy 时 sheet 传 nullptr）—— sprite factory
+// 内部用 RenderTexture，没有 GL 上下文时 SFML 会直接 SIGABRT。
+namespace {
+
+constexpr int kTile = 32;
+constexpr float kStep = 1.f / 60.f;
+
+/// 造一个 20×5 的房间。row2 是第 2 行的中间 18 个字符（首尾 '#' 由这里补）。
+/// 第 4 行整行是地板，第 3 行是空的 —— 所以第 2 行的敌人脚下隔了一格。
+std::unique_ptr<Level> makeRoom(const std::string& row2) {
+    REQUIRE(row2.size() == 18);
+    const std::string text = "####################\n"
+                             "#                  #\n"
+                             "#" +
+                             row2 +
+                             "#\n"
+                             "#                  #\n"
+                             "####################";
+    auto level = std::make_unique<Level>();
+    level->loadFromString(text);
+    return level;
+}
+
+/// row2 里第 nth 次出现的 ch 所在的 tile 像素坐标
+Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
+    int seen = 0;
+    for (std::size_t i = 0; i < row2.size(); ++i) {
+        if (row2[i] == ch && ++seen == nth)
+            return {static_cast<float>(static_cast<int>(i) + 1) * kTile,
+                    2.f * kTile};
+    }
+    REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
+    return {-1.f, -1.f};
+}
+
+/// 地板只从 tile 6 往右的一段平台，左边是空的（和 test_entities.cpp 用的是同一张图）
+Level makeLedgeLevel() {
+    const char* text =
+        "####################\n"
+        "#                  #\n"
+        "#                  #\n"
+        "#                  #\n"
+        "#     ##############";
+    Level level;
+    level.loadFromString(text);
+    return level;
+}
+
+/// 左右两边都有墙、地面只有 tile 1 一格空档的房间
+Level makeWallLevel() {
+    const char* text =
+        "####################\n"
+        "#                  #\n"
+        "#                  #\n"
+        "##                 #\n"
+        "####################";
+    Level level;
+    level.loadFromString(text);
+    return level;
+}
+
+/// 统计 world 里某种 kind 的敌人数量
+int countKind(const GameWorld& world, EnemyKind kind) {
+    int n = 0;
+    for (const auto& o : world.objects())
+        if (o->type() == GameObject::Type::Enemy &&
+            static_cast<const Enemy*>(o.get())->kind() == kind)
+            ++n;
+    return n;
+}
+
+} // namespace
+
+// ============================================================
+// 关卡字符 → spawn 容器
+// ============================================================
+
+TEST_CASE("Level - W/F/B 各自进自己的容器，E 一个都不受影响") {
+    const std::string row = " W  F  B  E       ";
+    auto level = makeRoom(row);
+
+    CHECK(level->patrolSpawns().size() == 1);
+    CHECK(level->flyerSpawns().size() == 1);
+    CHECK(level->jumperSpawns().size() == 1);
+    CHECK(level->enemySpawns().size() == 1); // E 还是走老容器
+
+    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W').x));
+    CHECK(level->patrolSpawns()[0].y == doctest::Approx(tileOf(row, 'W').y));
+    CHECK(level->flyerSpawns()[0].x == doctest::Approx(tileOf(row, 'F').x));
+    CHECK(level->jumperSpawns()[0].x == doctest::Approx(tileOf(row, 'B').x));
+    CHECK(level->enemySpawns()[0].x == doctest::Approx(tileOf(row, 'E').x));
+}
+
+TEST_CASE("Level - 同一种新敌人可以放多个") {
+    const std::string row = " W W  F  B  E     ";
+    auto level = makeRoom(row);
+
+    REQUIRE(level->patrolSpawns().size() == 2);
+    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W', 1).x));
+    CHECK(level->patrolSpawns()[1].x == doctest::Approx(tileOf(row, 'W', 2).x));
+    CHECK(level->enemySpawns().size() == 1);
+}
+
+TEST_CASE("Level - 重新加载会清空三种新敌人的容器") {
+    Level level;
+    level.loadFromString("####\n#WF#\n#B #\n####");
+    REQUIRE(level.patrolSpawns().size() == 1);
+    REQUIRE(level.flyerSpawns().size() == 1);
+    REQUIRE(level.jumperSpawns().size() == 1);
+
+    level.loadFromString("####\n#  #\n#  #\n####");
+
+    CHECK(level.patrolSpawns().empty());
+    CHECK(level.flyerSpawns().empty());
+    CHECK(level.jumperSpawns().empty());
+}
+
+// ============================================================
+// GameWorld 按 kind 生成
+// ============================================================
+
+TEST_CASE("GameWorld - 按关卡字符生成对应 kind 的敌人，数量与位置正确") {
+    const std::string row = " W  F  B  E       ";
+    GameWorld world(makeRoom(row), 1);
+
+    int enemies = 0;
+    for (const auto& o : world.objects())
+        if (o->type() == GameObject::Type::Enemy)
+            ++enemies;
+    CHECK(enemies == 4);
+    CHECK(countKind(world, EnemyKind::Basic) == 1);
+    CHECK(countKind(world, EnemyKind::Patrol) == 1);
+    CHECK(countKind(world, EnemyKind::Flyer) == 1);
+    CHECK(countKind(world, EnemyKind::Jumper) == 1);
+
+    // 位置：敌人碰撞盒是 28×28，在格子里居中 → 中心 = 格子左上 + 16
+    for (const auto& o : world.objects()) {
+        if (o->type() != GameObject::Type::Enemy)
+            continue;
+        const auto* e = static_cast<const Enemy*>(o.get());
+        char ch = '?';
+        switch (e->kind()) {
+        case EnemyKind::Basic:  ch = 'E'; break;
+        case EnemyKind::Patrol: ch = 'W'; break;
+        case EnemyKind::Flyer:  ch = 'F'; break;
+        case EnemyKind::Jumper: ch = 'B'; break;
+        }
+        const Vec2 expected = tileOf(row, ch);
+        CHECK(e->bounds().center().x == doctest::Approx(expected.x + 16.f));
+        CHECK(e->bounds().center().y == doctest::Approx(expected.y + 16.f));
+    }
+}
+
+TEST_CASE("Enemy - 旧的三参数构造等价于 EnemyKind::Basic") {
+    auto level = makeRoom("                  ");
+    Enemy legacy({320.f, 96.f}, kTile, nullptr);
+
+    CHECK(legacy.kind() == EnemyKind::Basic);
+}
+
+// ============================================================
+// W 巡逻
+// ============================================================
+
+TEST_CASE("Enemy - 巡逻(W) 走到平台边缘会掉头，不会掉下去") {
+    Level level = makeLedgeLevel();
+    Enemy enemy(EnemyKind::Patrol, {8 * kTile + 0.f, 3 * kTile + 0.f}, kTile,
+                nullptr);
+
+    bool turned = false;
+    float minLeft = enemy.bounds().left();
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(0.02f, level);
+        const float left = enemy.bounds().left();
+        if (left > minLeft + 0.5f) { // 开始往回走
+            turned = true;
+            break;
+        }
+        minLeft = std::min(minLeft, left);
+    }
+
+    CHECK_MESSAGE(turned, "巡逻兵走到平台边缘没有掉头");
+    // 平台从 tile 6 开始（x = 192），掉头点必须还在平台上
+    CHECK_MESSAGE(minLeft >= 6.f * kTile - 0.001f,
+                  "巡逻兵已经走出平台才掉头，会掉下去");
+}
+
+TEST_CASE("Enemy - 巡逻(W) 掉头时会在端点停一下") {
+    Level level = makeWallLevel();
+    Enemy enemy(EnemyKind::Patrol, {3 * kTile + 0.f, 3 * kTile + 0.f}, kTile,
+                nullptr);
+
+    // 先向左走，直到第一帧"没有继续向左"——那就是掉头帧
+    bool reversed = false;
+    int stalled = 0;
+    for (int i = 0; i < 400; ++i) {
+        const float before = enemy.bounds().x;
+        enemy.update(0.02f, level);
+        const float after = enemy.bounds().x;
+
+        if (!reversed) {
+            if (after < before) // 还在向左
+                continue;
+            reversed = true; // 掉头帧（不论有没有停顿，这一帧都不动）
+            continue;
+        }
+        if (std::abs(after - before) < 0.001f)
+            ++stalled;
+        else
+            break;
+    }
+
+    REQUIRE(reversed);
+    // kPatrolPauseTime = 0.35s，0.02s 一帧 → 大约 17 帧
+    CHECK(stalled >= 10);
+}
+
+TEST_CASE("Enemy - 现有 E(Basic) 掉头后立刻反向，一个新字段都没碰") {
+    Level level = makeWallLevel();
+    Enemy enemy({3 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+
+    bool reversed = false;
+    int stalled = 0;
+    for (int i = 0; i < 400; ++i) {
+        const float before = enemy.bounds().x;
+        enemy.update(0.02f, level);
+        const float after = enemy.bounds().x;
+
+        if (!reversed) {
+            if (after < before)
+                continue;
+            reversed = true;
+            continue;
+        }
+        if (std::abs(after - before) < 0.001f)
+            ++stalled;
+        else
+            break;
+    }
+
+    REQUIRE(reversed);
+    CHECK_MESSAGE(stalled == 0, "E 掉头之后不该有任何停顿 —— 它的行为必须逐字不变");
+}
+
+TEST_CASE("Enemy - E 的行为与新增 kind 之前一致：不受重力，y 恒定") {
+    auto level = makeRoom("                  ");
+    Enemy enemy({8 * kTile + 0.f, 2 * kTile + 0.f}, kTile, nullptr);
+    const float y0 = enemy.bounds().y;
+
+    bool movedX = false;
+    for (int i = 0; i < 120; ++i) {
+        enemy.update(kStep, level);
+        CHECK(enemy.bounds().y == doctest::Approx(y0)); // 没有重力
+        movedX = movedX || (enemy.bounds().x < 8 * kTile);
+    }
+    CHECK(movedX); // 还是照常左右走
+}
+
+// ============================================================
+// F 飞行
+// ============================================================
+
+TEST_CASE("Enemy - 飞行(F) 不受重力：正弦上下浮动，永不落地") {
+    auto level = makeRoom("                  ");
+    Enemy enemy(EnemyKind::Flyer, {8 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
+                nullptr);
+
+    const float y0 = enemy.bounds().y;
+    float minY = y0, maxY = y0;
+    bool touchedGround = false;
+    for (int i = 0; i < 240; ++i) { // 4 秒 > 一个正弦周期
+        enemy.update(kStep, level);
+        minY = std::min(minY, enemy.bounds().y);
+        maxY = std::max(maxY, enemy.bounds().y);
+        if (enemy.bounds().bottom() >= 4.f * kTile)
+            touchedGround = true;
+    }
+
+    CHECK_FALSE(touchedGround); // 地板在第 4 行，飞行兵永远够不着
+    CHECK_MESSAGE(maxY - minY > 30.f, "飞行兵没有上下浮动（正弦没生效）");
+    // 浮动中心就是出生高度，振幅不超过 kFlyerBobAmp
+    CHECK(minY >= y0 - GameConst::kFlyerBobAmp - 0.5f);
+    CHECK(maxY <= y0 + GameConst::kFlyerBobAmp + 0.5f);
+}
+
+TEST_CASE("Enemy - 飞行(F) 水平巡游，撞墙反向") {
+    auto level = makeRoom("                  ");
+    // 贴着左墙出生，一路向左，很快就会撞墙
+    Enemy enemy(EnemyKind::Flyer, {2 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
+                nullptr);
+
+    bool movedLeft = false;
+    bool turned = false;
+    float minX = enemy.bounds().x;
+    bool leftLevel = false;
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(kStep, level);
+        const float x = enemy.bounds().x;
+        if (x < minX - 0.001f) {
+            minX = x;
+            movedLeft = true;
+        } else if (movedLeft && x > minX + 0.5f) {
+            turned = true;
+            break;
+        }
+        if (enemy.bounds().left() < 0.f ||
+            enemy.bounds().right() > static_cast<float>(level.pixelWidth()))
+            leftLevel = true;
+    }
+
+    CHECK(movedLeft);
+    CHECK_MESSAGE(turned, "飞行兵撞到墙没有反向");
+    CHECK_FALSE(leftLevel);
+}
+
+TEST_CASE("Enemy - 飞行(F) 走到关卡边界也会反向（没有墙的关卡）") {
+    // 故意做一个左右都没有墙的关卡
+    const char* text =
+        "                    \n"
+        "                    \n"
+        "                    \n"
+        "                    \n"
+        "####################";
+    Level level;
+    level.loadFromString(text);
+
+    Enemy enemy(EnemyKind::Flyer, {1 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
+                nullptr);
+
+    bool turned = false;
+    float minX = enemy.bounds().x;
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(kStep, level);
+        const float x = enemy.bounds().x;
+        if (x < minX) {
+            minX = x;
+        } else if (x > minX + 0.5f) {
+            turned = true;
+            break;
+        }
+    }
+
+    CHECK(turned);
+    // 边界检查是在移动之前做的，所以最多越界一帧的位移
+    CHECK(minX > -GameConst::kFlyerSpeed * kStep - 0.001f);
+}
+
+// ============================================================
+// B 跳跃
+// ============================================================
+
+TEST_CASE("Enemy - 跳跃(B) 会落到地面，然后周期性起跳") {
+    auto level = makeRoom("                  ");
+    Enemy enemy(EnemyKind::Jumper, {8 * kTile + 0.f, 2 * kTile + 0.f}, kTile,
+                nullptr);
+
+    // 先落地（地板在第 4 行，顶面 y = 128 → 敌人 y = 128 - 28 = 100）
+    for (int i = 0; i < 120 && enemy.bounds().y < 99.5f; ++i)
+        enemy.update(kStep, level);
+    const float groundY = enemy.bounds().y;
+    REQUIRE(groundY == doctest::Approx(100.f));
+
+    int jumps = 0;
+    float minY = groundY;
+    float maxY = groundY;
+    bool onGround = true;
+    for (int i = 0; i < 300; ++i) { // 5 秒：起跳周期 ≈ 0.9s 待机 + 0.47s 滞空
+        enemy.update(kStep, level);
+        const float y = enemy.bounds().y;
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+
+        const bool nowOnGround = y >= groundY - 0.5f;
+        if (onGround && !nowOnGround)
+            ++jumps;
+        onGround = nowOnGround;
+    }
+
+    CHECK_MESSAGE(minY < groundY - 30.f, "跳跃兵根本没有离地（起跳没生效）");
+    CHECK_MESSAGE(jumps >= 2, "跳跃兵只跳了一次 —— 不是周期性的");
+    // 每次都落回同一块地板，从不陷进去
+    CHECK(maxY - groundY < 0.5f);
+}
+
+TEST_CASE("Enemy - E 不会跳（重力只对跳跃(B) 生效）") {
+    auto level = makeRoom("                  ");
+    Enemy enemy({8 * kTile + 0.f, 2 * kTile + 0.f}, kTile, nullptr);
+    const float y0 = enemy.bounds().y;
+
+    for (int i = 0; i < 300; ++i) {
+        enemy.update(kStep, level);
+        CHECK(enemy.bounds().y == doctest::Approx(y0));
+    }
+}
+
+===== ./tests/test_playtest_request.cpp =====
+#include "doctest.h"
+#include "scene/playtest_request.h"
+
+#include "level.h"
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+
+namespace fs = std::filesystem;
+
+// 编辑器「试玩」的交接通道。
+//
+// 这个类本身很薄（就是一个可有可无的槽位），但它的**一次性语义**是关键的：
+// 如果 take() 之后不清空，那么"试玩 → 退出回编辑器 → 从选关页进正式关卡"
+// 这一串会让正式关卡又玩到那份旧草稿，而且没有任何提示 —— 看起来就像
+// "关卡加载错了"。
+
+namespace {
+
+std::vector<std::string> draft() {
+    return {"#####", "#P C#", "#####"};
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 取走一次之后就没有了") {
+    PlaytestRequest req;
+    CHECK(!req.has());
+
+    req.request(draft(), "editor.txt");
+    CHECK(req.has());
+
+    auto first = req.take();
+    REQUIRE(first.has_value());
+    CHECK(first->lines.size() == 3);
+    CHECK(first->sourceName == "editor.txt");
+
+    // ⚠️ 这一条是整个类的存在理由：第二次必须是空的
+    CHECK(!req.has());
+    CHECK(!req.take().has_value());
+}
+
+TEST_CASE("试玩交接 - 没有请求时 take 返回空") {
+    PlaytestRequest req;
+    CHECK(!req.take().has_value());
+    req.clear(); // 空的时候 clear 也不该有事
+    CHECK(!req.has());
+}
+
+TEST_CASE("试玩交接 - 后一次请求覆盖前一次") {
+    PlaytestRequest req;
+    req.request({"aa"}, "first.txt");
+    req.request({"bb", "cc"}, "second.txt");
+
+    auto r = req.take();
+    REQUIRE(r.has_value());
+    CHECK(r->lines.size() == 2);
+    CHECK(r->sourceName == "second.txt");
+}
+
+TEST_CASE("试玩交接 - clear 能丢掉待处理请求") {
+    PlaytestRequest req;
+    req.request(draft(), "editor.txt");
+    req.clear();
+    CHECK(!req.has());
+    CHECK(!req.take().has_value());
+}
+
+TEST_CASE("试玩交接 - 没有玩家出生点的草稿要能识别出来") {
+    // 没有 'P'：关卡能构造出来，但玩家会被摆在 (0,0)，大概率卡在边界墙里
+    CHECK(!PlaytestRequest::hasPlayerSpawn({"#####", "#   #", "#####"}));
+    CHECK(!PlaytestRequest::hasPlayerSpawn({}));
+
+    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#P  #", "#####"}));
+    // 'P' 出现在任意位置都算（行中间、行尾）
+    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#  P#", "#####"}));
+    CHECK(PlaytestRequest::hasPlayerSpawn({"P"}));
+}
+
+TEST_CASE("试玩交接 - 空草稿也能安全地放进通道") {
+    PlaytestRequest req;
+    req.request({}, "");
+    REQUIRE(req.has());
+    auto r = req.take();
+    REQUIRE(r.has_value());
+    CHECK(r->lines.empty());
+    CHECK(r->sourceName.empty());
+}
+
+// ============================================================
+// 「编辑器里的内容 → 关卡场景能解析」——这是试玩功能真正的风险点
+// ============================================================
+//
+// 上面几条只验了交接通道本身。但试玩失败最可能的方式是：编辑器内存里的那份
+// `lines_` 格式与 `Level::loadFromString` 对不上 —— 功能表面上是通的（F5 能按、
+// 场景也切了），实际一进就弹"关卡解析失败"。
+//
+// 所以这里**原样复刻**两边的变换：
+//   EditorScene::loadFile()     去掉 '\r'、按最长行补空格到等宽
+//   EditorScene::startPlaytest()  逐行拼接、每行末尾补 '\n'
+// 然后把结果交给真的 Level 解析，并且对 assets/levels 里的**真实文件**也跑一遍。
+
+namespace {
+
+/// 复刻 EditorScene::loadFile 的读盘变换（\r 去掉、补到等宽）
+std::vector<std::string> readLikeEditor(const fs::path& path) {
+    std::vector<std::string> lines;
+    std::ifstream in(path);
+    REQUIRE(in.good());
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        lines.push_back(line);
+    }
+    std::size_t w = 0;
+    for (const auto& l : lines)
+        w = std::max(w, l.size());
+    for (auto& l : lines)
+        l.resize(w, ' ');
+    return lines;
+}
+
+/// 复刻 EditorScene::startPlaytest 的拼接
+std::string joinLikePlaytest(const std::vector<std::string>& lines) {
+    std::string text;
+    for (const auto& line : lines) {
+        text += line;
+        text += '\n';
+    }
+    return text;
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 编辑器读过的东西一定能被关卡解析（真实关卡文件）") {
+    const fs::path dir = fs::path(PROJECT_ROOT) / "assets" / "levels";
+    REQUIRE(fs::is_directory(dir));
+
+    int checked = 0;
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".txt")
+            continue;
+        const auto lines = readLikeEditor(entry.path());
+        REQUIRE(!lines.empty());
+
+        Level level;
+        const bool ok = level.loadFromString(joinLikePlaytest(lines));
+        CHECK_MESSAGE(ok, "关卡解析失败: " << entry.path().filename().string());
+
+        // 尺寸要对得上（编辑器是按"最长行"算宽度的）
+        std::size_t w = 0;
+        for (const auto& l : lines)
+            w = std::max(w, l.size());
+        CHECK(level.width() == static_cast<int>(w));
+        CHECK(level.height() == static_cast<int>(lines.size()));
+
+        // 而且必须能通过试玩的前置检查（有玩家出生点）
+        const bool spawn = PlaytestRequest::hasPlayerSpawn(lines);
+        CHECK_MESSAGE(spawn, "没有玩家出生点: " << entry.path().filename().string());
+        ++checked;
+    }
+    CHECK(checked >= 5); // 仓库里现在有 6 个
+}
+
+TEST_CASE("试玩交接 - 编辑器新建关卡的初始格子也能被解析") {
+    // 复刻 EditorScene::loadFile 在"文件不存在"时铺的那张空框 ——
+    // 新建一个关卡直接按 F5 是最常见的用法之一
+    constexpr int w = 40;
+    constexpr int h = 22;
+    std::vector<std::string> lines(h, std::string(w, ' '));
+    for (int x = 0; x < w; ++x) {
+        lines[0][x] = '#';
+        lines[h - 1][x] = '#';
+    }
+    for (int y = 0; y < h; ++y) {
+        lines[y][0] = '#';
+        lines[y][w - 1] = '#';
+    }
+    lines[2][3] = 'P';
+
+    CHECK(PlaytestRequest::hasPlayerSpawn(lines));
+
+    Level level;
+    CHECK(level.loadFromString(joinLikePlaytest(lines)));
+    CHECK(level.width() == w);
+    CHECK(level.height() == h);
+}
+
 ===== ./.github/workflows/build.yml =====
 name: Build & Test
 
@@ -1116,6 +1772,35 @@ SettingsScene 只负责 Tab 切换、把事件/更新/渲染分发给当前页�
 （顺带一个容易吓人的点：`addToggle()` / `addMulti()` 返回的是**堆上对象**的地址，
 缓存下来是安全的 —— vector 扩容搬的是 `unique_ptr`，指向的对象不动。）
 
+### 编辑器「试玩」（F5）
+
+编辑器按 F5 把**当前编辑中（未保存）**的关卡直接丢进游戏跑，退出后回到编辑器继续改。
+三步：
+
+1. `PlaytestRequest`（`include/scene/playtest_request.h`，header-only）是个交接槽：
+   编辑器 `request(lines_, 文件名)`，`GameScene::onEnter` 里 `take()` 取走
+2. `GameScene` 走"从内存建关卡"这条路（`buildWorld()`），而不是 `loadLevel()` 读磁盘
+3. 退出走 `SceneId::Back` —— 而 `nextScene_ = SceneId::X` 是 **push**
+   （`Game::switchScene` 里 `push` / `Back→pop`），所以编辑器本来就在栈下面，
+   "返回"天然回到编辑器。这一点不用额外写代码，但**依赖它**，改场景切换时要记得
+
+几条刻意的设计：
+
+- **`take()` 是一次性的**。不清空的话，"试玩 → 退出 → 从选关页进正式关卡"
+  会让人又玩到那份旧草稿，看起来像"关卡加载错了"
+- **试玩不写任何存档/PB/成就**（`playtestMode_` 挡着四处写入点）。试玩是
+  "看看改得怎么样"，污染真实进度是最让人恼火的那种 bug
+- **正式关卡进场景时会把 `playtestMode_` 清掉**。不清的话，上一条会反向生效：
+  正式关卡也不写存档了，而且完全不报错
+- **F5 不落盘**。顺手存一下看着贴心，实际会在用户没按 Ctrl+S 时覆盖磁盘上的关卡
+- 没有玩家出生点（`P`）时按 F5 只给提示、不进游戏 —— 那种关卡能构造出来，
+  但玩家会被摆在 (0,0) 卡在边界墙里
+
+⚠️ 两边格式对不上是这功能最可能坏的方式（F5 能按、场景也切了，一进去弹
+"关卡解析失败"）。`tests/test_playtest_request.cpp` 里**原样复刻**了
+`EditorScene::loadFile()` 的读盘变换（去 `\r`、补到等宽）与 `startPlaytest()`
+的拼接，再对 `assets/levels/` 里的**真实文件**跑一遍解析 —— 改任一边的格式都会红。
+
 ### 渲染管线
 
 ```
@@ -1470,6 +2155,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
 | KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
+| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **真实关卡走一遍编辑器→试玩的格式变换**) | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
@@ -2462,7 +3148,7 @@ message(STATUS "=== 构建配置完成 ===")
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**311 个单元测试用例 / 5167 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**324 个单元测试用例 / 5255 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -3030,7 +3716,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，311 个用例 / 5167 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，324 个用例 / 5255 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
@@ -6566,11 +7252,29 @@ private:
 #include <SFML/Graphics.hpp>
 #include <memory>
 
+/// 敌人种类。关卡字符 → 行为：
+///
+///   Basic  ('E') 现有敌人：左右走，撞墙或平台边缘掉头。
+///   Patrol ('W') 巡逻：与 Basic 同一套走路逻辑，唯一区别是**掉头时在端点停一下**
+///                      （Basic 掉头立刻反向；见 Enemy::updateWalk）。
+///                      说明：现有 E 的 cliffAhead 已经会在平台边缘掉头（有测试
+///                      test_entities.cpp「Enemy - 走到平台边缘前掉头」守着），
+///                      所以 W 与 E 的差别不能落在"会不会掉下平台"上，
+///                      只能额外给 W 一个可辨认的行为。
+///   Flyer  ('F') 飞行：不受重力，按正弦上下浮动 + 水平缓慢巡游，撞墙/关卡边界反向。
+///   Jumper ('B') 跳跃：受重力，趴在地上，周期性起跳，落地后歇一会儿再跳。
+enum class EnemyKind { Basic, Patrol, Flyer, Jumper };
+
 class Enemy : public GameObject {
 public:
     // sheet 为 nullptr 时进入"无 sprite"模式：实体照常参与逻辑与碰撞，
     // 只是画不出东西。测试用它，生产代码请传 EnemySpriteFactory::getSheet()。
     Enemy(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet = nullptr);
+
+    // 带种类的构造。旧的三个参数的重载等价于 EnemyKind::Basic ——
+    // E 的既有代码路径与行为一个字都没动。
+    Enemy(EnemyKind kind, Vec2 pos, int tileSize,
+          std::shared_ptr<sf::Texture> sheet = nullptr);
 
     void update(float dt, const Level& level) override;
     void render(sf::RenderTarget& target) const override;
@@ -6578,23 +7282,42 @@ public:
     Type type() const override { return Type::Enemy; }
     bool isRemovable() const override { return killed_; }
 
+    EnemyKind kind() const { return kind_; }
+
     void kill() { killed_ = true; }
     bool killed() const { return killed_; }
 
 private:
     bool wallAhead(const Level& level) const;
     bool cliffAhead(const Level& level) const;
+    bool outsideLevelX(const Level& level) const;
 
+    void setupSprite();
+    void updateWalk(float dt, const Level& level);   // Basic / Patrol 共用
+    void updateFlyer(float dt, const Level& level);
+    void updateJumper(float dt, const Level& level);
+
+    EnemyKind kind_ = EnemyKind::Basic;
     Vec2 pos_;
     Vec2 vel_;
     Vec2 size_{28.f, 28.f};
     int  tileSize_;
     bool killed_ = false;
 
+    // ==== 分种类状态（Basic 一个都不碰，保证既有行为逐字不变）====
+    bool  turnAtLedge_ = true;   // Basic/Patrol：走到平台边缘掉头（现有 E 就是这样）
+    bool  pauseAtTurn_ = false;  // Patrol：掉头后在端点停 kPatrolPauseTime
+    float pauseTimer_ = 0.f;     // Patrol：> 0 时原地不动
+    float bobBaseY_ = 0.f;       // Flyer：正弦中心（出生时的 y）
+    float bobPhase_ = 0.f;       // Flyer：正弦相位
+    bool  grounded_ = false;     // Jumper：是否踩在地上
+    float jumpTimer_ = 0.f;      // Jumper：落地后的起跳倒计时
+
     std::shared_ptr<sf::Texture>       sheet_;
     Animator                           animator_;
     mutable std::unique_ptr<sf::Sprite> sprite_;
 };
+
 ===== ./include/game/enemy_sprite_factory.h =====
 #pragma once
 #include <SFML/Graphics.hpp>
@@ -6687,7 +7410,20 @@ constexpr float kPlayerBounceSpeed = -500.f;
 constexpr float kPlayerInvincibleDur = 1.5f;
 
 // ===== 敌人 =====
-constexpr float kEnemySpeed = 90.f;
+constexpr float kEnemySpeed = 90.f; // E/W：地面巡逻速度
+
+// 巡逻（W）：掉头后在端点站一下再往回走 —— 这是它和 E 唯一的区别
+constexpr float kPatrolPauseTime = 0.35f;
+
+// 飞行（F）：水平巡游速度 / 正弦振幅（像素）/ 角速度（rad/s，π ≈ 2 秒一个来回）
+constexpr float kFlyerSpeed    = 45.f;
+constexpr float kFlyerBobAmp   = 20.f;
+constexpr float kFlyerBobOmega = 3.14159265f;
+
+// 跳跃（B）：重力 / 起跳初速度（向上为负）/ 落地后的待机时间
+constexpr float kEnemyGravity      = 2200.f;
+constexpr float kEnemyJumpVelocity = 520.f; // 跳高 ≈ 61px（不到 2 格）
+constexpr float kEnemyJumpRest     = 0.9f;
 
 // ===== 物理 =====
 constexpr float kFixedTimeStep = 1.f / 120.f;
@@ -6789,6 +7525,10 @@ public:
     const Player& player() const { return *player_; }
     const Level& level() const { return *level_; }
     Vec2 cameraCenter() const { return camera_.center(); }
+
+    /// 当前世界里的全部对象（测试 / 调试用）。
+    /// 只给 const 引用：外部不能拿它增删，只能按 type() 过滤查看。
+    const std::vector<std::unique_ptr<GameObject>>& objects() const { return objects_; }
 
     // ===== 事件总线（供 GameScene 订阅）=====
     //
@@ -6945,6 +7685,11 @@ public:
 
     Vec2 playerSpawn() const { return playerSpawn_; }
     const std::vector<Vec2>& enemySpawns()      const { return enemySpawns_; }
+    // 三种新敌人（W 巡逻 / F 飞行 / B 跳跃）。刻意与上面的 enemySpawns_ 分开：
+    // 那个容器与它的读取点（GameWorld / 测试）一个字都不动。
+    const std::vector<Vec2>& patrolSpawns()     const { return patrolSpawns_; }
+    const std::vector<Vec2>& flyerSpawns()      const { return flyerSpawns_; }
+    const std::vector<Vec2>& jumperSpawns()     const { return jumperSpawns_; }
     const std::vector<Vec2>& coinSpawns()       const { return coinSpawns_; }
     const std::vector<Vec2>& jumpPadSpawns()    const { return jumpPadSpawns_; }
     const std::vector<Vec2>& checkpointSpawns() const { return checkpointSpawns_; }
@@ -6978,6 +7723,9 @@ private:
     std::vector<bool> dynamicSolid_;   // 运行时动态实体（门等）
     Vec2 playerSpawn_{0.f, 0.f};
     std::vector<Vec2> enemySpawns_;
+    std::vector<Vec2> patrolSpawns_;
+    std::vector<Vec2> flyerSpawns_;
+    std::vector<Vec2> jumperSpawns_;
     std::vector<Vec2> coinSpawns_;
     std::vector<Vec2> jumpPadSpawns_;
     std::vector<Vec2> checkpointSpawns_;
@@ -8066,6 +8814,7 @@ private:
 #include "resource_manager.h"
 #include "log/logger.h"
 #include "level_validator.h"
+#include "playtest_request.h"
 #include <SFML/Graphics.hpp>
 #include <memory>
 #include <string>
@@ -8076,7 +8825,8 @@ public:
     EditorScene(std::shared_ptr<Background> background,
                 std::shared_ptr<Preferences> preferences, const sf::Font& font,
                 std::shared_ptr<Logger> logger,
-                std::shared_ptr<ResourceManager> resources, std::shared_ptr<Paths> paths);
+                std::shared_ptr<ResourceManager> resources, std::shared_ptr<Paths> paths,
+                std::shared_ptr<PlaytestRequest> playtest);
 
     void onEnter() override;
 
@@ -8089,6 +8839,10 @@ public:
 private:
     void loadFile();
     void saveFile();
+
+    /// 按 F5：把**当前编辑中**（未保存）的内容交给关卡场景试玩。
+    /// 退出时走 `SceneId::Back` 就会回到编辑器 —— 编辑器是被 push 在下面的那一层。
+    void startPlaytest();
     void exportShareCode();
     void importShareCode();
 
@@ -8126,6 +8880,7 @@ private:
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<ResourceManager> resources_;
     std::shared_ptr<Paths> paths_;
+    std::shared_ptr<PlaytestRequest> playtest_;
     const sf::Font* font_ = nullptr;
 
     std::vector<std::string> lines_;
@@ -8183,6 +8938,9 @@ private:
 
     sf::Text hudText_;
     sf::Text hintText_;
+    // 试玩提示单独一行：**不**并进 EditorHint —— 改那条原文会让已有的四个语言
+    // 译文静默失效（lang 的键就是原文），而那条译文刚刚才补好
+    sf::Text playtestHintText_;
     sf::Text flashDraw_;
     sf::Text brushNameText_; // ⭐ 复用，不每帧构造/析构
 
@@ -8230,6 +8988,7 @@ std::vector<sf::Vector2i> lineCells(sf::Vector2i from, sf::Vector2i to);
 #include "game_world.h"
 #include "save_manager.h"
 #include "preferences.h"
+#include "playtest_request.h"
 #include "resource_manager.h"
 #include "pause_menu.h"
 #include "parallax.h"
@@ -8244,7 +9003,8 @@ public:
     GameScene(std::shared_ptr<Background> background, const sf::Font& font,
               std::shared_ptr<Logger> logger, std::shared_ptr<SaveManager> saveManager,
               std::shared_ptr<Preferences> preferences,
-              std::shared_ptr<ResourceManager> resources);
+              std::shared_ptr<ResourceManager> resources,
+              std::shared_ptr<PlaytestRequest> playtest);
 
     void onEnter() override;
     void onResume() override;
@@ -8259,6 +9019,13 @@ public:
 
 private:
     bool loadLevel(int index);
+
+    /// 把关卡装进 GameWorld 并重置每关状态（不含 PB、不含开场白）。
+    ///
+    /// 从 `loadLevel` 里抽出来，是为了让"试玩编辑器里那份未保存的草稿"能复用
+    /// 同一段装配 —— 复制一份的下场是两边迟早不一致（而且只在试玩时表现得不一样，
+    /// 最难查）。
+    bool buildWorld(std::unique_ptr<Level> level, int index);
     bool advanceToNextLevel();
     void syncFocus();
     void subscribeWorldEvents();
@@ -8279,6 +9046,8 @@ private:
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<SaveManager> saveManager_;
     std::shared_ptr<Preferences> preferences_;
+    // 「试玩」交接通道：编辑器按 F5 时把未保存的关卡放进来
+    std::shared_ptr<PlaytestRequest> playtest_;
     std::shared_ptr<ResourceManager> resources_;
     SaveInfo save_;
     const sf::Font* font_ = nullptr;
@@ -8334,6 +9103,12 @@ private:
     std::vector<std::unique_ptr<Button>> overlayButtons_;
 
     SceneId nextScene_ = SceneId::None;
+
+    // ===== 试玩模式 =====
+    // 为 true 时：关卡来自编辑器内存而非磁盘，且**不写任何存档/PB/成就** ——
+    // 试玩是"看看改得怎么样"，不该污染真实进度。
+    bool playtestMode_ = false;
+    std::string playtestSource_;
 
     // ⭐ 调试工具
     bool debugHud_ = false;
@@ -9746,9 +10521,19 @@ private:
 #include <SFML/Window/Event.hpp>
 #include <vector>
 
-// 全局焦点管理器：手柄方向键在按钮间移动，A 键触发
+// 全局焦点管理器：键盘/手柄方向键在按钮间移动，Enter / 手柄 A 触发
 class FocusGroup {
 public:
+    /// 一帧的导航输入（由调用方把设备状态翻译成这几个 bool）。
+    ///
+    /// 刻意不在 FocusGroup 里读 sf::Keyboard::isKeyPressed()：那是全局状态，
+    /// 测试里伪造不了。设备翻译留在 Game 主循环，"按一下焦点走没走"的逻辑
+    /// 则留在可测的 FocusNav。
+    struct NavInput {
+        bool up = false, down = false, left = false, right = false;
+        bool confirm = false; // 手柄 A / 键盘 Enter
+    };
+
     static FocusGroup& instance();
 
     // 场景每帧调用，注册当前可聚焦的按钮
@@ -9756,10 +10541,20 @@ public:
     void clear();
 
     // 由 Game 主循环每帧调用
-    void update(float dt);
+    void update(float dt, const NavInput& in);
 
     bool enabled() const { return enabled_; }
     void setEnabled(bool e) { enabled_ = e; }
+
+    /// 只关手柄输入（B→ESC / Start→Enter 的合成）。键盘导航**不受**它影响 ——
+    /// 以前这两个开关是同一个，"关掉手柄支持"会连键盘一起关死，菜单再也点不动。
+    bool gamepadEnabled() const { return gamepadEnabled_; }
+    void setGamepadEnabled(bool e) { gamepadEnabled_ = e; }
+
+    /// 文本输入编辑时挂起键盘导航（否则打字母会同时移动焦点、Enter 误触按钮）。
+    /// 调用方在喂 NavInput 的键盘部分前先看这个开关（见 Game::run）。
+    bool keyboardNavEnabled() const { return keyboardNavEnabled_; }
+    void setKeyboardNavEnabled(bool e) { keyboardNavEnabled_ = e; }
 
     int  index() const { return index_; }
     void setIndex(int i);
@@ -9782,31 +10577,22 @@ private:
     std::vector<Button*> items_;
     int   index_ = 0;
     bool  enabled_ = true;
+    bool gamepadEnabled_ = true;
+    bool keyboardNavEnabled_ = true;
 
-    bool  lastUp_    = false;
-    bool  lastDown_  = false;
-    bool  lastLeft_  = false;
-    bool  lastRight_ = false;
-    bool  lastA_     = false;
-    bool  lastB_     = false;
-    bool  lastStart_ = false;
+    bool lastConfirm_ = false;
+    bool lastB_ = false;
+    bool lastStart_ = false;
 
-    // ⭐ 方向键重复触发状态（每个方向独立）
-    struct RepeatState {
-        float holdTimer    = 0.f;   // 持续按住时长
-        int   triggerCount = 0;     // 已触发的次数（0 = 未按）
-    };
-    RepeatState upRepeat_, downRepeat_, leftRepeat_, rightRepeat_;
+    // ⭐ 方向键重复触发状态（每个方向独立，纯逻辑在 FocusNav::Repeater）
+    FocusNav::Repeater upRepeater_, downRepeater_, leftRepeater_, rightRepeater_;
 
     std::vector<sf::Event> pendingEvents_;
 
     void moveFocus(Direction dir);
     void moveFocusLinear(int delta);   // 保留线性逻辑作为 fallback
-
-    // ⭐ 单方向的处理（带重复触发）
-    void handleDirection(bool now, bool& last,
-                         RepeatState& st, Direction dir, float dt);
 };
+
 ===== ./include/ui/focus_nav.h =====
 #pragma once
 //
@@ -9819,12 +10605,32 @@ private:
 // 剩下的这部分只依赖矩形几何，搬出来就是纯函数。
 // 手感全靠它：每个场景每个设置 Tab 的手柄导航都走这里。
 //
+#include "infrastructure/gamepad_config.h"
 #include <SFML/Graphics/Rect.hpp>
 #include <vector>
 
 namespace FocusNav {
 
 enum class Direction { Up, Down, Left, Right };
+
+/// 按住方向键的重复时序（秒）。数值取自 GamepadConfig（手柄手感参数的唯一
+/// 来源），这里只是给它起一个在"重复触发"语境下读得懂的名字。
+inline constexpr float kRepeatDelay = GamepadConfig::kNavInitialDelay;
+inline constexpr float kRepeatRate = GamepadConfig::kNavRepeatEvery;
+
+/// 方向键/摇杆"按住重复"的边沿 + 节拍状态机：
+/// 第一次按下立刻触发一次，之后先等 kRepeatDelay，再按 kRepeatRate 重复。
+///
+/// 从 FocusGroup::handleDirection 原样搬出来的（数值与判定次序都没动）。
+/// 它不碰 Button，所以能脱离 GL 直接测 —— 而"按一下方向键焦点到底走没走、
+/// 走对了几次"恰恰是导航里最该被测住的部分。
+struct Repeater {
+    bool held = false; ///< 上一帧是否按住（= 原来的 last*）
+    float timer = 0.f; ///< 倒计时：负数=还在等（-timer 秒后触发），累加 ≥ 0 就触发一次
+
+    /// 推进一帧，返回本帧是否应当移动一次
+    bool tick(bool now, float dt);
+};
 
 /// 主方向投影的阈值（像素）。小于它的候选算作"不在这个方向上"，
 /// 避免正上/正下方的按钮被当成左右邻居。
@@ -10870,6 +11676,11 @@ constexpr const char* HintAdvanced = "以下为排查问题用的设置，一般
 constexpr const char* ButtonResetTab = "恢复本页默认";
 constexpr const char* HintResetTab = "只重置本页的设置项，不影响其它页";
 constexpr const char* HintScroll = "内容超出屏幕，滚轮可上下滚动";
+
+// ===== 编辑器试玩 =====
+constexpr const char* HintPlaytest = "F5 试玩当前编辑内容（退出后回到编辑器）";
+constexpr const char* PlaytestBadge = "试玩";
+constexpr const char* PlaytestNoPlayer = "关卡里没有玩家出生点（P），先放一个再试玩";
 constexpr const char* ResetTabConfirm = "恢复本页默认设置？只影响本页";
 
 // 操作页
@@ -11104,6 +11915,10 @@ constexpr const char* BrushKey = "钥匙";
 constexpr const char* BrushDoor = "门";
 constexpr const char* BrushPlatformH = "横台";
 constexpr const char* BrushPlatformV = "竖台";
+// 三种新敌人的笔刷名（W 巡逻 / F 飞行 / B 跳跃）
+constexpr const char* BrushPatrol = "巡逻";
+constexpr const char* BrushFlyer  = "飞行";
+constexpr const char* BrushJumper = "跳跃";
 // ===== 编辑器元素统计 =====
 constexpr const char* StatPlatform = "移动平台";
 
@@ -12731,10 +13546,12 @@ std::string Container::str() const {
 #include "notification.h"
 #include "sound_manager.h"
 #include "infrastructure/gamepad.h"
+#include "infrastructure/gamepad_config.h"
 #include "infrastructure/keybindings.h"
 #include "focus_group.h"
 #include "config/keys.h"
 #include <SFML/System/Clock.hpp>
+#include <SFML/Window/Keyboard.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -12782,6 +13599,9 @@ void Game::switchScene(SceneId next) {
 
     // ⭐ 先清空焦点，让新场景的 onEnter/onResume 重新注册
     FocusGroup::instance().clear();
+    // 键盘导航可能在设置页的文本输入里被挂起过（见 SettingsScene::update）。
+    // 换场景一定要恢复 —— 否则"在输入框里按鼠标点返回"会把键盘导航永久关死。
+    FocusGroup::instance().setKeyboardNavEnabled(true);
 
     if (next == SceneId::Back) {
         sceneManager_->pop();
@@ -12921,9 +13741,39 @@ int Game::run() {
 
         Gamepad::instance().update();
 
-        FocusGroup::instance().setEnabled(
-            preferences_->getBool(ConfigKey::kGamepadEnabled, true));
-        FocusGroup::instance().update(dt);
+        // ===== 焦点导航的输入翻译：设备状态 → 几个 bool =====
+        // FocusGroup 不自己去轮询：sf::Keyboard::isKeyPressed 是全局状态，
+        // 测试里伪造不了；把设备翻译留在主循环，导航逻辑才能被测住。
+        const bool gamepadOn = preferences_->getBool(ConfigKey::kGamepadEnabled, true);
+        FocusGroup::NavInput nav;
+        if (FocusGroup::instance().keyboardNavEnabled()) {
+            // 移动：方向键 或 WASD；确认：Enter
+            // （刻意不用 Space —— 游戏里那是跳跃，暂停菜单开着时容易双触发）
+            nav.up = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) ||
+                     sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W);
+            nav.down = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) ||
+                       sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S);
+            nav.left = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) ||
+                       sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A);
+            nav.right = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) ||
+                        sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D);
+            nav.confirm = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter);
+        }
+        if (gamepadOn) {
+            auto& gp = Gamepad::instance();
+            if (gp.isConnected()) {
+                constexpr float T = GamepadConfig::kNavStickThreshold;
+                nav.up = nav.up || gp.dpadUp() || gp.leftY() < -T;
+                nav.down = nav.down || gp.dpadDown() || gp.leftY() > T;
+                nav.left = nav.left || gp.dpadLeft() || gp.leftX() < -T;
+                nav.right = nav.right || gp.dpadRight() || gp.leftX() > T;
+                nav.confirm = nav.confirm || gp.isButtonPressed(0); // A 键
+            }
+        }
+
+        // "手柄支持"只管手柄那一路，键盘导航不受它影响
+        FocusGroup::instance().setGamepadEnabled(gamepadOn);
+        FocusGroup::instance().update(dt, nav);
 
         // 自动暂停
         if (preferences_->getBool(ConfigKey::kAutoPauseOnBlur, true)) {
@@ -14164,17 +15014,60 @@ void Door::render(sf::RenderTarget& target) const {
 
 namespace {
 constexpr float kSpeed = GameConst::kEnemySpeed;
+
+/// 三种新敌人复用同一张贴图，只改色调，省一张 sheet。
+sf::Color kindTint(EnemyKind kind) {
+    switch (kind) {
+    case EnemyKind::Basic:
+        return sf::Color::White;
+    case EnemyKind::Patrol:
+        return sf::Color(255, 200, 150); // 偏橙
+    case EnemyKind::Flyer:
+        return sf::Color(170, 210, 255); // 偏蓝
+    case EnemyKind::Jumper:
+        return sf::Color(190, 255, 190); // 偏绿
+    }
+    return sf::Color::White; // 加了新 kind 却忘了这里时，别静默画成透明
 }
+} // namespace
 
 Enemy::Enemy(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
-    : pos_(pos), vel_(-kSpeed, 0.f), tileSize_(tileSize), sheet_(std::move(sheet)) {
+    : Enemy(EnemyKind::Basic, pos, tileSize, std::move(sheet)) {}
+
+Enemy::Enemy(EnemyKind kind, Vec2 pos, int tileSize,
+             std::shared_ptr<sf::Texture> sheet)
+    : kind_(kind), pos_(pos), tileSize_(tileSize), sheet_(std::move(sheet)) {
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
+    switch (kind_) {
+    case EnemyKind::Basic:
+        vel_ = Vec2{-kSpeed, 0.f}; // ★ 与旧代码逐字一致
+        break;
+    case EnemyKind::Patrol:
+        vel_ = Vec2{-kSpeed, 0.f};
+        pauseAtTurn_ = true; // ★ W 与 E 的唯一区别
+        break;
+    case EnemyKind::Flyer:
+        vel_ = Vec2{-GameConst::kFlyerSpeed, 0.f};
+        bobBaseY_ = pos_.y;    // 正弦围绕出生高度上下浮动，不受重力
+        turnAtLedge_ = false;  // 飞行不看脚下有没有地
+        break;
+    case EnemyKind::Jumper:
+        vel_ = Vec2{0.f, 0.f}; // 只上下跳，不横向移动
+        turnAtLedge_ = false;
+        break;
+    }
+
+    setupSprite();
+}
+
+void Enemy::setupSprite() {
     // 同 Coin：sheet 为空就进"无 sprite"模式，逻辑照常跑。
     if (!sheet_) return;
 
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
+    sprite_->setColor(kindTint(kind_)); // 复用贴图，用色调区分种类
 
     // 原点在帧底部中心
     sprite_->setOrigin({
@@ -14186,7 +15079,7 @@ Enemy::Enemy(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
     float scale = static_cast<float>(tileSize_) / EnemySpriteFactory::kFrameW;
     sprite_->setScale({scale, scale});
 
-    // 动画剪辑
+    // 动画剪辑（四种敌人共用走路帧）
     const int fw = EnemySpriteFactory::kFrameW;
     const int fh = EnemySpriteFactory::kFrameH;
 
@@ -14227,15 +15120,90 @@ bool Enemy::cliffAhead(const Level& level) const {
     return !level.isSolid(tx, ty);
 }
 
+bool Enemy::outsideLevelX(const Level& level) const {
+    AABB box = bounds();
+    return box.left() < 0.f ||
+           box.right() > static_cast<float>(level.pixelWidth());
+}
+
 void Enemy::update(float dt, const Level& level) {
     if (killed_) return;
 
-    if (wallAhead(level) || cliffAhead(level)) {
-        vel_.x = -vel_.x;
+    switch (kind_) {
+    case EnemyKind::Basic:
+    case EnemyKind::Patrol:
+        updateWalk(dt, level);
+        break;
+    case EnemyKind::Flyer:
+        updateFlyer(dt, level);
+        break;
+    case EnemyKind::Jumper:
+        updateJumper(dt, level);
+        break;
     }
-    pos_.x += vel_.x * dt;
 
     animator_.update(dt);
+}
+
+void Enemy::updateWalk(float dt, const Level& level) {
+    if (wallAhead(level) || (turnAtLedge_ && cliffAhead(level))) {
+        vel_.x = -vel_.x;
+        if (pauseAtTurn_)
+            pauseTimer_ = GameConst::kPatrolPauseTime;
+    }
+
+    // Patrol 在端点停顿：只对 pauseAtTurn_ 的 kind 生效，Basic 的 pauseTimer_
+    // 永远是 0，于是这一步对 E 是纯粹的空操作。
+    if (pauseTimer_ > 0.f) {
+        pauseTimer_ -= dt;
+        return;
+    }
+
+    pos_.x += vel_.x * dt;
+}
+
+void Enemy::updateFlyer(float dt, const Level& level) {
+    if (wallAhead(level) || outsideLevelX(level))
+        vel_.x = -vel_.x;
+
+    pos_.x += vel_.x * dt;
+
+    // 不受重力：y 完全由正弦决定，永远在出生高度上下浮动
+    bobPhase_ += GameConst::kFlyerBobOmega * dt;
+    pos_.y = bobBaseY_ + GameConst::kFlyerBobAmp * std::sin(bobPhase_);
+}
+
+void Enemy::updateJumper(float dt, const Level& level) {
+    if (grounded_) {
+        if (jumpTimer_ > 0.f)
+            jumpTimer_ -= dt;
+        if (jumpTimer_ <= 0.f) {
+            vel_.y = -GameConst::kEnemyJumpVelocity; // 起跳
+            grounded_ = false;
+        }
+    }
+
+    vel_.y += GameConst::kEnemyGravity * dt;
+    pos_.y += vel_.y * dt;
+
+    if (vel_.y <= 0.f) // 上升中，不会穿地
+        return;
+
+    // 落地：脚下那一格是实心就吸附上去。
+    // 固定步长 1/120 下一步最多移动 ~4px，远小于一格，不会穿过地板。
+    const float ts = static_cast<float>(level.tileSize());
+    const AABB box = bounds();
+    const int tx = static_cast<int>(std::floor((box.x + box.w * 0.5f) / ts));
+    const int ty = static_cast<int>(std::floor(box.bottom() / ts));
+    if (!level.isSolid(tx, ty))
+        return;
+
+    pos_.y = static_cast<float>(ty) * ts - size_.y;
+    vel_.y = 0.f;
+    if (!grounded_) {
+        grounded_ = true;
+        jumpTimer_ = GameConst::kEnemyJumpRest; // 落地后歇一会儿再跳
+    }
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
@@ -14254,6 +15222,7 @@ void Enemy::render(sf::RenderTarget& target) const {
     });
     target.draw(*sprite_);
 }
+
 ===== ./src/game/enemy_sprite_factory.cpp =====
 #include "enemy_sprite_factory.h"
 
@@ -14440,6 +15409,17 @@ void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->enemySpawns())
         objects_.push_back(
             std::make_unique<Enemy>(pos, level_->tileSize(), sheets_.enemy));
+
+    // 三种新敌人（W/F/B）：同一条生成路径，只是带上 kind
+    for (const auto& pos : level_->patrolSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Patrol, pos,
+                                                   level_->tileSize(), sheets_.enemy));
+    for (const auto& pos : level_->flyerSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Flyer, pos,
+                                                   level_->tileSize(), sheets_.enemy));
+    for (const auto& pos : level_->jumperSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Jumper, pos,
+                                                   level_->tileSize(), sheets_.enemy));
 
     for (const auto& pos : level_->jumpPadSpawns())
         objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
@@ -15099,6 +16079,9 @@ bool Level::loadFromString(const std::string& text) {
     tiles_.clear();
     dynamicSolid_.clear();
     enemySpawns_.clear();
+    patrolSpawns_.clear();
+    flyerSpawns_.clear();
+    jumperSpawns_.clear();
     coinSpawns_.clear();
     jumpPadSpawns_.clear();
     checkpointSpawns_.clear();
@@ -15169,6 +16152,18 @@ bool Level::loadFromString(const std::string& text) {
                 break;
             case 'E':
                 enemySpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'W':
+                patrolSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'F':
+                flyerSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'B':
+                jumperSpawns_.push_back({px, py});
                 c = ' ';
                 break;
             case 'C':
@@ -15941,6 +16936,10 @@ ValidationReport LevelValidator::validate(const Level& level) {
 
     checkSpawn(level.coinSpawns(),       "coin");
     checkSpawn(level.enemySpawns(),      "enemy");
+    // W/B 是地面敌人，和 E 同一条规则。F 不查：飞行敌人本来就允许悬在坑上方，
+    // 硬给它套"下面必须有可达平台"只会对合法关卡误报。
+    checkSpawn(level.patrolSpawns(),     "patrol");
+    checkSpawn(level.jumperSpawns(),     "jumper");
     checkSpawn(level.keySpawns(),        "key");
     checkSpawn(level.doorSpawns(),       "door");
     checkSpawn(level.checkpointSpawns(), "checkpoint");
@@ -18223,6 +19222,10 @@ struct Deps {
     std::shared_ptr<WallpaperLoader> wallpaperLoader() {
         return container.require<WallpaperLoader>("wallpaper_loader");
     }
+    // 「试玩」的交接通道：编辑器写、关卡场景读
+    std::shared_ptr<PlaytestRequest> playtest() {
+        return container.require<PlaytestRequest>("playtest_request");
+    }
 
     /// 字体由 FontHolder 这个容器单例持有，生命周期到进程结束，
     /// 所以这里返回引用是安全的（临时 shared_ptr 析构不影响对象本身）。
@@ -18233,6 +19236,11 @@ struct Deps {
 
 void registerScenes(Container& container) {
     auto registry = container.require<SceneRegistry>("scene_registry");
+
+    // 「试玩」的交接通道。注册在这里而不是 registerCore：它是纯场景层的东西
+    // （两个场景之间递一份草稿），core 层不该认识它。
+    container.reg<PlaytestRequest>("playtest_request",
+                                   []() { return std::make_shared<PlaytestRequest>(); });
 
     // ---------------- 主菜单 ----------------
     registry->add(SceneId::MainMenu, [&container]() {
@@ -18260,7 +19268,7 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<GameScene>(deps.background(), deps.font(), deps.logger(),
                                            deps.saveManager(), deps.preferences(),
-                                           deps.resources());
+                                           deps.resources(), deps.playtest());
     });
 
     // ---------------- 设置 ----------------
@@ -18285,7 +19293,7 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<EditorScene>(deps.background(), deps.preferences(),
                                              deps.font(), deps.logger(), deps.resources(),
-                                             deps.paths());
+                                             deps.paths(), deps.playtest());
     });
 
     // ---------------- 成就 ----------------
@@ -18756,13 +19764,24 @@ struct BrushItem {
 };
 
 const BrushItem kBrushes[] = {
-    {'#', "墙", sf::Color(120, 120, 145)},   {' ', "橡皮", sf::Color(180, 70, 70)},
-    {'P', "玩家", sf::Color(100, 180, 255)}, {'E', "敌人", sf::Color(240, 80, 80)},
-    {'C', "金币", sf::Color(255, 215, 65)},  {'G', "终点", sf::Color(80, 240, 120)},
-    {'^', "尖刺", sf::Color(200, 200, 210)}, {'J', "跳台", sf::Color(0, 200, 255)},
-    {'S', "存档", sf::Color(255, 128, 0)},   {'K', "钥匙", sf::Color(255, 210, 60)},
-    {'L', "门", sf::Color(160, 100, 60)},    {'M', "横台", sf::Color(180, 100, 200)},
+    {'#', "墙", sf::Color(120, 120, 145)},
+    {' ', "橡皮", sf::Color(180, 70, 70)},
+    {'P', "玩家", sf::Color(100, 180, 255)},
+    {'E', "敌人", sf::Color(240, 80, 80)},
+    {'C', "金币", sf::Color(255, 215, 65)},
+    {'G', "终点", sf::Color(80, 240, 120)},
+    {'^', "尖刺", sf::Color(200, 200, 210)},
+    {'J', "跳台", sf::Color(0, 200, 255)},
+    {'S', "存档", sf::Color(255, 128, 0)},
+    {'K', "钥匙", sf::Color(255, 210, 60)},
+    {'L', "门", sf::Color(160, 100, 60)},
+    {'M', "横台", sf::Color(180, 100, 200)},
     {'V', "竖台", sf::Color(180, 100, 200)},
+    // 三种新敌人。名字走 Str:: 常量（翻译表的键就是中文原文），
+    // 颜色刻意与 E 的红色拉开：橙 / 蓝 / 绿。
+    {'W', Str::BrushPatrol, sf::Color(250, 160, 70)},
+    {'F', Str::BrushFlyer, sf::Color(120, 190, 250)},
+    {'B', Str::BrushJumper, sf::Color(130, 230, 140)},
 };
 
 constexpr int kBrushCount = static_cast<int>(sizeof(kBrushes) / sizeof(kBrushes[0]));
@@ -18991,6 +20010,112 @@ void drawTileIcon(sf::RenderTarget& rt, char ch, float x, float y, float s) {
         rt.draw(arrow);
         break;
     }
+    case 'W': {
+        // 巡逻：橙色身体 + 脚下的双向箭头（来回走）
+        sf::RectangleShape body({s * 0.58f, s * 0.4f});
+        body.setOrigin({s * 0.29f, s * 0.2f});
+        body.setPosition({cx, cy - s * 0.1f});
+        body.setFillColor(sf::Color(250, 160, 70));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(160, 90, 30));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.1f, s * 0.1f});
+        eye.setFillColor(sf::Color(50, 25, 0));
+        eye.setPosition({cx - s * 0.17f, cy - s * 0.16f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.07f, cy - s * 0.16f});
+        rt.draw(eye);
+
+        sf::RectangleShape track({s * 0.72f, s * 0.05f});
+        track.setOrigin({s * 0.36f, s * 0.025f});
+        track.setPosition({cx, cy + s * 0.28f});
+        track.setFillColor(sf::Color(255, 235, 200));
+        rt.draw(track);
+
+        sf::ConvexShape tip;
+        tip.setPointCount(3);
+        tip.setFillColor(sf::Color(255, 235, 200));
+        tip.setPoint(0, {cx - s * 0.44f, cy + s * 0.28f});
+        tip.setPoint(1, {cx - s * 0.28f, cy + s * 0.18f});
+        tip.setPoint(2, {cx - s * 0.28f, cy + s * 0.38f});
+        rt.draw(tip);
+        tip.setPoint(0, {cx + s * 0.44f, cy + s * 0.28f});
+        tip.setPoint(1, {cx + s * 0.28f, cy + s * 0.18f});
+        tip.setPoint(2, {cx + s * 0.28f, cy + s * 0.38f});
+        rt.draw(tip);
+        break;
+    }
+    case 'F': {
+        // 飞行：蓝色身体 + 翅膀 + 右侧的上下浮动箭头
+        sf::ConvexShape wing;
+        wing.setPointCount(3);
+        wing.setFillColor(sf::Color(150, 210, 255));
+        wing.setOutlineThickness(1.f);
+        wing.setOutlineColor(sf::Color(60, 130, 190));
+
+        wing.setPoint(0, {cx - s * 0.46f, cy - s * 0.26f});
+        wing.setPoint(1, {cx - s * 0.06f, cy - s * 0.06f});
+        wing.setPoint(2, {cx - s * 0.14f, cy + s * 0.2f});
+        rt.draw(wing);
+
+        wing.setPoint(0, {cx + s * 0.46f, cy - s * 0.26f});
+        wing.setPoint(1, {cx + s * 0.06f, cy - s * 0.06f});
+        wing.setPoint(2, {cx + s * 0.14f, cy + s * 0.2f});
+        rt.draw(wing);
+
+        float r = s * 0.2f;
+        sf::CircleShape body(r);
+        body.setOrigin({r, r});
+        body.setPosition({cx, cy});
+        body.setFillColor(sf::Color(120, 190, 250));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(40, 100, 160));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.09f, s * 0.09f});
+        eye.setFillColor(sf::Color(255, 255, 255));
+        eye.setPosition({cx - s * 0.13f, cy - s * 0.09f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.04f, cy - s * 0.09f});
+        rt.draw(eye);
+        break;
+    }
+    case 'B': {
+        // 跳跃：绿色身体贴地 + 头顶的起跳箭头
+        sf::RectangleShape ground({s * 0.76f, s * 0.06f});
+        ground.setOrigin({s * 0.38f, s * 0.03f});
+        ground.setPosition({cx, cy + s * 0.4f});
+        ground.setFillColor(sf::Color(90, 160, 90));
+        rt.draw(ground);
+
+        float r = s * 0.24f;
+        sf::CircleShape body(r);
+        body.setOrigin({r, r});
+        body.setPosition({cx, cy + s * 0.12f});
+        body.setFillColor(sf::Color(130, 230, 140));
+        body.setOutlineThickness(2.f);
+        body.setOutlineColor(sf::Color(40, 130, 60));
+        rt.draw(body);
+
+        sf::RectangleShape eye({s * 0.09f, s * 0.09f});
+        eye.setFillColor(sf::Color(20, 60, 25));
+        eye.setPosition({cx - s * 0.14f, cy + s * 0.06f});
+        rt.draw(eye);
+        eye.setPosition({cx + s * 0.05f, cy + s * 0.06f});
+        rt.draw(eye);
+
+        sf::ConvexShape arrow;
+        arrow.setPointCount(3);
+        arrow.setPoint(0, {cx, cy - s * 0.44f});
+        arrow.setPoint(1, {cx - s * 0.16f, cy - s * 0.2f});
+        arrow.setPoint(2, {cx + s * 0.16f, cy - s * 0.2f});
+        arrow.setFillColor(sf::Color(200, 255, 200));
+        arrow.setOutlineThickness(1.f);
+        arrow.setOutlineColor(sf::Color(40, 130, 60));
+        rt.draw(arrow);
+        break;
+    }
     default: {
         float r = s * 0.2f;
         sf::CircleShape dot(r);
@@ -19009,15 +20134,18 @@ EditorScene::EditorScene(std::shared_ptr<Background> background,
                          std::shared_ptr<Preferences> preferences, const sf::Font& font,
                          std::shared_ptr<Logger> logger,
                          std::shared_ptr<ResourceManager> resources,
-                         std::shared_ptr<Paths> paths)
+                         std::shared_ptr<Paths> paths,
+                         std::shared_ptr<PlaytestRequest> playtest)
       : background_(std::move(background)),
         preferences_(std::move(preferences)),
         logger_(std::move(logger)),
         resources_(std::move(resources)),
         paths_(std::move(paths)),
+        playtest_(std::move(playtest)),
         font_(&font),
         hudText_(font, sf::String(), 18),
         hintText_(font, sf::String(), 15),
+        playtestHintText_(font, sf::String(), 15),
         flashDraw_(font, sf::String(), 24),
         brushNameText_(font, sf::String(), 14) {
     hudText_.setFillColor(sf::Color(240, 240, 250));
@@ -19033,6 +20161,10 @@ EditorScene::EditorScene(std::shared_ptr<Background> background,
     hintText_.setFillColor(sf::Color(200, 200, 220));
     hintText_.setOutlineThickness(2.f);
     hintText_.setOutlineColor(sf::Color(0, 0, 0, 180));
+    // 试玩提示用亮一点的颜色：它是这一屏最值得先看到的一句话
+    playtestHintText_.setFillColor(sf::Color(140, 230, 170));
+    playtestHintText_.setOutlineThickness(2.f);
+    playtestHintText_.setOutlineColor(sf::Color(0, 0, 0, 180));
 
     flashDraw_.setFillColor(sf::Color(120, 255, 150));
     flashDraw_.setOutlineThickness(2.f);
@@ -19216,6 +20348,19 @@ void EditorScene::loadFile() {
     geometryDirty_ = true;
     reachDirty_ = true;
     levelIconsDirty_ = true;
+}
+
+void EditorScene::startPlaytest() {
+    // ⚠️ 不落盘：试玩的语义就是"玩你现在改到一半的那份"。
+    //    顺手存一下看着贴心，其实会在用户没按 Ctrl+S 的时候覆盖磁盘上的关卡。
+    if (!PlaytestRequest::hasPlayerSpawn(lines_)) {
+        showFlash(Str::T(Str::PlaytestNoPlayer), 2.5f);
+        return;
+    }
+    if (playtest_) {
+        playtest_->request(lines_, currentFileName());
+        nextScene_ = SceneId::Game;
+    }
 }
 
 void EditorScene::saveFile() {
@@ -19480,12 +20625,17 @@ sf::Vector2i EditorScene::screenToTile(sf::Vector2i pixel, sf::Vector2u winSize)
 sf::FloatRect EditorScene::brushButtonRect(int idx, sf::Vector2u winSize) const {
     const float winW = static_cast<float>(winSize.x);
     const float winH = static_cast<float>(winSize.y);
-    const float totalW = kBrushCount * kButtonW + (kBrushCount - 1) * kButtonGap;
+    // 笔刷从 13 个涨到 16 个之后，固定 84px 在 1280 宽的窗口里就摆不下了
+    // （首尾两个按钮会被切掉一半，还看不出来）。这里按窗口宽度自适应收窄，
+    // 命中测试与笔刷条预渲染共用这同一份几何，所以不会出现"看到的位置点不到"。
+    const float btnW =
+        std::min(kButtonW, (winW - (kBrushCount - 1) * kButtonGap) / kBrushCount);
+    const float totalW = kBrushCount * btnW + (kBrushCount - 1) * kButtonGap;
     const float startX = (winW - totalW) * 0.5f;
     const float barY = winH - kBrushBarHeight;
     const float btnY = barY + (kBrushBarHeight - kButtonH) * 0.5f;
-    return sf::FloatRect({startX + idx * (kButtonW + kButtonGap), btnY},
-                         {kButtonW, kButtonH});
+    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY},
+                         {btnW, kButtonH});
 }
 
 int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const {
@@ -19504,6 +20654,10 @@ int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const
 
 void EditorScene::handleEvent(const sf::Event& event) {
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (kp->code == sf::Keyboard::Key::F5) {
+            startPlaytest();
+            return;
+        }
         if (kp->code == sf::Keyboard::Key::Escape) {
             nextScene_ = SceneId::Back;
             return;
@@ -19873,7 +21027,10 @@ void EditorScene::render(Window& window) {
                 ++statPlayer;
                 break;
             case 'E':
-                ++statEnemy;
+            case 'W':
+            case 'F':
+            case 'B':
+                ++statEnemy; // 三种新敌人也算进「敌人」统计，别让它们漏掉
                 break;
             case 'C':
                 ++statCoin;
@@ -20029,6 +21186,10 @@ void EditorScene::render(Window& window) {
     hintText_.setString(toSf(Str::T(Str::EditorHint)));
     hintText_.setPosition({20.f, winH - kBrushBarHeight - 22.f});
     rt.draw(hintText_);
+
+    playtestHintText_.setString(toSf(Str::T(Str::HintPlaytest)));
+    playtestHintText_.setPosition({20.f, winH - kBrushBarHeight - 44.f});
+    rt.draw(playtestHintText_);
 
     // ⭐ 笔刷条预渲染
     sf::Vector2i mousePos = sf::Mouse::getPosition(window.native());
@@ -20207,11 +21368,15 @@ GameScene::GameScene(std::shared_ptr<Background> background, const sf::Font& fon
                      std::shared_ptr<Logger> logger,
                      std::shared_ptr<SaveManager> saveManager,
                      std::shared_ptr<Preferences> preferences,
-                     std::shared_ptr<ResourceManager> resources)
+                     std::shared_ptr<ResourceManager> resources,
+                     std::shared_ptr<PlaytestRequest> playtest)
       : background_(std::move(background)),
         logger_(std::move(logger)),
         saveManager_(std::move(saveManager)),
         preferences_(std::move(preferences)),
+        // 顺序必须与头文件里的声明顺序一致（playtest_ 声明在 resources_ 之前），
+        // 否则 -Wreorder 会报
+        playtest_(std::move(playtest)),
         resources_(std::move(resources)),
         font_(&font),
         hudText_(font, sf::String(), 20),
@@ -20243,6 +21408,43 @@ GameScene::GameScene(std::shared_ptr<Background> background, const sf::Font& fon
 
 void GameScene::onEnter() {
     nextScene_ = SceneId::None;
+
+    // ⭐ 「试玩」优先：编辑器按 F5 会把**未保存**的草稿放进交接通道。
+    //    这条路必须在读 pending save 之前走 —— 试玩跟存档没有任何关系。
+    //    用 take() 的返回值直接判断，而不是先 has() 再 take()：既少一次判空，
+    //    也把"两次调用之间状态会变"这件事从根上消掉。
+    if (auto req = playtest_ ? playtest_->take() : std::nullopt) {
+        playtestMode_ = true;
+        playtestSource_ = req->sourceName;
+
+        std::string text;
+        for (const auto& line : req->lines) {
+            text += line;
+            text += '\n';
+        }
+        auto level = std::make_unique<Level>();
+        if (!level->loadFromString(text) || !buildWorld(std::move(level), 0)) {
+            logger_->error("试玩关卡解析失败: " + playtestSource_);
+            NotificationSystem::instance().push(Str::T(Str::NotifLevelLoadFailed),
+                                                NotificationType::Error, 5.f);
+            playtestMode_ = false;
+            nextScene_ = SceneId::Back; // 退回编辑器，而不是把用户丢在主菜单
+            return;
+        }
+        parallax_ = std::make_unique<ParallaxBackground>();
+        logger_->info("试玩进入: " + playtestSource_);
+        // 明说一句"这是试玩、不计进度"。只靠窗口标题不够显眼，
+        // 而"为什么刚才那关的星星没记上"正是试玩最容易让人困惑的地方。
+        NotificationSystem::instance().push(std::string(Str::T(Str::PlaytestBadge)) +
+                                                " - " + playtestSource_,
+                                            NotificationType::Info, 4.f);
+        return;
+    }
+
+    // ⚠️ 正式关卡要把上一次试玩的标志清掉。不清的话，"试玩 → 退出 → 从选关页
+    //    进正式关卡"这一串会让正式关卡也**不写存档**，而且完全不报错。
+    playtestMode_ = false;
+    playtestSource_.clear();
     // ⭐ 场景常驻后，onEnter 可能被多次调用。
     //    pending save 为空时沿用上次的 save_
     //
@@ -20293,6 +21495,10 @@ void GameScene::onResume() {
 }
 
 std::string GameScene::windowTitleHint() const {
+    // 试玩时明确标出来：否则用户会奇怪"为什么刚才那关的进度没记上"
+    if (playtestMode_) {
+        return std::string(Str::T(Str::PlaytestBadge)) + " - " + playtestSource_;
+    }
     if (paused_) {
         return Str::T(Str::WinTitleLevelPrefix) + std::to_string(levelIndex_) +
                Str::T(Str::WinTitlePausedSuffix);
@@ -20358,14 +21564,18 @@ void GameScene::subscribeWorldEvents() {
                     finalCoins_ = world_->coins();
                     finalTotalCoins_ = world_->totalCoins();
                     finalStars_ = calcStars();
-                    applyStars();
-                    saveManager_->updateProgress(save_.filename, world_->coins(),
-                                                 levelIndex_);
+                    // 试玩不写任何存档/PB/成就 —— 那是"看看改得怎么样"，
+                    // 不该污染真实进度
+                    if (!playtestMode_) {
+                        applyStars();
+                        saveManager_->updateProgress(save_.filename, world_->coins(),
+                                                     levelIndex_);
 
-                    newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
-                    if (newRecord_) {
-                        saveManager_->setLevelBestTime(save_.filename, levelIndex_,
-                                                       levelTime_);
+                        newRecord_ = ScoreRules::isNewRecord(prevBestTime_, levelTime_);
+                        if (newRecord_) {
+                            saveManager_->setLevelBestTime(save_.filename, levelIndex_,
+                                                           levelTime_);
+                        }
                     }
 
                     SoundManager::instance().playLevelComplete();
@@ -20377,8 +21587,9 @@ void GameScene::subscribeWorldEvents() {
                     // ⭐ 庆祝振动
                     gp.vibrate(0.70f, 0.80f, 0.40f);
 
-                    // ⭐ 检查成就
-                    checkAchievements();
+                    // ⭐ 检查成就（试玩不解锁）
+                    if (!playtestMode_)
+                        checkAchievements();
 
                     screenFlashTimer_ = 0.35f;
                     screenFlashDuration_ = 0.35f;
@@ -20417,11 +21628,38 @@ bool GameScene::loadLevel(int index) {
         return false;
     }
 
-    level->setFont(font_);
-
     logger_->info("关卡已加载: level" + std::to_string(index) + " " +
                   std::to_string(level->width()) + "x" + std::to_string(level->height()) +
                   " 瓦片");
+
+    if (!buildWorld(std::move(level), index))
+        return false;
+
+    // ⭐ 读取新关的 PB（试玩不走这里 —— 试玩没有"关卡序号"这回事）
+    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
+        prevBestTime_ = save_.levelBestTimes[index - 1];
+    } else {
+        prevBestTime_ = 0.f;
+    }
+
+    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
+        if (!intro_) {
+            intro_ = std::make_unique<LevelIntro>(*font_);
+        }
+        intro_->restart(index, static_cast<float>(world_->totalCoins()),
+                        world_->level().name());
+        introActive_ = true;
+    } else {
+        introActive_ = false;
+    }
+    return true;
+}
+
+bool GameScene::buildWorld(std::unique_ptr<Level> level, int index) {
+    if (!level)
+        return false;
+
+    level->setFont(font_);
 
     world_ = std::make_unique<GameWorld>(std::move(level), index,
                                          GameWorld::SpriteSheets::fromFactories());
@@ -20444,24 +21682,8 @@ bool GameScene::loadLevel(int index) {
     finalTotalCoins_ = 0;
     newRecord_ = false;
     tookDamageThisLevel_ = false;
-
-    // ⭐ 读取新关的 PB
-    if (index >= 1 && index <= static_cast<int>(save_.levelBestTimes.size())) {
-        prevBestTime_ = save_.levelBestTimes[index - 1];
-    } else {
-        prevBestTime_ = 0.f;
-    }
-
-    if (preferences_->getBool(ConfigKey::kLevelIntro, true)) {
-        if (!intro_) {
-            intro_ = std::make_unique<LevelIntro>(*font_);
-        }
-        intro_->restart(index, static_cast<float>(world_->totalCoins()),
-                        world_->level().name());
-        introActive_ = true;
-    } else {
-        introActive_ = false;
-    }
+    // 试玩不放开场白：那个界面显示的是"关卡 N"，而试玩根本没有序号
+    introActive_ = false;
 
     lastHudLives_ = -1;
     lastOverlayState_ = GameWorld::State::Playing;
@@ -20723,7 +21945,8 @@ bool GameScene::advanceToNextLevel() {
                                             std::to_string(levelIndex_) +
                                             Str::T(Str::NotifLevelSuffix),
                                         NotificationType::Info);
-    saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
+    if (!playtestMode_)
+        saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
     return true;
 }
 
@@ -22338,6 +23561,10 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 // ============================================================
 
 void SettingsScene::update(float /*dt*/) {
+    // ⭐ 文本输入/滑块编辑期间挂起键盘导航：否则在"玩家名"里打字母会同时
+    // 移动焦点，按 Enter 还会误触按钮。每帧同步一次，输入框失焦后自然恢复。
+    FocusGroup::instance().setKeyboardNavEnabled(!anySliderEditing());
+
     // 「恢复本页默认」的确认框。重置只碰本页的键，所以确认之后不用重启 ——
     // 重置完就地重新读一遍并把需要即时生效的东西应用上（见 resetCurrentTab）
     if (resetTabConfirm_) {
@@ -24055,7 +25282,9 @@ void ControlsTab::loadFromPrefs() {
 
 void ControlsTab::applyGamepad() {
     prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
-    FocusGroup::instance().setEnabled(gamepadEnabled_);
+    // ⭐ 只关手柄那一路。不能调 setEnabled —— 那会把整个焦点系统关掉，
+    // 于是用户一关"手柄支持"，键盘导航也跟着死，菜单再也点不动。
+    FocusGroup::instance().setGamepadEnabled(gamepadEnabled_);
 }
 
 void ControlsTab::applyGamepadVibration() {
@@ -27207,7 +28436,6 @@ void Console::render(sf::RenderTarget& target) {
 ===== ./src/ui/focus_group.cpp =====
 #include "focus_group.h"
 #include "infrastructure/gamepad.h"
-#include "infrastructure/gamepad_config.h"
 #include <algorithm>
 
 FocusGroup& FocusGroup::instance() {
@@ -27246,12 +28474,12 @@ void FocusGroup::clear() {
     index_ = 0;
 
     // ⭐ 重置重复触发状态，避免场景切换时残留
-    // 注意：不重置 lastA_ / lastB_ / lastStart_，
-    //       否则用户按着 A 切场景时会立即触发新场景的按钮
-    upRepeat_    = {};
-    downRepeat_  = {};
-    leftRepeat_  = {};
-    rightRepeat_ = {};
+    // 注意：不重置 lastConfirm_ / lastB_ / lastStart_，
+    //       否则用户按着 A/Enter 切场景时会立即触发新场景的按钮
+    upRepeater_ = {};
+    downRepeater_ = {};
+    leftRepeater_ = {};
+    rightRepeater_ = {};
 }
 
 void FocusGroup::setIndex(int i) {
@@ -27269,35 +28497,6 @@ Button* FocusGroup::focused() const {
     if (items_.empty()) return nullptr;
     if (index_ < 0 || index_ >= static_cast<int>(items_.size())) return nullptr;
     return items_[index_];
-}
-
-void FocusGroup::handleDirection(bool now, bool& last,
-                                 RepeatState& st, Direction dir, float dt) {
-    // ⭐ 手感参数见 gamepad_config.h
-    constexpr float kInitialDelay = GamepadConfig::kNavInitialDelay;
-    constexpr float kRepeatEvery  = GamepadConfig::kNavRepeatEvery;
-
-    if (!now) {
-        st.holdTimer    = 0.f;
-        st.triggerCount = 0;
-        return;
-    }
-
-    if (!last) {
-        moveFocus(dir);
-        st.holdTimer    = 0.f;
-        st.triggerCount = 1;
-        return;
-    }
-
-    st.holdTimer += dt;
-
-    float threshold = (st.triggerCount == 1) ? kInitialDelay : kRepeatEvery;
-    if (st.holdTimer >= threshold) {
-        moveFocus(dir);
-        st.holdTimer = 0.f;
-        ++st.triggerCount;
-    }
 }
 
 void FocusGroup::moveFocus(Direction dir) {
@@ -27334,41 +28533,36 @@ void FocusGroup::moveFocusLinear(int delta) {
     }
 }
 
-void FocusGroup::update(float dt) {
+void FocusGroup::update(float dt, const NavInput& in) {
     if (!enabled_) return;
 
-    auto& gp = Gamepad::instance();
-    if (!gp.isConnected()) {
-        lastUp_ = lastDown_ = lastLeft_ = lastRight_ = false;
-        lastA_ = lastB_ = lastStart_ = false;
-        return;
-    }
-
     // ===== 方向键：移动焦点（带重复触发）=====
-    constexpr float T = GamepadConfig::kNavStickThreshold;
-    bool nowUp    = gp.dpadUp()   || gp.leftY() < -T;
-    bool nowDown  = gp.dpadDown() || gp.leftY() >  T;
-    bool nowLeft  = gp.dpadLeft() || gp.leftX() < -T;
-    bool nowRight = gp.dpadRight()|| gp.leftX() >  T;
+    // 键盘与手柄的输入已由调用方合成进 in；这里只管"按住重复"的时序。
+    // 注意：**没有"没接手柄就早退"** —— 那会让纯键盘用户连菜单都进不去。
+    if (upRepeater_.tick(in.up, dt))
+        moveFocus(Direction::Up);
+    if (downRepeater_.tick(in.down, dt))
+        moveFocus(Direction::Down);
+    if (leftRepeater_.tick(in.left, dt))
+        moveFocus(Direction::Left);
+    if (rightRepeater_.tick(in.right, dt))
+        moveFocus(Direction::Right);
 
-    handleDirection(nowUp,    lastUp_,    upRepeat_,    Direction::Up,    dt);
-    handleDirection(nowDown,  lastDown_,  downRepeat_,  Direction::Down,  dt);
-    handleDirection(nowLeft,  lastLeft_,  leftRepeat_,  Direction::Left,  dt);
-    handleDirection(nowRight, lastRight_, rightRepeat_, Direction::Right, dt);
-
-    lastUp_    = nowUp;
-    lastDown_  = nowDown;
-    lastLeft_  = nowLeft;
-    lastRight_ = nowRight;
-
-    // ===== A 键：触发当前焦点按钮 =====
-    bool nowA = gp.isButtonPressed(0);
-    if (nowA && !lastA_) {
+    // ===== 确认键（手柄 A / 键盘 Enter）：触发当前焦点按钮 =====
+    if (in.confirm && !lastConfirm_) {
         if (auto* b = focused()) {
             b->triggerClick();
         }
     }
-    lastA_ = nowA;
+    lastConfirm_ = in.confirm;
+
+    // ===== 下面是手柄专属的按键合成，没接手柄/关了手柄支持就跳过 =====
+    auto& gp = Gamepad::instance();
+    if (!gamepadEnabled_ || !gp.isConnected()) {
+        lastB_ = false;
+        lastStart_ = false;
+        return;
+    }
 
     // ===== B 键：合成 ESC =====
     bool nowB = gp.isButtonPressed(1);
@@ -27413,6 +28607,38 @@ sf::Vector2f centerOf(const sf::FloatRect& r) {
 }
 
 } // namespace
+
+bool Repeater::tick(bool now, float dt) {
+    // 松开：清空状态。原实现（FocusGroup::handleDirection 的 !now 分支）同样
+    // 在这里把 holdTimer / triggerCount 归零，保留。
+    if (!now) {
+        held = false;
+        timer = 0.f;
+        return false;
+    }
+
+    // 按下沿：立刻触发一次，然后转入"等待 kRepeatDelay"的倒计时。
+    // 原实现是 triggerCount = 1 + holdTimer = 0，下一次阈值取 kInitialDelay。
+    if (!held) {
+        held = true;
+        timer = -kRepeatDelay;
+        return true;
+    }
+
+    // 按住中：累加 dt，倒计时到 0 触发一次，再进入 kRepeatRate 的节拍。
+    // 原实现是 threshold = (triggerCount == 1) ? kInitialDelay : kRepeatEvery，
+    // 触发后 holdTimer 归零 —— 这里换成等价的"把 timer 拨到 -速率"。
+    timer += dt;
+    if (timer >= 0.f) {
+        // 注意：这里把超出阈值的那一小段 dt 丢掉（timer 直接拨回 -kRepeatRate），
+        // 与原实现"触发后 holdTimer = 0"完全一致。代价是长按的节拍会比
+        // kRepeatRate 略慢（最多一帧）。这是**原样保留**的行为，不是漏改 ——
+        // 要改得先确认所有场景的手感都能接受。
+        timer = -kRepeatRate;
+        return true;
+    }
+    return false;
+}
 
 int nextInDirection(const std::vector<sf::FloatRect>& rects, int cur, Direction dir) {
     if (rects.empty()) return -1;
@@ -30028,6 +31254,7 @@ add_executable(unit_tests
     test_scene_manager.cpp
     test_layers.cpp
     test_entities.cpp
+    test_enemy.cpp
     test_game_world.cpp
     test_level_codec.cpp
     test_save_manager.cpp
@@ -30042,6 +31269,7 @@ add_executable(unit_tests
     test_settings_share.cpp
     test_particle_system.cpp
     test_keybindings.cpp
+    test_playtest_request.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )
@@ -41132,6 +42360,69 @@ TEST_CASE("FocusNav - 线性移动的结果永远在范围内") {
             }
         }
     }
+}
+
+// ============================================================
+// 按住重复触发（Repeater）
+//
+// 从 FocusGroup::handleDirection 原样搬出来的状态机：按下沿立刻触发一次，
+// 之后先等 kRepeatDelay，再按 kRepeatRate 重复。时序常量就是 GamepadConfig
+// 里那两个值（见 FocusNav 的别名），这里不改数值，只把行为钉住。
+// ============================================================
+
+TEST_CASE("FocusNav Repeater - 第一次按下立刻触发一次") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f)); // 按下沿
+    CHECK(r.held);
+    CHECK(r.timer < 0.f); // 已经进入"等 kRepeatDelay"的倒计时
+}
+
+TEST_CASE("FocusNav Repeater - 按住未到延迟不重复") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));                                // 边沿那次
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatDelay * 0.5f)); // 累计 half
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatDelay * 0.4f)); // 累计 0.9×delay
+}
+
+TEST_CASE("FocusNav Repeater - 过了延迟按节拍重复") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f)); // 首次重复
+
+    // 进入 kRepeatRate 节拍：半个节拍不触发，跨过一个节拍才触发
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate * 0.5f));
+    CHECK(r.tick(true, FocusNav::kRepeatRate * 0.5f + 0.001f));
+
+    // 再来一轮，证明是持续节拍而不是只重复一次
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate * 0.5f));
+    CHECK(r.tick(true, FocusNav::kRepeatRate * 0.5f + 0.001f));
+}
+
+TEST_CASE("FocusNav Repeater - 松开当帧不触发并清空状态") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f)); // 正在重复
+    CHECK_FALSE(r.tick(false, 0.0f));                     // 松开
+    CHECK_FALSE(r.held);
+    CHECK(r.timer == 0.0f);
+}
+
+TEST_CASE("FocusNav Repeater - 松开再按又立刻触发") {
+    FocusNav::Repeater r;
+
+    CHECK(r.tick(true, 0.0f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay + 0.001f));
+    CHECK_FALSE(r.tick(false, 0.0f)); // 松开
+
+    CHECK(r.tick(true, 0.0f)); // 重新按下：立刻触发
+
+    // 而且延迟是**重新**开始算的：刚过 kRepeatRate 还远不够 kRepeatDelay
+    CHECK_FALSE(r.tick(true, FocusNav::kRepeatRate + 0.001f));
+    CHECK(r.tick(true, FocusNav::kRepeatDelay - FocusNav::kRepeatRate));
 }
 
 ===== ./tests/test_game_constants.cpp =====

@@ -296,6 +296,35 @@ SettingsScene 只负责 Tab 切换、把事件/更新/渲染分发给当前页�
 （顺带一个容易吓人的点：`addToggle()` / `addMulti()` 返回的是**堆上对象**的地址，
 缓存下来是安全的 —— vector 扩容搬的是 `unique_ptr`，指向的对象不动。）
 
+### 编辑器「试玩」（F5）
+
+编辑器按 F5 把**当前编辑中（未保存）**的关卡直接丢进游戏跑，退出后回到编辑器继续改。
+三步：
+
+1. `PlaytestRequest`（`include/scene/playtest_request.h`，header-only）是个交接槽：
+   编辑器 `request(lines_, 文件名)`，`GameScene::onEnter` 里 `take()` 取走
+2. `GameScene` 走"从内存建关卡"这条路（`buildWorld()`），而不是 `loadLevel()` 读磁盘
+3. 退出走 `SceneId::Back` —— 而 `nextScene_ = SceneId::X` 是 **push**
+   （`Game::switchScene` 里 `push` / `Back→pop`），所以编辑器本来就在栈下面，
+   "返回"天然回到编辑器。这一点不用额外写代码，但**依赖它**，改场景切换时要记得
+
+几条刻意的设计：
+
+- **`take()` 是一次性的**。不清空的话，"试玩 → 退出 → 从选关页进正式关卡"
+  会让人又玩到那份旧草稿，看起来像"关卡加载错了"
+- **试玩不写任何存档/PB/成就**（`playtestMode_` 挡着四处写入点）。试玩是
+  "看看改得怎么样"，污染真实进度是最让人恼火的那种 bug
+- **正式关卡进场景时会把 `playtestMode_` 清掉**。不清的话，上一条会反向生效：
+  正式关卡也不写存档了，而且完全不报错
+- **F5 不落盘**。顺手存一下看着贴心，实际会在用户没按 Ctrl+S 时覆盖磁盘上的关卡
+- 没有玩家出生点（`P`）时按 F5 只给提示、不进游戏 —— 那种关卡能构造出来，
+  但玩家会被摆在 (0,0) 卡在边界墙里
+
+⚠️ 两边格式对不上是这功能最可能坏的方式（F5 能按、场景也切了，一进去弹
+"关卡解析失败"）。`tests/test_playtest_request.cpp` 里**原样复刻**了
+`EditorScene::loadFile()` 的读盘变换（去 `\r`、补到等宽）与 `startPlaytest()`
+的拼接，再对 `assets/levels/` 里的**真实文件**跑一遍解析 —— 改任一边的格式都会红。
+
 ### 渲染管线
 
 ```
@@ -650,6 +679,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ShakeIntensity（0 = 不抖 / 2 倍偏移恰为 1 倍的两倍 / 关掉开关后强度无效） | ✅ |
 | KeyBindings（默认键位固定成测试 / resetToDefaults 回到默认 / 每个动作都有键且不重复） | ✅ |
 | Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
+| PlaytestRequest（取走即清空 / 覆盖 / clear / 无出生点识别 / **真实关卡走一遍编辑器→试玩的格式变换**) | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
