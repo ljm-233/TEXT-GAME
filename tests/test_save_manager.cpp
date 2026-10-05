@@ -455,7 +455,7 @@ TEST_CASE("存档 - 用别的 setter 存一次不会把最佳金币抹掉") {
     auto info = sb.saves->createSave("覆盖测试");
 
     REQUIRE(sb.saves->setLevelBestCoins(info.filename, 1, 7));
-    REQUIRE(sb.saves->setLevelStar(info.filename, 1, 3));       // 另一个写盘点
+    REQUIRE(sb.saves->setLevelStar(info.filename, 1, 3));         // 另一个写盘点
     REQUIRE(sb.saves->setLevelBestTime(info.filename, 1, 12.5f)); // 再一个
 
     SaveInfo back;
@@ -492,4 +492,45 @@ TEST_CASE("存档 - 老存档没有 level_best_coins 这一行也能读") {
     // 缺的字段回落到默认（9 个 0），而不是空的
     REQUIRE(back.levelBestCoins.size() == 9);
     CHECK(back.levelBestCoins[0] == 0);
+}
+
+TEST_CASE("存档 - 五个写盘点，每一个都不会抹掉最佳金币") {
+    // 我在 CLAUDE.md 里写了"每加一个字段要改五个写盘点"——这条测试就是那句话的
+    // 执行版本。存档是**整体重写**的：哪个 setter 漏写了 level_best_coins，
+    // 调它一次就会把玩家的最佳金币悄悄抹掉。
+    //
+    // 最容易漏的是 `updateProgress`：它**进关卡和每次通关都会调**，
+    // 漏了的话表现是"打一关回来，金币纪录就没了"。
+    Sandbox sb;
+    auto info = sb.saves->createSave("写盘点测试");
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 1, 7));
+
+    auto coinsStillThere = [&](const char* after) {
+        SaveInfo back;
+        REQUIRE(sb.saves->loadSave(info.filename, back));
+        // ⚠️ 不能写 CHECK_MESSAGE(cond, "..." << after) —— doctest 把第二个参数
+        //    包成 MessageBuilder，对 const char* 会选中 operator<<(bool)，
+        //    于是消息打印成"被 1 抹掉了"；而 std::string + const char* 又直接编译不过。
+        //    用 CAPTURE 把变量名与值一起打出来才是 doctest 的正路。
+        CAPTURE(after);
+        CHECK(back.levelBestCoins[0] == 7);
+    };
+
+    // 逐个走一遍其余的写盘点，每次之后都要还在
+    REQUIRE(sb.saves->updateProgress(info.filename, 3, 2));
+    coinsStillThere("updateProgress");
+
+    REQUIRE(sb.saves->setLevelStar(info.filename, 2, 3));
+    coinsStillThere("setLevelStar");
+
+    REQUIRE(sb.saves->setLevelBestTime(info.filename, 2, 12.5f));
+    coinsStillThere("setLevelBestTime");
+
+    // 再存一次金币（刷新纪录的那条路）
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 2, 4));
+    coinsStillThere("setLevelBestCoins");
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    CHECK(back.levelBestCoins[0] == 7); // 第 1 关的旧纪录也还在
+    CHECK(back.levelBestCoins[1] == 4);
 }
