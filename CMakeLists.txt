@@ -434,14 +434,26 @@ elseif(BUNDLE_RUNTIME_DEPS AND APPLE)
             endforeach()
         endforeach()
 
-        # 改写过的每一个 Mach-O 都要重签名，否则 arm64 上内核拒绝启动
-        foreach(_f "${_bin}" ${_fw_libs})
-            execute_process(COMMAND codesign --force --sign - "${_f}"
+        # 改写过的每一个 Mach-O 都要重签名，否则 arm64 上内核拒绝启动。
+        #
+        # ⚠️ 顺序要紧：**先签库，最后才签主程序**。
+        #    在 bundle 里签主程序会把整个 bundle 盖章 —— codesign 会生成
+        #    Contents/_CodeSignature/CodeResources，里面记着每个嵌套代码的哈希。
+        #    要是反过来先签主程序，之后再签那 16 个 dylib，封条立刻对不上：
+        #      nested code is modified or invalid
+        #    实测就是这么挂的。
+        foreach(_lib ${_fw_libs})
+            execute_process(COMMAND codesign --force --sign - "${_lib}"
                             RESULT_VARIABLE _rc)
             if(NOT _rc EQUAL 0)
-                message(FATAL_ERROR "重签名失败(${_rc}): ${_f}")
+                message(FATAL_ERROR "重签名失败(${_rc}): ${_lib}")
             endif()
         endforeach()
+        execute_process(COMMAND codesign --force --sign - "${_bin}"
+                        RESULT_VARIABLE _rc)
+        if(NOT _rc EQUAL 0)
+            message(FATAL_ERROR "重签名失败(${_rc}): ${_bin}")
+        endif()
         message(STATUS "已改写 install name 并 ad-hoc 重签名")
     ]])
 endif()
