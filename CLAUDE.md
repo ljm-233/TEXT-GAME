@@ -303,6 +303,13 @@ crossfade（旧图 alpha 1→0，新图 0→1），结束后 `front_ = std::move
 2. **新建的 `back_` 必须立刻 `fitToWindow`**。`render()` 里的重适配只在
    `lw != lastW_`（尺寸**变化**）时触发，而切图时尺寸没变 —— 漏了这一步，
    新图会以原生像素尺寸（3840×2160）从左上角画出来，淡入结束也没人再修。
+3. **"用户选中的"和"画面上显示的"是两个概念**，`currentIndex()` /
+   `currentFile()` 必须返回**选中的**那个（`selected_`），
+   `displayedIndex()` 才是画面上的那张。淡入要 0.5s，这期间画面还是旧图，
+   但设置里的 "n/m" 标签和 `current_wallpaper` 都要**立刻**反映用户的选择 ——
+   两者合并成一个的话，点完"下一张"存进配置的还是旧名字，重启打回上一张，
+   而且完全静默。同理 `next()` 要从 `selected_` 往前推而不是 `front_.index`，
+   否则淡入期间连点两下只会原地打转。
 
 验证方式是 `./build/release/wallpaper_smoke`（**需要 DISPLAY**，所以进不了
 `tests/`）：它把背景渲染进 `RenderTexture` 取中心像素，和"同一张图不走淡入"

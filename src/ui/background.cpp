@@ -31,6 +31,7 @@ Background::Background(WallpaperLibrary& library, WallpaperLoader& loader,
     }
 
     if (primed) {
+        selected_ = front_.index; // 选中与显示在这一刻是一致的
         lastW_ = windowWidth;
         lastH_ = windowHeight;
         fitToWindow(front_, windowWidth, windowHeight);
@@ -56,9 +57,12 @@ Background::Background(WallpaperLibrary& library, WallpaperLoader& loader,
 }
 
 std::string Background::currentFile() const {
-    if (front_.index < 0)
+    // 注意是 selected_ 而不是 front_.index —— 见头文件里的说明：
+    // 淡入要 0.5s，这期间画面还是旧图，但用户的选择必须立刻能读出来，
+    // 否则点完"下一张"存进配置的还是旧名字（重启打回上一张，静默）。
+    if (selected_ < 0)
         return {};
-    return lib_.at(front_.index).filename;
+    return lib_.at(selected_).filename;
 }
 
 bool Background::uploadToFront(int index, const WallpaperInfo& info) {
@@ -123,15 +127,18 @@ bool Background::loadByName(const std::string& filename) {
     int idx = lib_.resolveIndex(filename);
     if (idx < 0)
         return false;
-    if (idx == front_.index)
-        return true; // 已经是这一张
+    if (idx == selected_)
+        return true; // 选中的已经是这一张
 
     // 先 request 一遍（可能还没在 queue 里），然后上传到 back_
     loader_.request(idx, lib_.at(idx));
     uploadToBack(idx, lib_.at(idx));
     if (back_.index != idx)
-        return false; // 解码/上传失败，保持旧图
+        return false; // 解码/上传失败：保持旧图，也别改选中项
 
+    // 只有新图层真的准备好了才改选中项 —— 否则配置会指向一张加载失败的图，
+    // 重启后又是一次静默回退。
+    selected_ = idx;
     startFade();
     return true;
 }
@@ -140,8 +147,10 @@ bool Background::next() {
     if (lib_.empty())
         return false;
     int n = lib_.size();
-    int nextIdx = (front_.index + 1 + n) % n; // -1 → 0 也走这条路
-    if (nextIdx == front_.index)
+    // 从**选中项**往前推，而不是从正在显示的那张 —— 淡入期间连点两下
+    // "下一张"时要真的前进两张，从 front_ 推会算成同一张、原地打转。
+    int nextIdx = (selected_ + 1 + n) % n; // selected_ = -1 时正好落到 0
+    if (nextIdx == selected_)
         return false; // 库只有 1 张，无变化
 
     loader_.request(nextIdx, lib_.at(nextIdx));
@@ -149,6 +158,7 @@ bool Background::next() {
     if (back_.index != nextIdx)
         return false;
 
+    selected_ = nextIdx;
     startFade();
     return true;
 }

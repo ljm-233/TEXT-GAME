@@ -31,8 +31,22 @@ public:
     void render(sf::RenderTarget& target);
 
     bool isLoaded() const { return front_.index >= 0; }
+
+    /// **用户选中的**那张（`current_wallpaper` 里存的就是它）。
+    ///
+    /// ⚠️ 它和 `displayedIndex()` 是两件事，别合并：
+    ///    切图要淡入 0.5s，这期间画面上还是旧图，但"当前壁纸"从用户点下去
+    ///    那一刻就应该是新图 —— 设置里的 "n/m" 标签要立刻变，
+    ///    `current_wallpaper` 也要立刻存新名字。
+    ///    0.3.7 一开始把这两个概念混成一个（都返回正在显示的那张），结果是
+    ///    点完"下一张"存进配置的仍是旧名字，重启打回上一张 —— 完全静默。
     std::string currentFile() const;
-    int currentIndex() const { return front_.index; }
+    int currentIndex() const { return selected_; }
+
+    /// 当前**画面上**是哪一张。淡入期间会落后于 currentIndex()，淡入结束
+    /// 后两者一致。给冒烟测试与诊断用。
+    int displayedIndex() const { return front_.index; }
+
     int totalWallpapers() const { return lib_.size(); }
 
     /// 切到指定文件名。异步：从 loader 等图（默认 2s 超时），
@@ -78,6 +92,10 @@ private:
 
     Layer front_;
     Layer back_;
+
+    /// 用户选中的那张（-1 = 还没选中任何一张）。
+    /// 与 front_.index 的区别见 currentIndex() 的注释。
+    int selected_ = -1;
 
     bool fading_ = false;
     float fadeT_ = 0.f; ///< 0 = 刚开切；1 = 切完

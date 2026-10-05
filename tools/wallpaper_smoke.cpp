@@ -121,15 +121,28 @@ int main(int argc, char** argv) {
             check(false, "next() 返回 true（第 " + std::to_string(i) + " 次）");
             break;
         }
-        // 淡入期间 currentIndex 仍是旧的 —— 这是设计：旧图还在淡出
+        const int want = (before + 1) % n;
+
+        // ⭐ 回归守卫：**点下去那一刻**选中项就该是新图。
+        //    设置里的 "n/m" 标签和 current_wallpaper 都读 currentIndex()/currentFile()，
+        //    它们要立刻变 —— 曾经这里返回的是"正在显示的那张"，于是点完
+        //    "下一张"存进配置的还是旧名字，重启打回上一张（完全静默）。
+        check(bg.currentIndex() == want, "第 " + std::to_string(i) +
+                                             " 次切换：选中项立刻变成 " +
+                                             std::to_string(want) + "（实得 " +
+                                             std::to_string(bg.currentIndex()) + "）");
+        check(bg.currentFile() == lib.filenames()[want],
+              "第 " + std::to_string(i) + " 次切换：currentFile() 立刻是新名字（" +
+                  bg.currentFile() + "）");
+        check(bg.displayedIndex() == before,
+              "第 " + std::to_string(i) + " 次切换：这时的画面还是旧图（淡入中）");
+
+        // 等淡入走完，画面才追上选中项
         std::this_thread::sleep_for(kPastFade);
         renderAndSample(bg); // 驱动 render 把 fade 推到终点
-
-        const int want = (before + 1) % n;
-        check(bg.currentIndex() == want, "第 " + std::to_string(i) + " 次切换: index " +
-                                             std::to_string(before) + " -> " +
-                                             std::to_string(bg.currentIndex()) +
-                                             " (期望 " + std::to_string(want) + ")");
+        check(bg.displayedIndex() == want,
+              "第 " + std::to_string(i) + " 次切换：淡入结束后画面追上了（" +
+                  std::to_string(bg.displayedIndex()) + "）");
 
         // ⭐ 真正抓 bug 的一条：淡入结束后必须与"同图不淡入"的基准一致
         const sf::Color c = renderAndSample(bg);
@@ -146,11 +159,11 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(kPastFade);
     {
         // ⚠️ 必须分成两条语句：函数实参的求值顺序是**未指定的**，
-        //    写成 closeTo(renderAndSample(bg), sampleFresh(..., bg.currentIndex()))
-        //    会先算右边 —— 那时 renderAndSample 还没推进淡入，currentIndex()
+        //    写成 closeTo(renderAndSample(bg), sampleFresh(..., bg.displayedIndex()))
+        //    会先算右边 —— 那时 renderAndSample 还没推进淡入，displayedIndex()
         //    拿到的还是旧索引，于是基准取错图、断言假红。
         const sf::Color c = renderAndSample(bg); // 先推进 fade 到终点
-        const int idx = bg.currentIndex();       // 再读索引
+        const int idx = bg.displayedIndex();     // 再读"画面上那张"
         check(closeTo(c, sampleFresh(lib, logger, idx)),
               "淡入中途再切一次，最终与基准一致 (实得 " + rgb(c) + ")");
     }
@@ -159,15 +172,16 @@ int main(int argc, char** argv) {
     const std::string first = lib.filenames()[0];
     const std::string stem = first.substr(0, first.find_last_of('.'));
     check(bg.loadByName(stem + ".tiff"), "换过扩展名的老配置能接上");
+    check(bg.currentIndex() == 0, "接上的是第 0 张（选中项立刻生效）");
     std::this_thread::sleep_for(kPastFade);
     renderAndSample(bg);
-    check(bg.currentIndex() == 0, "接上的是第 0 张");
+    check(bg.displayedIndex() == 0, "淡入结束后画面也是第 0 张");
 
     // ---- 不存在的名字应当拒绝，且不破坏当前画面 ----
     check(!bg.loadByName("definitely-not-here.png"), "不存在的名字返回 false");
     {
         const sf::Color c = renderAndSample(bg);
-        const int idx = bg.currentIndex();
+        const int idx = bg.displayedIndex();
         check(closeTo(c, sampleFresh(lib, logger, idx)),
               "拒绝之后当前壁纸还在且与基准一致 (rgb=" + rgb(c) + ")");
     }
