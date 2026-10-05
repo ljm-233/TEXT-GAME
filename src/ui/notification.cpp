@@ -14,7 +14,8 @@ void NotificationSystem::push(const std::string& text, NotificationType type,
     Entry e;
     e.text = text;
     e.type = type;
-    e.duration = duration;
+    // 哨兵值 → 用配置里的时长；显式给了值就用调用方的（调试提示有意的短）
+    e.duration = (duration < 0.f) ? defaultDuration_ : duration;
     queue_.push_back(std::move(e));
     // 队列上限：隐藏的条数不超过 4
     if (queue_.size() > kMaxVisible + 4) {
@@ -117,7 +118,8 @@ void NotificationSystem::render(sf::RenderTarget& target, float dt) {
         target.draw(panel_);
 
         // 文字（复用成员）
-        if (!text_) return;
+        if (!text_)
+            return;
         text_->setString(sf::String::fromUtf8(e.text.begin(), e.text.end()));
         text_->setFillColor(sf::Color(255, 255, 255, a8));
         auto b = text_->getLocalBounds();

@@ -106,7 +106,8 @@ void registerScenes(Container& container) {
         Deps deps{container};
         return std::make_unique<SettingsScene>(
             deps.background(), deps.preferences(), deps.runtimeConfig(), deps.window(),
-            deps.wallpaperLibrary(), deps.wallpaperLoader(), deps.font(), deps.logger());
+            deps.wallpaperLibrary(), deps.wallpaperLoader(), deps.paths(), deps.font(),
+            deps.logger());
     });
 
     // ---------------- 控制台 ----------------

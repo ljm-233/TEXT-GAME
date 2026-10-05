@@ -1,4 +1,6 @@
 #pragma once
+#include <string>
+#include <vector>
 //
 // 配置键的唯一权威来源。
 //
@@ -111,4 +113,47 @@ inline constexpr const char* kConsoleMask = "console_mask";
 inline constexpr const char* kConsolePanelAlpha = "console_panel_alpha";
 inline constexpr const char* kConsolePrompt = "console_prompt";
 
-}  // namespace ConfigKey
+// ===== 0.3.8 新增 =====
+/// 界面音效（按钮点击等反馈音），与"音效"总开关分开 ——
+/// 有人想留游戏音效但嫌菜单点击声吵。
+inline constexpr const char* kUiSoundEnabled = "ui_sound_enabled";
+/// 屏幕通知停留时长（毫秒）
+inline constexpr const char* kNotificationDuration = "notification_duration";
+/// 粒子密度档位（0 关 / 1 少 / 2 标准 / 3 多）
+inline constexpr const char* kParticleDensity = "particle_density";
+/// 镜头抖动幅度倍率（0.0~2.0）。注意与手柄振动强度无关。
+inline constexpr const char* kShakeIntensity = "shake_intensity";
+
+// ============================================================
+// 可携带（跨机器）的键 —— 设置导出/导入只碰这些
+// ============================================================
+
+/// 这个键能不能跟着"设置分享码"走到别的机器上？
+///
+/// ⚠️ 是**白名单**而不是黑名单，因为两边失败的代价差得远：
+///    - 漏掉一个跟机器绑定的键（resolution_index / window_mode），
+///      导入后可能开出一个用户根本用不了的窗口，甚至起不来；
+///    - 漏掉一个观感键，用户手动再设一次就行。
+///    所以默认是"不可携带"，新键要显式加进 portable_keys.cpp 的名单。
+///
+/// 被排除的那批以及理由见 src/config/portable_keys.cpp。
+bool isPortable(const std::string& key);
+
+/// 白名单里有多少个键（给设置页的提示文案用，也是名单的活体计数）
+int portableKeyCount();
+
+// ============================================================
+// 全部键
+// ============================================================
+
+/// 本文件定义的所有配置键。
+///
+/// 存在的理由只有一个：**让"每个键都必须有归属"成为可测的**。
+/// 设置页重做时最典型的翻车就是新加了一个键、却忘了归到某一页
+/// （或者归错了页），而这是完全静默的 —— 界面上根本看不到它。
+/// 有了这份清单，tests/test_settings_tabs.cpp 就能直接把漏网的键报出来。
+///
+/// ⚠️ 加了新键就要同步这里（放在 src/config/keys.cpp）。
+const std::vector<const char*>& allKeys();
+
+} // namespace ConfigKey

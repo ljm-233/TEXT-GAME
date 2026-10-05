@@ -1006,6 +1006,18 @@ void GameScene::render(Window& window) {
     world_->setShowColliders(debugShowColliders_ ||
                              preferences_->getBool(ConfigKey::kShowColliders, false));
     world_->setScreenShake(preferences_->getBool(ConfigKey::kScreenShake, true));
+    // 抖动幅度：夹在 0~2 倍。0 等于关掉震动（但开关仍显示为"开"），
+    // 所以上界给 2 倍而不是更高，免得画面抖到看不清角色在哪。
+    world_->setShakeIntensity(static_cast<float>(
+        std::clamp(preferences_->getDouble(ConfigKey::kShakeIntensity, 1.0), 0.0, 2.0)));
+    // 粒子密度：0~3 档 → 0 / 0.5 / 1.0 / 1.5 倍。最高档略微超过 1 是为了
+    // 让"多"这个档位看得出区别，而不是和"标准"一模一样。
+    {
+        const int d =
+            std::clamp(preferences_->getInt(ConfigKey::kParticleDensity, 2), 0, 3);
+        static const float kDensityScale[] = {0.f, 0.5f, 1.0f, 1.5f};
+        particles_.setDensityScale(kDensityScale[d]);
+    }
     world_->setPseudo3D(preferences_->getBool(ConfigKey::kPseudo3d, true));
     world_->setPlayerAnimation(preferences_->getBool(ConfigKey::kPlayerAnimation, true));
 

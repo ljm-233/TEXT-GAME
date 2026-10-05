@@ -49,4 +49,10 @@ std::filesystem::path userTempDir();   // /tmp/text-game
 // 系统字体目录
 std::vector<std::filesystem::path> systemFontDirs();
 
+// 在系统文件管理器里打开一个目录。
+//
+// 失败（目录不存在、系统没有可用的打开方式）返回 false，
+// 不抛异常、不阻塞等待 —— 不能等用户关掉文件管理器才返回。
+bool openDirectory(const std::filesystem::path& dir);
+
 } // namespace Platform

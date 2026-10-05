@@ -35,8 +35,9 @@ ctest --preset tests
 # 关卡可达性验证
 ./build/debug/validate_levels assets/levels
 
-# 壁纸冒烟测试（**需要 DISPLAY，手动跑**，见下文"壁纸系统"）
-./build/release/wallpaper_smoke
+# 冒烟测试（**都需要 DISPLAY，手动跑**）
+./build/release/wallpaper_smoke   # 壁纸：淡入淡出 / 窗口适配 / 缩略图
+./build/release/settings_smoke    # 设置：点某一页的控件只改这一页的键
 
 # Sanitizer
 cmake --preset asan
@@ -71,8 +72,9 @@ include/ 和 src/ 一一对应，共 10 个层（从叶子到顶层）：
                   LevelValidator / LevelCodec / SaveManager ...）
   scene/          8 个场景 + console/（控制台命令）
 
-  scene/tabs/     7 个设置 Tab（AudioTab / GraphicsTab / InterfaceTab /
-                  WallpaperTab / DisplayTab / OtherTab / KeysTab）
+  scene/tabs/     9 个设置 Tab（DisplayTab / InterfaceTab / WallpaperTab /
+                  GraphicsTab / AudioTab / ControlsTab / GameTab /
+                  ConsoleTab / AdvancedTab）+ settings_tab_id（归属表）
 tests/            doctest 单元测试（含分层架构测试）
 tools/            validate_levels 命令行工具
 assets/
@@ -192,7 +194,9 @@ code = app.exec();
 | 玩家手感（速度/重力/跳跃） | `include/game/game_constants.h` |
 | 添加新游戏对象 | `include/game/` + `src/game/`，在 `GameWorld::spawnLevelObjects` 和 `checkCollisionsSafe` 注册 |
 | 添加新场景 | `include/scene/` + `src/scene/`，在 `scene_id.h` 加枚举 + 在 `registerScenes()`（`src/scene/bootstrap.cpp`）加一行工厂。**不用改 Game** |
-| **添加新设置项** | 在对应 Tab（`include/scene/tabs/xxx_tab.h/cpp`）加成员 + 创建控件 + update 回调。**不用改 SettingsScene** |
+| **添加新设置项** | 键加进 `include/config/keys.h`（含 `src/config/keys.cpp` 的 `allKeys()`）→ 在对应 Tab（`include/scene/tabs/xxx_tab.h/cpp`）加控件 → **在 `src/scene/settings_tab_id.cpp` 的归属表里登记**。不用改 SettingsScene |
+| **加/删一个设置页** | 枚举与标签在 `include/scene/settings_tab_id.h`，归属表在同名 .cpp；`SettingsScene` 里补 4 处分发（焦点/事件/更新/渲染）+ 一个 Tab 类。忘了补会收获 `-Wswitch` 警告 |
+| 加/换语言文案 | 中文原文写进 `include/utils/text_strings.h`，再往 `assets/lang/{en,ja,ko,zh-TW}.txt` 各补一行「中文=译文」。⚠️ key 里**不能有 `=`**（格式按第一个 `=` 切分，`=== TEXT-GAME 控制台 ===` 那条就因此永远翻不了，好在它原样使用、不需要翻译） |
 | 添加新事件 | `include/game/event_bus.h` 加 struct + 加入 variant，然后 `GameWorld` emit + `GameScene` 订阅 |
 | 添加关卡 | `assets/levels/levelN.txt`，参考已有格式；用 `validate_levels` 验证 |
 | 加/换壁纸素材 | 直接丢进 `wallpaper/`（`.jpg` / `.jpeg` / `.png`），会被自动扫到。**不用改代码**；顺手补 `wallpaper/CREDITS.md` |
@@ -223,23 +227,42 @@ code = app.exec();
 
 ### SettingsScene：Tab 架构
 
-7 个 Tab 都是**自包含类**，各自持有：
-- 状态变量
-- 控件（unique_ptr）
-- `handleEvent` / `update` / `render` / `refreshLabels` / `refreshSelection` / `registerFocus` / `anyEditing`
+9 个 Tab 都是**自包含类**，各自持有状态变量、控件（unique_ptr）、
+`handleEvent` / `update` / `render` / `refreshLabels` / `refreshSelection` /
+`registerFocus` / `anyEditing`，外加一个 `reapply()`（见下）。
 
-SettingsScene 只负责：
-- Tab 切换（7 个 `tabButtons_`）
-- 分发事件到当前 Tab
-- 底部按钮（返回 / 关于 / 重置）
-- 设计坐标系 View + 滚动
+SettingsScene 只负责 Tab 切换、把事件/更新/渲染分发给当前页、
+底部按钮（返回 / 恢复本页默认 / 高级页上的关于与全部重置）、
+设计坐标系 View + 滚动。
 
-**加设置项只需在对应 Tab 改 1~2 处**。
+**加设置项只需在对应 Tab 改 1~2 处** —— 但新键**必须**在
+`src/scene/settings_tab_id.cpp` 的归属表里登记，否则 `test_settings_tabs.cpp`
+会报"有键没有归属的设置页"。
 
-⚠️ **加/删 Tab 要同时改三处**，顺序必须一致，否则那个 Tab 会顶着别人的名字：
-`Tab` 枚举（`settings_scene.h`）、构造里的 `tabLabels[]`、`refreshLabels()` 里的
-逐个 `setText`。第一处和文件内那个 `static_assert` 会挡住漏改的情况
-（数组少一项本身不会报错，是静默的）。
+### 设置页的身份与归属：settings_tab_id.h
+
+`SettingsTab` 枚举 + `keysForTab(t)` + `unownedKeys()` 是**三处共用的唯一来源**：
+
+1. `SettingsScene`：建 Tab 按钮（`settingsTabLabel()`）、分发
+2. **「恢复本页默认」**：`resetKeys(keysForTab(t))` —— 把键从配置里**删掉**，
+   于是各处读取点自然回落到自己的兜底值。默认值因此永远只有一处定义，
+   不会出现"默认值表和应用点两边打架"（CLAUDE.md 里 vsync/fps_limit 那次翻车
+   就是这么来的）。删完再调该页的 `reapply()`
+3. `tools/settings_smoke.cpp`：逐页逐个控件点过去，检查**点这一页的控件
+   只改了这一页的键**（见下）
+
+⚠️ **`SettingsTab` 里刻意没有 `Count`**。放进去的话每个 switch 都得补一个
+`case Count:` 才能过 `-Wswitch`，而那会让"加了新 Tab 却忘了处理"**不再报警**。
+现在是独立常量 `kSettingsTabCount` + 穷尽 switch：加一页就会收获四条
+`-Wswitch` 警告，指路明明白白。
+
+⚠️ **各页的控件一律用具名指针，不要用 `toggles_[7]` / `multiRows_[12]` 这种数字
+下标**。这个文件群以前全是下标，搬一行就要重排全部下标，而排错了不报错 ——
+只是"点了这个改了那个"。0.3.8 重做时全部换成具名指针（`rowPseudo3D_` 等），
+并用下面那个冒烟工具把结果钉住。
+
+（顺带一个容易吓人的点：`addToggle()` / `addMulti()` 返回的是**堆上对象**的地址，
+缓存下来是安全的 —— vector 扩容搬的是 `unique_ptr`，指向的对象不动。）
 
 ### 渲染管线
 
@@ -588,6 +611,9 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ResourceManager（别名寻址 / 路径穿越拒绝 / `${path:别名}` 展开） | ✅ |
 | WallpaperLibrary（扩展名过滤 / 全名与主名匹配 / 中文名 / 越界 / 空目录） | ✅ |
 | WallpaperThumbnail（等比缩放 / 盒式平均 / 不放大 / 极端宽高比 / 内存预算） | ✅ |
+| SettingsTab 归属（每个键恰好属一页 / 表里无错名 / `tabForKey` 互逆 / 可携带白名单） | ✅ |
+| SettingsCodec（分享码往返 / 数字不被 RLE 吞 / 非法与截断输入 / 内存放大上限） | ✅ |
+| Platform::openDirectory（目录不存在 / 传文件 / 空路径 → false，不去执行外部命令） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。
@@ -605,6 +631,13 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 **无 sprite 模式**：`Player` / `Coin` / `Enemy` 的构造函数把贴图作为参数，
 传 `nullptr` 就进入"无 sprite 模式"——逻辑与碰撞照常跑，只是画不出东西。
 这既方便测试，也让贴图生成失败时自动降级而不是解引用空指针。
+
+**设置页的归属由两条腿守着**：`tests/test_settings_tabs.cpp` 保证"每个配置键都
+恰好属于一页"（加了键却忘了归类会直接报出来），`tools/settings_smoke.cpp`
+则真的逐页逐个控件点过去，比对点击前后配置键的差集，保证"点这一页的控件
+只改这一页的键"。工具有一个坑值得记住：`registerFocus()` 是**追加**语义，
+收两次列表就会翻倍，于是"跳过最后 4 个动作按钮"跟着错位 ——
+结果是**真的去打开文件管理器**（踩过一次）。
 
 ⚠️ **测试必须能在没有 DISPLAY 的环境下全绿**（现在就是）。
 SFML 里凡是继承 `sf::GlResource` 的类型 —— `sf::Texture` / `sf::RenderTexture` /

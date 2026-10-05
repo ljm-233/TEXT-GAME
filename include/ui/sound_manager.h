@@ -13,15 +13,21 @@ public:
     void setEnabled(bool e) { enabled_ = e; }
     bool isEnabled() const { return enabled_; }
 
+    // ===== 界面音效 =====
+    // 跟"音效总开关"分开：有人想留游戏音效（跳跃/金币），但嫌菜单里
+    // 每次点击都"嗒"一声。只有 playClick 这类界面反馈音受它管。
+    void setUiSoundEnabled(bool e) { uiSoundEnabled_ = e; }
+    bool isUiSoundEnabled() const { return uiSoundEnabled_; }
+
     // ===== 音量通道（三条独立）=====
     // 实际播放音量 = master * (sfx | music)
-    void setMasterVolume(float v);    // 0~1
+    void setMasterVolume(float v); // 0~1
     float masterVolume() const { return masterVolume_; }
 
-    void setSFXVolume(float v);       // 0~1
+    void setSFXVolume(float v); // 0~1
     float sfxVolume() const { return sfxVolume_; }
 
-    void setMusicVolume(float v);     // 0~1
+    void setMusicVolume(float v); // 0~1
     float musicVolume() const { return musicVolume_; }
 
     // 兼容旧名（旧代码里 setVolume 就是 SFX 音量）
@@ -73,12 +79,13 @@ private:
     sf::SoundBuffer bufBGM_;
     std::unique_ptr<sf::Sound> bgm_;
     bool bgmEnabled_ = true;
+    bool uiSoundEnabled_ = true;
     bool bgmPlaying_ = false;
 
     // 三条独立音量（0~1）
     float masterVolume_ = 1.0f;
-    float sfxVolume_    = 0.6f;
-    float musicVolume_  = 0.4f;
+    float sfxVolume_ = 0.6f;
+    float musicVolume_ = 0.4f;
 
     std::vector<std::unique_ptr<sf::Sound>> pool_;
     std::size_t nextIndex_ = 0;

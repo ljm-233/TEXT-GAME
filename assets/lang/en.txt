@@ -18,6 +18,7 @@
 控制台=Console
 设置=Settings
 退出游戏=Quit
+成就=Achievements
 
 # ===== 设置：Tab 名 =====
 显示=Display
@@ -26,10 +27,14 @@
 音频=Audio
 按键=Key Bindings
 其他=Other
+游戏=Game
+操作=Controls
+高级=Advanced
 
 # ===== 存档 =====
 ＋ 新建存档=+ New Save
 未命名存档=Unnamed Save
+×=×
 存档 =Save 
 确定删除存档「=Delete save "
 」？=" ?
@@ -56,6 +61,9 @@
 动画效果=Animation
 屏幕通知=Notifications
 手柄支持=Gamepad
+摇杆死区=Stick Deadzone
+手柄振动=Gamepad Vibration
+振动强度=Vibration Intensity
 * 部分设置返回主菜单后完全生效=* Some settings take effect after returning to main menu
 通知已开启=Notifications enabled
 
@@ -71,12 +79,29 @@
 抗锯齿=Anti-Aliasing
 日志级别=Log Level
 帧率上限=FPS Limit
+窗口模式=Window Mode
+窗口=Windowed
+最大化=Maximized
+渲染缩放=Render Scale
+超分辨率=Upscaling
+双三次=Bicubic
+FSR1=FSR1
+100%=100%
+75%=75%
+50%=50%
+33%=33%
+25%=25%
+10%=10%
+200%=200%
+150%=150%
+125%=125%
 
 # ===== 设置页：界面 Tab =====
 帧率显示=FPS Display
 FPS 位置=FPS Position
 FPS 格式=FPS Format
 界面缩放=UI Scale
+字体缩放=Font Scale
 语言=Language
 壁纸=Wallpaper
 点击缩略图即可切换壁纸=Click a thumbnail to switch
@@ -100,11 +125,34 @@ FPS 格式=FPS Format
 玩家动画=Player Animation
 关卡开场=Level Intro
 粒子效果=Particles
+粒子密度=Particle Density
 屏幕震动=Screen Shake
+震动强度=Shake Intensity
+只影响镜头抖动幅度，与手柄振动无关=Affects camera shake only, not gamepad vibration
 通知位置=Notification Position
+通知时长=Notification Duration
 按钮圆角=Button Corner
 按钮边框=Button Outline
 显示碰撞盒=Show Colliders
+# ===== Post-processing / Presets =====
+饱和度=Saturation
+对比度=Contrast
+亮度=Brightness
+伽马=Gamma
+暗角=Vignette
+泛光强度=Bloom Strength
+泛光阈值=Bloom Threshold
+色差=Chromatic Aberration
+胶片颗粒=Film Grain
+扫描线=Scanlines
+抖动=Dithering
+重置画面=Reset Graphics
+预设=Presets
+原版=Default
+复古 CRT=Retro CRT
+电影感=Cinematic
+像素 8-bit=Pixel 8-bit
+夜晚=Night
 
 # ===== 设置页：音频 Tab =====
 总音量=Master Volume
@@ -112,6 +160,8 @@ FPS 格式=FPS Format
 音效音量=Sound Volume
 背景音乐=BGM
 BGM 音量=BGM Volume
+界面音效=UI Sounds
+按钮点击等界面反馈音=Feedback sounds for button clicks and other UI actions
 
 # ===== 设置页：其他 Tab =====
 记住窗口大小=Remember Window Size
@@ -119,8 +169,33 @@ BGM 音量=BGM Volume
 日志轮转=Log Rotation
 日志保留=Log Keep
 玩家名=Player Name
+输入玩家名=Enter player name
 关于=About
+TEXT-GAME=TEXT-GAME
 恢复默认设置=Reset Defaults
+# ===== Advanced / Reset =====
+以下为排查问题用的设置，一般不需要修改=These settings are for troubleshooting; you normally do not need to change them
+恢复本页默认=Reset This Page
+只重置本页的设置项，不影响其它页=Only resets settings on this page
+恢复本页默认设置？只影响本页=Reset this page to defaults? Only this page is affected
+日志=Logs
+文件位置=File Locations
+设置分享=Share Settings
+分享码=Share Code
+点「导出设置」生成，或把别人的码粘贴到这里=Click "Export Settings" to generate one, or paste someone else's code here
+打开配置目录=Open Config Folder
+打开日志目录=Open Log Folder
+导出设置=Export Settings
+导入设置=Import Settings
+只包含观感/音量/按键等换台机器也成立的项，不含分辨率与窗口设置=Covers only portable settings such as look, volume and keys; not resolution or window mode
+已导出并复制到剪贴板，共=Exported and copied to clipboard: 
+导出失败：没有可导出的设置项=Export failed: no settings to export
+已导入=Imported 
+项，重启游戏后生效= items — restart the game to apply
+分享码无效或已损坏=Share code is invalid or corrupted
+这个码里没有可导入的设置项（可能不是本游戏的设置码）=No importable settings in this code (it may not be a TEXT-GAME settings code)
+已交给系统文件管理器打开=Opened in the system file manager
+打开失败：系统里没有可用的文件管理器=Failed to open: no file manager available
 
 # ===== 设置页：Tab 扩展 =====
 画面=Graphics
@@ -140,6 +215,8 @@ BGM 音量=BGM Volume
 时间: =Time: 
 钥匙: =Keys: 
 WASD 移动，Space 跳跃，ESC 暂停=WASD move, Space jump, ESC pause
+游戏尚未实现=Not implemented yet
+按 ESC 返回存档选择=Press ESC to return to save select
 
 # ===== 关卡完成 / 游戏失败 =====
 完成！=Complete!
@@ -163,6 +240,34 @@ R 重试    ESC 返回=R retry    ESC back
 关卡 =Level 
 收集 =Collect 
  个金币，到达终点= coins and reach the goal
+# ===== Achievements =====
+★ 成就解锁：=★ Achievement unlocked: 
+已解锁 =Unlocked 
+ / = / 
+初次收获=First Harvest
+收集第一个金币=Collect your first coin
+初出茅庐=First Steps
+通关第一个关卡=Clear your first level
+通关大师=Master of Completion
+通关全部关卡=Clear every level
+完美主义=Perfectionist
+单关收集全部金币并通关=Collect every coin in one level and clear it
+毫发无伤=Untouchable
+无伤通关一个关卡=Clear a level without taking damage
+疾风步=Speedrunner
+30 秒内通关一个关卡=Clear a level within 30 seconds
+三星大师=Three-Star Master
+在一个关卡拿到 3 星=Earn 3 stars on a level
+全星达成=All Stars
+全部关卡都拿到 3 星=Earn 3 stars on every level
+关卡设计师=Level Designer
+在编辑器里保存一次关卡=Save a level in the editor
+分享达人=Sharing Expert
+导出一次关卡分享码=Export a level share code
+命令行勇士=Console Warrior
+进入控制台场景=Enter the console scene
+内部人士=Insider
+使用任意调试快捷键=Use any debug hotkey
 
  # ===== 关卡编辑器 HUD =====
 文件: =File: 
@@ -178,6 +283,8 @@ R 重试    ESC 返回=R retry    ESC back
 无可撤销=Nothing to undo
 网格: 开=Grid: ON
 网格: 关=Grid: OFF
+可达性: 开=Reachability: ON
+可达性: 关=Reachability: OFF
 缩放: 100%=Zoom: 100%
 切换到 =Switched to 
 
@@ -201,6 +308,10 @@ R 重试    ESC 返回=R retry    ESC back
 
 # ===== 控制台 =====
 TEXT-GAME 控制台=TEXT-GAME Console
+# 注：ConsoleTitle「=== TEXT-GAME 控制台 ===」以「=」开头，key=value 格式无法表示；
+# 且它用作原样文本（未走 Str::T()），故不提供翻译条目。
+提示: ↑/↓ 翻历史，ESC 返回=Hint: ↑/↓ history, ESC back
+> => 
 输入 help 查看可用命令=Type "help" to list commands
 可用命令:
   help              显示帮助
@@ -236,6 +347,7 @@ TEXT-GAME 控制台=TEXT-GAME Console
 没有存档。=No saves.
 共 =Total 
  个存档: = saves:
+ 个存档:= saves:
 用法: save list=Usage: save list
 未知命令: =Unknown command: 
 。输入 help 查看帮助。=. Type "help" for help.
@@ -307,6 +419,8 @@ TEXT-GAME 控制台=TEXT-GAME Console
 跳跃=Jump
 暂停=Pause
 重开=Restart
+恢复默认按键=Reset Key Bindings
+只重置下面这些键位=Only resets the keys below
 按下新键...=Press new key...
 点击按钮后按新键绑定，Esc 取消=Click then press a key. Esc to cancel.
 

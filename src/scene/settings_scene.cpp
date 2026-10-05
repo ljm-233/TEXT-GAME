@@ -14,8 +14,6 @@
 #include "tabs/graphics_tab.h"
 #include "tabs/interface_tab.h"
 #include "tabs/display_tab.h"
-#include "tabs/other_tab.h"
-#include "tabs/keys_tab.h"
 #include <algorithm>
 #include <cmath>
 #include "utils/lang.h"
@@ -65,13 +63,15 @@ SettingsScene::SettingsScene(std::shared_ptr<Background> background,
                              std::shared_ptr<Window> window,
                              std::shared_ptr<WallpaperLibrary> wallpaperLibrary,
                              std::shared_ptr<WallpaperLoader> wallpaperLoader,
-                             const sf::Font& font, std::shared_ptr<Logger> logger)
+                             std::shared_ptr<Paths> paths, const sf::Font& font,
+                             std::shared_ptr<Logger> logger)
       : background_(std::move(background)),
         preferences_(std::move(preferences)),
         runtimeConfig_(std::move(runtimeConfig)),
         window_(std::move(window)),
         wallpaperLibrary_(std::move(wallpaperLibrary)),
         wallpaperLoader_(std::move(wallpaperLoader)),
+        paths_(std::move(paths)),
         logger_(std::move(logger)),
         font_(font),
         headingDisplay_(font, toSf(Str::TabDisplay), fontSizeInView(24)),
@@ -79,8 +79,11 @@ SettingsScene::SettingsScene(std::shared_ptr<Background> background,
         headingWallpaper_(font, toSf(Str::LabelWallpaper), fontSizeInView(24)),
         headingGraphics_(font, toSf(Str::TabGraphics), fontSizeInView(24)),
         headingAudio_(font, toSf(Str::TabAudioLog), fontSizeInView(24)),
-        headingKeys_(font, toSf(Str::TabKeys), fontSizeInView(24)),
-        headingOther_(font, toSf(Str::TabOther), fontSizeInView(24)) {
+        headingControls_(font, toSf(Str::TabControls), fontSizeInView(24)),
+        headingGame_(font, toSf(Str::TabGame), fontSizeInView(24)),
+        headingConsole_(font, toSf(Str::TabConsole), fontSizeInView(24)),
+        headingAdvanced_(font, toSf(Str::TabAdvanced), fontSizeInView(24)),
+        scrollHint_(font, sf::String(), fontSizeInView(16)) {
     // 标题颜色
     auto headingColor = sf::Color(160, 200, 240);
     headingDisplay_.setFillColor(headingColor);
@@ -88,26 +91,25 @@ SettingsScene::SettingsScene(std::shared_ptr<Background> background,
     headingWallpaper_.setFillColor(headingColor);
     headingGraphics_.setFillColor(headingColor);
     headingAudio_.setFillColor(headingColor);
-    headingKeys_.setFillColor(headingColor);
-    headingOther_.setFillColor(headingColor);
+    headingControls_.setFillColor(headingColor);
+    headingGame_.setFillColor(headingColor);
+    headingConsole_.setFillColor(headingColor);
+    headingAdvanced_.setFillColor(headingColor);
+    scrollHint_.setFillColor(sf::Color(200, 200, 140));
 
-    // ⚠️ 顺序必须与 Tab 枚举一致（壁纸在"界面"之后）
-    const char* tabLabels[] = {Str::TabDisplay,  Str::TabInterface, Str::LabelWallpaper,
-                               Str::TabGraphics, Str::TabAudioLog,  Str::TabKeys,
-                               Str::TabOther};
-    // 加了 Tab 却忘了补这里的一行，那个 Tab 就会顶着别人的名字显示 ——
-    // 而且是静默的（数组少一项也不会报错）
-    static_assert(sizeof(tabLabels) / sizeof(tabLabels[0]) == kTabCount,
-                  "tabLabels 的项数必须等于 kTabCount");
+    // 文案从 settings_tab_id.h 取 —— 那边是 Tab 身份的唯一来源，
+    // "枚举顺序 / 标签 / 归属表"三者一致由它保证（还有归属测试兜着）。
+    // 以前这里手抄一份数组，加了 Tab 忘补一行就会顶着别人的名字显示，且完全静默。
     for (int i = 0; i < kTabCount; ++i) {
         tabButtons_.push_back(std::make_unique<Button>(
-            tabLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22));
+            settingsTabLabel(static_cast<SettingsTab>(i)), font_, sf::Vector2f{0.f, 0.f},
+            sf::Vector2f{180.f, 50.f}, 22));
     }
 
     // ───────────── Display ─────────────
     // ⭐ 独立 Tab
-    displayTab_ = std::make_unique<DisplayTab>(font_, preferences_, runtimeConfig_,
-                                               window_, logger_);
+    displayTab_ =
+        std::make_unique<DisplayTab>(font_, preferences_, runtimeConfig_, window_);
 
     // ───────────── Interface ─────────────
     // ⭐ 独立 Tab
@@ -126,22 +128,32 @@ SettingsScene::SettingsScene(std::shared_ptr<Background> background,
     // ⭐ 独立 Tab
     audioTab_ = std::make_unique<AudioTab>(font_, preferences_, window_);
 
-    // ───────────── Other ─────────────
-    // ⭐ 独立 Tab
-    otherTab_ = std::make_unique<OtherTab>(font_, preferences_, logger_);
+    // ───────────── Controls（键位 + 手柄）─────────────
+    // 0.3.8：手柄三项原在「音频」页（因为它们"像"触觉），现在归位
+    controlsTab_ = std::make_unique<ControlsTab>(font_, preferences_);
 
-    // ───────────── Keys ─────────────
-    // ⭐ 独立 Tab
-    keysTab_ = std::make_unique<KeysTab>(font_, preferences_);
+    // ───────────── Game（玩法）─────────────
+    // 0.3.8 新建：初始生命/关卡开场原在「画面」，玩家名原在「其他」
+    gameTab_ = std::make_unique<GameTab>(font_, preferences_);
+
+    // ───────────── Console（控制台外观）─────────────
+    // 0.3.8 从「界面」独立出来：那页本来 19 个控件，一半是控制台的
+    consoleTab_ = std::make_unique<ConsoleTab>(font_, preferences_);
+
+    // ───────────── Advanced（日志 / 调试 / 文件 / 设置分享）─────────────
+    advancedTab_ = std::make_unique<AdvancedTab>(font_, preferences_, logger_, paths_);
 
     aboutButton_ = std::make_unique<Button>(
-        Str::ButtonAbout, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 46.f}, 20);
-    resetButton_ = std::make_unique<Button>(
-        Str::ResetDefault, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{220.f, 46.f}, 20);
+        Str::ButtonAbout, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{160.f, 46.f}, 20);
+    resetAllButton_ = std::make_unique<Button>(
+        Str::ResetDefault, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{210.f, 46.f}, 20);
     backButton_ = std::make_unique<Button>(Str::Back, font_, sf::Vector2f{0.f, 0.f},
-                                           sf::Vector2f{180.f, 50.f}, 22);
-    resetGraphicsButton_ = std::make_unique<Button>(
-        Str::ResetGraphics, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{180.f, 50.f}, 22);
+                                           sf::Vector2f{160.f, 50.f}, 22);
+    // 「恢复本页默认」每一页都有 —— 以前只有「画面」页有单独的重置按钮，
+    // 别的页调坏一项只能全局重置（连累其它页）
+    resetTabButton_ =
+        std::make_unique<Button>(Str::ButtonResetTab, font_, sf::Vector2f{0.f, 0.f},
+                                 sf::Vector2f{190.f, 50.f}, 20);
 
     refreshSelection();
     updateDesignView();
@@ -161,23 +173,18 @@ void SettingsScene::refreshLabels() {
     auto setLabel = [](sf::Text& t, const char* key) { t.setString(toSf(Str::T(key))); };
 
     // ===== Heading =====
-    setLabel(headingDisplay_, Str::TabDisplay);
-    setLabel(headingInterface_, Str::TabInterface);
-    setLabel(headingGraphics_, Str::TabGraphics);
-    setLabel(headingAudio_, Str::TabAudioLog);
-    setLabel(headingKeys_, Str::TabKeys);
-    setLabel(headingOther_, Str::TabOther);
+    sf::Text* headings[] = {&headingDisplay_,  &headingInterface_, &headingWallpaper_,
+                            &headingGraphics_, &headingAudio_,     &headingControls_,
+                            &headingGame_,     &headingConsole_,   &headingAdvanced_};
+    static_assert(sizeof(headings) / sizeof(headings[0]) ==
+                      static_cast<std::size_t>(kTabCount),
+                  "标题数组必须与 Tab 数量一致");
+    for (int i = 0; i < kTabCount; ++i)
+        setLabel(*headings[i], settingsTabLabel(static_cast<SettingsTab>(i)));
 
     // ===== Tab 按钮 =====
-    if (tabButtons_.size() >= 7) {
-        tabButtons_[0]->setText(Str::T(Str::TabDisplay));
-        tabButtons_[1]->setText(Str::T(Str::TabInterface));
-        tabButtons_[2]->setText(Str::T(Str::LabelWallpaper));
-        tabButtons_[3]->setText(Str::T(Str::TabGraphics));
-        tabButtons_[4]->setText(Str::T(Str::TabAudioLog));
-        tabButtons_[5]->setText(Str::T(Str::TabKeys));
-        tabButtons_[6]->setText(Str::T(Str::TabOther));
-    }
+    for (int i = 0; i < kTabCount && i < static_cast<int>(tabButtons_.size()); ++i)
+        tabButtons_[i]->setText(Str::T(settingsTabLabel(static_cast<SettingsTab>(i))));
 
     // ===== Toggle / Multi 刷新 =====
     if (displayTab_)
@@ -186,29 +193,28 @@ void SettingsScene::refreshLabels() {
         graphicsTab_->refreshLabels();
     if (audioTab_)
         audioTab_->refreshLabels();
-    if (presetRow_) {
-        presetRow_->label.setString(toSf(Str::T(Str::LabelPreset)));
-        if (presetRow_->buttons.size() >= 5) {
-            presetRow_->buttons[0]->setText(Str::T(Str::PresetDefault));
-            presetRow_->buttons[1]->setText(Str::T(Str::PresetCRT));
-            presetRow_->buttons[2]->setText(Str::T(Str::PresetCinematic));
-            presetRow_->buttons[3]->setText(Str::T(Str::PresetPixel8));
-            presetRow_->buttons[4]->setText(Str::T(Str::PresetNight));
-        }
-    }
-    if (otherTab_)
-        otherTab_->refreshLabels();
     if (interfaceTab_)
         interfaceTab_->refreshLabels();
-    if (keysTab_)
-        keysTab_->refreshLabels();
+    if (wallpaperTab_)
+        wallpaperTab_->refreshLabels();
+    if (controlsTab_)
+        controlsTab_->refreshLabels();
+    if (gameTab_)
+        gameTab_->refreshLabels();
+    if (consoleTab_)
+        consoleTab_->refreshLabels();
+    if (advancedTab_)
+        advancedTab_->refreshLabels();
     // ===== 其他按钮 =====
     if (aboutButton_)
         aboutButton_->setText(Str::T(Str::ButtonAbout));
-    if (resetButton_)
-        resetButton_->setText(Str::T(Str::ResetDefault));
+    if (resetAllButton_)
+        resetAllButton_->setText(Str::T(Str::ResetDefault));
+    if (resetTabButton_)
+        resetTabButton_->setText(Str::T(Str::ButtonResetTab));
     if (backButton_)
         backButton_->setText(Str::T(Str::Back));
+    scrollHint_.setString(toSf(Str::T(Str::HintScroll)));
 }
 
 void SettingsScene::refreshSelection() {
@@ -223,6 +229,9 @@ void SettingsScene::refreshSelection() {
     if (interfaceTab_)
         interfaceTab_->refreshSelection();
 
+    if (wallpaperTab_)
+        wallpaperTab_->refreshSelection();
+
     // Graphics
     if (graphicsTab_)
         graphicsTab_->refreshSelection();
@@ -231,13 +240,18 @@ void SettingsScene::refreshSelection() {
     if (audioTab_)
         audioTab_->refreshSelection();
 
-    // Other
-    if (otherTab_)
-        otherTab_->refreshSelection();
+    if (controlsTab_)
+        controlsTab_->refreshSelection();
+    if (gameTab_)
+        gameTab_->refreshSelection();
+    if (consoleTab_)
+        consoleTab_->refreshSelection();
+    if (advancedTab_)
+        advancedTab_->refreshSelection();
 }
 
 void SettingsScene::syncFocus() {
-    if (resetConfirm_ || aboutDialog_) {
+    if (resetTabConfirm_ || resetAllConfirm_ || aboutDialog_) {
         FocusGroup::instance().clear();
         return;
     }
@@ -247,34 +261,46 @@ void SettingsScene::syncFocus() {
         items.push_back(b.get());
 
     switch (currentTab_) {
-    case Tab::Display:
+    case SettingsTab::Display:
         if (displayTab_)
             displayTab_->registerFocus(items);
         break;
-    case Tab::Interface:
+    case SettingsTab::Interface:
         if (interfaceTab_)
             interfaceTab_->registerFocus(items);
         break;
-    case Tab::Wallpaper:
+    case SettingsTab::Wallpaper:
         if (wallpaperTab_)
             wallpaperTab_->registerFocus(items);
         break;
-    case Tab::Graphics:
+    case SettingsTab::Graphics:
         if (graphicsTab_)
             graphicsTab_->registerFocus(items);
         break;
-    case Tab::Audio:
+    case SettingsTab::Audio:
         audioTab_->registerFocus(items);
         break;
-    case Tab::Keys:
-        if (keysTab_)
-            keysTab_->registerFocus(items);
+    case SettingsTab::Controls:
+        if (controlsTab_)
+            controlsTab_->registerFocus(items);
         break;
-    case Tab::Other:
-        if (otherTab_)
-            otherTab_->registerFocus(items);
+    case SettingsTab::Game:
+        if (gameTab_)
+            gameTab_->registerFocus(items);
+        break;
+    case SettingsTab::Console:
+        if (consoleTab_)
+            consoleTab_->registerFocus(items);
+        break;
+    case SettingsTab::Advanced:
+        if (advancedTab_)
+            advancedTab_->registerFocus(items);
         break;
     }
+    // 「恢复本页默认」在底栏（窗口坐标系），和返回按钮一样不参与几何导航，
+    // 用鼠标点或手柄的合成事件触发
+    if (resetTabButton_)
+        items.push_back(resetTabButton_.get());
     // ⭐ 返回按钮在窗口坐标系固定右下角，不参与设计坐标系几何导航
     //    用 ESC 或手柄 B 键返回
     FocusGroup::instance().setItems(items);
@@ -286,6 +312,30 @@ void SettingsScene::syncFocus() {
 
 void SettingsScene::resetAllPreferences() {
     preferences_->resetAll();
+}
+
+bool SettingsScene::anySliderEditing() const {
+    // 有任何一页在编辑输入框就吞掉 ESC —— 否则用户按 ESC 想取消输入，
+    // 结果整个设置页退出了
+    if (displayTab_ && displayTab_->anyEditing())
+        return true;
+    if (interfaceTab_ && interfaceTab_->anyEditing())
+        return true;
+    if (wallpaperTab_ && wallpaperTab_->anyEditing())
+        return true;
+    if (graphicsTab_ && graphicsTab_->anyEditing())
+        return true;
+    if (audioTab_ && audioTab_->anyEditing())
+        return true;
+    if (controlsTab_ && controlsTab_->anyEditing())
+        return true;
+    if (gameTab_ && gameTab_->anyEditing())
+        return true;
+    if (consoleTab_ && consoleTab_->anyEditing())
+        return true;
+    if (advancedTab_ && advancedTab_->anyEditing())
+        return true;
+    return false;
 }
 
 // ============================================================
@@ -337,16 +387,18 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 
     // ⭐ 底部一行按钮在窗口坐标系（不缩放），用原始 event
     backButton_->handleEvent(event);
-    if (currentTab_ == Tab::Other) {
+    resetTabButton_->handleEvent(event);
+    if (currentTab_ == SettingsTab::Advanced) {
         aboutButton_->handleEvent(event);
-        resetButton_->handleEvent(event);
-    }
-    if (currentTab_ == Tab::Graphics) {
-        resetGraphicsButton_->handleEvent(event);
+        resetAllButton_->handleEvent(event);
     }
 
-    if (resetConfirm_) {
-        resetConfirm_->handleEvent(ev);
+    if (resetTabConfirm_) {
+        resetTabConfirm_->handleEvent(ev);
+        return;
+    }
+    if (resetAllConfirm_) {
+        resetAllConfirm_->handleEvent(ev);
         return;
     }
     if (aboutDialog_) {
@@ -365,33 +417,41 @@ void SettingsScene::handleEvent(const sf::Event& event) {
         b->handleEvent(ev);
 
     switch (currentTab_) {
-    case Tab::Display:
+    case SettingsTab::Display:
         if (displayTab_)
             displayTab_->handleEvent(ev);
         break;
-    case Tab::Interface:
+    case SettingsTab::Interface:
         if (interfaceTab_)
             interfaceTab_->handleEvent(ev);
         break;
-    case Tab::Wallpaper:
+    case SettingsTab::Wallpaper:
         if (wallpaperTab_)
             wallpaperTab_->handleEvent(ev);
         break;
-    case Tab::Graphics:
+    case SettingsTab::Graphics:
         if (graphicsTab_)
             graphicsTab_->handleEvent(ev);
         break;
-    case Tab::Audio:
+    case SettingsTab::Audio:
         if (audioTab_)
             audioTab_->handleEvent(ev);
         break;
-    case Tab::Keys:
-        if (keysTab_)
-            keysTab_->handleEvent(ev);
+    case SettingsTab::Controls:
+        if (controlsTab_)
+            controlsTab_->handleEvent(ev);
         break;
-    case Tab::Other:
-        if (otherTab_)
-            otherTab_->handleEvent(ev);
+    case SettingsTab::Game:
+        if (gameTab_)
+            gameTab_->handleEvent(ev);
+        break;
+    case SettingsTab::Console:
+        if (consoleTab_)
+            consoleTab_->handleEvent(ev);
+        break;
+    case SettingsTab::Advanced:
+        if (advancedTab_)
+            advancedTab_->handleEvent(ev);
         break;
     }
 }
@@ -401,20 +461,26 @@ void SettingsScene::handleEvent(const sf::Event& event) {
 // ============================================================
 
 void SettingsScene::update(float /*dt*/) {
-    // ⭐ 画面 Tab 重置按钮
-    if (currentTab_ == Tab::Graphics && resetGraphicsButton_->consumeClick()) {
-        if (graphicsTab_)
-            graphicsTab_->resetPost();
+    // 「恢复本页默认」的确认框。重置只碰本页的键，所以确认之后不用重启 ——
+    // 重置完就地重新读一遍并把需要即时生效的东西应用上（见 resetCurrentTab）
+    if (resetTabConfirm_) {
+        const auto r = resetTabConfirm_->consumeResult();
+        resetTabConfirm_.reset();
+        if (r == ConfirmDialog::Result::Yes)
+            resetCurrentTab();
+        syncFocus();
         return;
     }
 
-    if (resetConfirm_) {
-        auto r = resetConfirm_->consumeResult();
+    if (resetAllConfirm_) {
+        const auto r = resetAllConfirm_->consumeResult();
         if (r == ConfirmDialog::Result::Yes) {
             resetAllPreferences();
+            // 全局重置仍然走"退出后下次启动生效"：涉及分辨率、字体缩放、
+            // 着色器等一堆启动期固化的东西，逐个热更新既啰嗦又容易漏
             nextScene_ = SceneId::Exit;
         } else if (r == ConfirmDialog::Result::No) {
-            resetConfirm_.reset();
+            resetAllConfirm_.reset();
             syncFocus();
         }
         return;
@@ -431,7 +497,7 @@ void SettingsScene::update(float /*dt*/) {
     for (int i = 0; i < kTabCount; ++i) {
         if (tabButtons_[i]->consumeClick()) {
             if (static_cast<int>(currentTab_) != i) {
-                currentTab_ = static_cast<Tab>(i);
+                currentTab_ = static_cast<SettingsTab>(i);
                 contentScroll_ = 0.f; // ⭐ 切 Tab 重置滚动
                 refreshSelection();
                 syncFocus();
@@ -441,33 +507,48 @@ void SettingsScene::update(float /*dt*/) {
     }
 
     switch (currentTab_) {
-    case Tab::Display:
+    case SettingsTab::Display:
         if (displayTab_)
             displayTab_->update();
         break;
-    case Tab::Interface:
+    case SettingsTab::Interface:
         if (interfaceTab_)
             interfaceTab_->update();
         break;
-    case Tab::Wallpaper:
+    case SettingsTab::Wallpaper:
         if (wallpaperTab_)
             wallpaperTab_->update();
         break;
-    case Tab::Graphics:
+    case SettingsTab::Graphics:
         if (graphicsTab_)
             graphicsTab_->update();
         break;
-    case Tab::Audio:
+    case SettingsTab::Audio:
         if (audioTab_)
             audioTab_->update();
         break;
-    case Tab::Keys:
-        if (keysTab_)
-            keysTab_->update();
+    case SettingsTab::Controls:
+        if (controlsTab_)
+            controlsTab_->update();
         break;
-    case Tab::Other: {
-        if (otherTab_)
-            otherTab_->update();
+    case SettingsTab::Game:
+        if (gameTab_)
+            gameTab_->update();
+        break;
+    case SettingsTab::Console:
+        if (consoleTab_)
+            consoleTab_->update();
+        break;
+    case SettingsTab::Advanced: {
+        if (advancedTab_) {
+            advancedTab_->update();
+            // 导入设置之后有一堆东西（分辨率、字体缩放、着色器…）在启动期就固化了，
+            // 沿用「恢复默认设置」的既有做法：退出，下次启动生效
+            if (advancedTab_->consumeRestartRequest()) {
+                nextScene_ = SceneId::Exit;
+                return;
+            }
+        }
 
         if (aboutButton_->consumeClick()) {
             std::string msg = std::string(Str::T(Str::AboutTitle)) + "\n\n" +
@@ -479,8 +560,8 @@ void SettingsScene::update(float /*dt*/) {
             syncFocus();
             return;
         }
-        if (resetButton_->consumeClick()) {
-            resetConfirm_ = std::make_unique<ConfirmDialog>(
+        if (resetAllButton_->consumeClick()) {
+            resetAllConfirm_ = std::make_unique<ConfirmDialog>(
                 font_, Str::T(Str::ResetConfirm), sf::Vector2f(kDesignW, kDesignH));
             syncFocus();
             return;
@@ -489,8 +570,68 @@ void SettingsScene::update(float /*dt*/) {
     }
     }
 
+    // 「恢复本页默认」：每一页都能用
+    if (resetTabButton_->consumeClick()) {
+        resetTabConfirm_ = std::make_unique<ConfirmDialog>(
+            font_, Str::T(Str::ResetTabConfirm), sf::Vector2f(kDesignW, kDesignH));
+        syncFocus();
+        return;
+    }
+
     if (backButton_->consumeClick())
         nextScene_ = SceneId::Back;
+}
+
+void SettingsScene::resetCurrentTab() {
+    // 把本页的键从配置里**删掉**（不是写回一份默认值）——
+    // 默认值只存在于各处读取点，删掉之后自然回落，永远只有一处定义
+    std::vector<std::string> keys;
+    for (const char* k : keysForTab(currentTab_))
+        keys.emplace_back(k);
+    preferences_->resetKeys(keys);
+
+    // 再让本页重读一遍，并把需要即时生效的东西应用上
+    switch (currentTab_) {
+    case SettingsTab::Display:
+        if (displayTab_)
+            displayTab_->reapply();
+        break;
+    case SettingsTab::Interface:
+        if (interfaceTab_)
+            interfaceTab_->reapply();
+        break;
+    case SettingsTab::Wallpaper:
+        if (wallpaperTab_)
+            wallpaperTab_->reapply();
+        break;
+    case SettingsTab::Graphics:
+        if (graphicsTab_)
+            graphicsTab_->reapply();
+        break;
+    case SettingsTab::Audio:
+        if (audioTab_)
+            audioTab_->reapply();
+        break;
+    case SettingsTab::Controls:
+        if (controlsTab_)
+            controlsTab_->reapply();
+        break;
+    case SettingsTab::Game:
+        if (gameTab_)
+            gameTab_->reapply();
+        break;
+    case SettingsTab::Console:
+        if (consoleTab_)
+            consoleTab_->reapply();
+        break;
+    case SettingsTab::Advanced:
+        if (advancedTab_)
+            advancedTab_->reapply();
+        break;
+    default:
+        break;
+    }
+    refreshSelection();
 }
 
 // ============================================================
@@ -564,26 +705,46 @@ float SettingsScene::renderAudioTab(Window& window, float contentX, float ctrlX,
     return y;
 }
 
-float SettingsScene::renderKeysTab(Window& window, float contentX, float ctrlX, float y) {
-    headingKeys_.setPosition({contentX, y});
-    window.target().draw(headingKeys_);
+float SettingsScene::renderControlsTab(Window& window, float contentX, float ctrlX,
+                                       float y) {
+    headingControls_.setPosition({contentX, y});
+    window.target().draw(headingControls_);
     y += 36.f;
 
-    if (keysTab_) {
-        return keysTab_->render(window.target(), contentX, ctrlX, y);
-    }
+    if (controlsTab_)
+        return controlsTab_->render(window.target(), contentX, ctrlX, y);
     return y + 30.f;
 }
 
-float SettingsScene::renderOtherTab(Window& window, float contentX, float ctrlX,
-                                    float y) {
-    headingOther_.setPosition({contentX, y});
-    window.target().draw(headingOther_);
+float SettingsScene::renderGameTab(Window& window, float contentX, float ctrlX, float y) {
+    headingGame_.setPosition({contentX, y});
+    window.target().draw(headingGame_);
     y += 36.f;
 
-    if (otherTab_) {
-        return otherTab_->render(window.target(), contentX, ctrlX, y);
-    }
+    if (gameTab_)
+        return gameTab_->render(window.target(), contentX, ctrlX, y);
+    return y + 30.f;
+}
+
+float SettingsScene::renderConsoleTab(Window& window, float contentX, float ctrlX,
+                                      float y) {
+    headingConsole_.setPosition({contentX, y});
+    window.target().draw(headingConsole_);
+    y += 36.f;
+
+    if (consoleTab_)
+        return consoleTab_->render(window.target(), contentX, ctrlX, y);
+    return y + 30.f;
+}
+
+float SettingsScene::renderAdvancedTab(Window& window, float contentX, float ctrlX,
+                                       float y) {
+    headingAdvanced_.setPosition({contentX, y});
+    window.target().draw(headingAdvanced_);
+    y += 36.f;
+
+    if (advancedTab_)
+        return advancedTab_->render(window.target(), contentX, ctrlX, y);
     return y + 40.f;
 }
 
@@ -661,33 +822,43 @@ void SettingsScene::render(Window& window) {
 
     float contentBottom = 0.f;
     switch (currentTab_) {
-    case Tab::Display:
+    case SettingsTab::Display:
         contentBottom = renderDisplayTab(window, kContentX, kCtrlX, 60.f);
         break;
-    case Tab::Interface:
+    case SettingsTab::Interface:
         contentBottom = renderInterfaceTab(window, kContentX, kCtrlX, 50.f);
         break;
-    case Tab::Wallpaper:
+    case SettingsTab::Wallpaper:
         contentBottom = renderWallpaperTab(window, kContentX, kCtrlX, 50.f);
         break;
-    case Tab::Graphics:
+    case SettingsTab::Graphics:
         contentBottom = renderGraphicsTab(window, kContentX, kCtrlX, 50.f);
         break;
-    case Tab::Audio:
+    case SettingsTab::Audio:
         contentBottom = renderAudioTab(window, kContentX, kCtrlX, 60.f);
         break;
-    case Tab::Keys:
-        contentBottom = renderKeysTab(window, kContentX, kCtrlX, 60.f);
+    case SettingsTab::Controls:
+        contentBottom = renderControlsTab(window, kContentX, kCtrlX, 50.f);
         break;
-    case Tab::Other:
-        contentBottom = renderOtherTab(window, kContentX, kCtrlX, 60.f);
+    case SettingsTab::Game:
+        contentBottom = renderGameTab(window, kContentX, kCtrlX, 60.f);
+        break;
+    case SettingsTab::Console:
+        contentBottom = renderConsoleTab(window, kContentX, kCtrlX, 60.f);
+        break;
+    case SettingsTab::Advanced:
+        contentBottom = renderAdvancedTab(window, kContentX, kCtrlX, 50.f);
         break;
     }
     contentTotalH_ = contentBottom;
 
-    if (resetConfirm_) {
-        resetConfirm_->relayout({kDesignW, kDesignH});
-        resetConfirm_->render(native);
+    if (resetTabConfirm_) {
+        resetTabConfirm_->relayout({kDesignW, kDesignH});
+        resetTabConfirm_->render(native);
+    }
+    if (resetAllConfirm_) {
+        resetAllConfirm_->relayout({kDesignW, kDesignH});
+        resetAllConfirm_->render(native);
     }
     if (aboutDialog_) {
         aboutDialog_->relayout({kDesignW, kDesignH});
@@ -711,6 +882,11 @@ void SettingsScene::render(Window& window) {
                 bar.setFillColor(sf::Color(255, 255, 255, 120));
                 bar.setPosition({viewW - 14.f, barY});
                 native.draw(bar);
+
+                // 光有一根白条，用户不知道那是"还能滚"的意思。
+                // 贴在滚动条顶端，只在真的溢出时才出现。
+                scrollHint_.setPosition({viewW - 260.f, 10.f});
+                native.draw(scrollHint_);
             }
         }
     }
@@ -731,24 +907,27 @@ void SettingsScene::render(Window& window) {
 
         float backX = winW - bw - margin;
 
-        // ⭐ 先画关于/重置，再画返回（保证返回在最上层）
-        if (currentTab_ == Tab::Other) {
-            float rw = resetButton_->size().x;
-            float aw = aboutButton_->size().x;
-            float resetX = backX - gap - rw;
-            float aboutX = resetX - gap - aw;
+        // ⭐ 「恢复本页默认」每一页都在，而且位置固定 ——
+        //    用户不用先搞清楚"这一页支持哪些操作"，位置固定才形成肌肉记忆。
+        //    以前只有「画面」页有这个按钮，别的页调坏一项只能全局重置。
+        const float tw = resetTabButton_->size().x;
+        const float tx = backX - gap - tw;
+        resetTabButton_->setPosition({tx, y});
+        resetTabButton_->render(native);
+
+        // 「关于」与「恢复全部默认」只在「高级」页：前者是看一次就够的信息，
+        // 后者影响全部设置、属于危险操作，都不该在每一页都杵着
+        if (currentTab_ == SettingsTab::Advanced) {
+            const float rw = resetAllButton_->size().x;
+            const float aw = aboutButton_->size().x;
+            const float resetX = tx - gap - rw;
+            const float aboutX = resetX - gap - aw;
 
             aboutButton_->setPosition({aboutX, y});
             aboutButton_->render(native);
 
-            resetButton_->setPosition({resetX, y});
-            resetButton_->render(native);
-        }
-        if (currentTab_ == Tab::Graphics) {
-            float gw = resetGraphicsButton_->size().x;
-            float gx = backX - gap - gw;
-            resetGraphicsButton_->setPosition({gx, y});
-            resetGraphicsButton_->render(native);
+            resetAllButton_->setPosition({resetX, y});
+            resetAllButton_->render(native);
         }
 
         // 返回按钮最后画，确保在最上层

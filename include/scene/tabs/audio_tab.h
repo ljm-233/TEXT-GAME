@@ -15,8 +15,7 @@
 //    SettingsScene 只负责转发
 class AudioTab {
 public:
-    AudioTab(const sf::Font& font,
-             std::shared_ptr<Preferences> prefs,
+    AudioTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
              std::shared_ptr<Window> window);
 
     // 从 Preferences 读入
@@ -27,9 +26,7 @@ public:
     void update();
 
     // 渲染：返回渲染结束后的 y 坐标
-    float render(sf::RenderTarget& target,
-                 float contentX, float ctrlX,
-                 float startY);
+    float render(sf::RenderTarget& target, float contentX, float ctrlX, float startY);
 
     // 语言切换时刷新 label
     void refreshLabels();
@@ -43,37 +40,36 @@ public:
     // 是否有输入框正在编辑
     bool anyEditing() const;
 
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
 private:
     const sf::Font& font_;
     std::shared_ptr<Preferences> prefs_;
-    std::shared_ptr<Window>      window_;
+    std::shared_ptr<Window> window_;
 
     // 状态
-    bool  soundEnabled_              = true;
-    bool  bgmEnabled_                = true;
-    bool  gamepadEnabled_            = true;
-    bool  gamepadVibrationEnabled_   = true;
-    float masterVolume_              = 1.0f;
-    float soundVolume_               = 0.6f;
-    float bgmVolume_                 = 0.4f;
-    float gamepadVibrationIntensity_ = 1.0f;
+    bool soundEnabled_ = true;
+    bool bgmEnabled_ = true;
+    bool uiSoundEnabled_ = true;
+    float masterVolume_ = 1.0f;
+    float soundVolume_ = 0.6f;
+    float bgmVolume_ = 0.4f;
 
     // 控件
     std::vector<std::unique_ptr<ToggleRow>> toggles_;
     std::unique_ptr<Slider> masterVolumeSlider_;
     std::unique_ptr<Slider> soundVolumeSlider_;
     std::unique_ptr<Slider> bgmVolumeSlider_;
-    std::unique_ptr<Slider> gamepadVibrationSlider_;
 
     // Slider 的标签（Slider 本身不带 label）
     sf::Text labelMasterVolume_;
     sf::Text labelSoundVolume_;
     sf::Text labelBGMVolume_;
-    sf::Text labelVibrationIntensity_;
 
     // 应用回调
     void applySound();
     void applyBGM();
-    void applyGamepad();
-    void applyGamepadVibration();
+    void applyUiSound();
 };

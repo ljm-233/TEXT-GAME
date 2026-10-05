@@ -208,3 +208,16 @@ float WallpaperTab::render(sf::RenderTarget& target, float contentX, float start
 
     return y + 20.f;
 }
+
+void WallpaperTab::reapply() {
+    if (!library_ || !background_ || !prefs_)
+        return;
+    // 键被删掉之后应当回到"列表第一张"（新配置的默认行为）
+    const std::string want = prefs_->get(ConfigKey::kCurrentWallpaper, "");
+    int idx = library_->resolveIndex(want);
+    if (idx < 0 && !library_->empty())
+        idx = 0;
+    if (idx >= 0)
+        background_->loadByName(library_->at(idx).filename);
+    refreshLabels();
+}

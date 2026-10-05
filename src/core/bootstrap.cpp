@@ -226,6 +226,11 @@ void applyPreferences(Container& container) {
         prefs->getBool(ConfigKey::kNotificationEnabled, true));
     NotificationSystem::instance().setPosition(static_cast<NotificationPos>(
         std::clamp(prefs->getInt(ConfigKey::kNotificationPosition, 1), 0, 3)));
+    // 通知时长（毫秒 → 秒）。夹在 0.5~10s：0 会让通知瞬间消失、
+    // 过大则堆着不走，两个极端都像"通知坏了"。
+    NotificationSystem::instance().setDefaultDuration(
+        std::clamp(prefs->getInt(ConfigKey::kNotificationDuration, 3000), 500, 10000) /
+        1000.f);
 
     // 多语言
     {

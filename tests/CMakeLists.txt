@@ -24,7 +24,10 @@ add_executable(unit_tests
     test_editor_tools.cpp
     test_focus_nav.cpp
     test_resource_manager.cpp
+    test_platform.cpp
     test_config_seeding.cpp
+    test_settings_codec.cpp
+    test_settings_tabs.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )

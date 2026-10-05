@@ -5,6 +5,8 @@
 #include "utils/utf8.h"
 #include "utils/lang.h"
 #include "utils/animation.h"
+#include "notification.h"
+#include "button_style.h"
 #include "config/keys.h"
 
 #include <algorithm>
@@ -26,23 +28,18 @@ constexpr int kUiScaleCount = 10;
 const char* kUiScaleLabels[] = {"0.5x", "0.6x", "0.7x",  "0.8x", "0.9x",
                                 "1.0x", "1.1x", "1.25x", "1.5x", "2.0x"};
 
-const float kRenderScales[] = {2.0f, 1.5f,        1.25f, 1.0f, 0.75f,
-                               0.5f, 1.0f / 3.0f, 0.25f, 0.10f};
-constexpr int kRenderScaleCount = 9;
+// 按钮圆角 / 边框：档位与标签从「画面」页原样搬来（graphics_tab.cpp），
+// 不要另发明一套取值。
+const float kCorners[] = {0.f, 6.f, 14.f};
+constexpr int kCornerCount = 3;
+const char* kCornerLabels[] = {"直角", "小圆", "大圆"};
 
-const int kConsoleFonts[] = {14, 18, 22, 26};
-constexpr int kConsoleFontCount = 4;
-const char* kConsoleFontLabels[] = {"小", "中", "大", "特大"};
+const float kOutlines[] = {0.f, 2.f, 4.f};
+constexpr int kOutlineCount = 3;
+const char* kOutlineLabels[] = {"无", "细", "粗"};
 
-const int kConsoleHistory[] = {50, 100, 200, 500};
-constexpr int kConsoleHistoryCount = 4;
-
-const int kConsoleLineHeights[] = {20, 26, 32};
-constexpr int kConsoleLineHeightCount = 3;
-const char* kConsoleLineHeightLabels[] = {"紧凑", "正常", "宽松"};
-
-const char* kConsolePromptLabels[] = {">", "$", "λ", "❯"};
-constexpr int kConsolePromptCount = 4;
+const char* kAnimSpeedLabels[] = {"慢", "正常", "快"};
+constexpr int kAnimSpeedCount = 3;
 
 int indexOfUiScale(float s) {
     for (int i = 0; i < kUiScaleCount; ++i)
@@ -50,21 +47,15 @@ int indexOfUiScale(float s) {
             return i;
     return 5;
 }
-int indexOfConsoleFont(int f) {
-    for (int i = 0; i < kConsoleFontCount; ++i)
-        if (kConsoleFonts[i] == f)
+int indexOfButtonCorner(float c) {
+    for (int i = 0; i < kCornerCount; ++i)
+        if (std::abs(kCorners[i] - c) < 0.5f)
             return i;
     return 1;
 }
-int indexOfConsoleHistory(int n) {
-    for (int i = 0; i < kConsoleHistoryCount; ++i)
-        if (kConsoleHistory[i] == n)
-            return i;
-    return 2;
-}
-int indexOfConsoleLineHeight(int h) {
-    for (int i = 0; i < kConsoleLineHeightCount; ++i)
-        if (kConsoleLineHeights[i] == h)
+int indexOfButtonOutline(float o) {
+    for (int i = 0; i < kOutlineCount; ++i)
+        if (std::abs(kOutlines[i] - o) < 0.5f)
             return i;
     return 1;
 }
@@ -74,32 +65,19 @@ int indexOfPos(int idx) {
 int indexOfFpsFormat(int idx) {
     return (idx < 0 || idx >= kFpsFormatCount) ? 1 : idx;
 }
-int indexOfConsolePrompt(int idx) {
-    return (idx < 0 || idx >= kConsolePromptCount) ? 0 : idx;
-}
-int indexOfRenderScale(float s) {
-    for (int i = 0; i < kRenderScaleCount; ++i)
-        if (std::abs(kRenderScales[i] - s) < 0.01f)
-            return i;
-    return 3;
-}
 
 } // namespace
 
 InterfaceTab::InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
-                           std::shared_ptr<Window> window)
+                           std::shared_ptr<Window> /*window*/)
       : font_(font),
         prefs_(std::move(prefs)),
-        window_(std::move(window)),
-        labelConsoleMask_(font, sf::String(), scaledFontSize(20)),
-        labelConsolePanelAlpha_(font, sf::String(), scaledFontSize(20)),
+        labelNotificationDuration_(font, sf::String(), scaledFontSize(20)),
         hintUiScale_(font, sf::String(), scaledFontSize(14)) {
     loadFromPrefs();
 
     auto labelColor = sf::Color(230, 230, 230);
-    for (auto* t : {&labelConsoleMask_, &labelConsolePanelAlpha_}) {
-        t->setFillColor(labelColor);
-    }
+    labelNotificationDuration_.setFillColor(labelColor);
     hintUiScale_.setFillColor(sf::Color(180, 180, 200));
 
     auto makeToggle = [&](const std::string& onText, const std::string& offText) {
@@ -109,12 +87,13 @@ InterfaceTab::InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> pr
                                             sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
-    auto addToggle = [&](const char* key, std::function<void(bool)> cb) {
+    auto addToggle = [&](const char* key, std::function<void(bool)> cb) -> ToggleRow* {
         auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
         auto [on, off] = makeToggle(Str::On, Str::Off);
         row->onButton = std::move(on);
         row->offButton = std::move(off);
         toggles_.push_back(std::move(row));
+        return toggles_.back().get();
     };
     auto addMulti = [&](const char* key, std::function<void(int)> cb) {
         auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
@@ -122,246 +101,170 @@ InterfaceTab::InterfaceTab(const sf::Font& font, std::shared_ptr<Preferences> pr
         return multiRows_.back().get();
     };
 
-    // [0] FpsPos
-    {
-        auto* row = addMulti(Str::LabelFpsPos, [this](int i) {
-            fpsPosition_ = i;
-            refreshSelection();
-            applyFpsPosition();
-        });
-        row->stepX = 86.f;
-        for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{76.f, 40.f}, 16));
-    }
-    // [1] FpsFormat
-    {
-        auto* row = addMulti(Str::LabelFpsFormat, [this](int i) {
-            fpsFormat_ = i;
-            refreshSelection();
-            applyFpsFormat();
-        });
-        row->stepX = 114.f;
-        for (int i = 0; i < kFpsFormatCount; ++i)
-            row->addButton(std::make_unique<Button>(kFpsFormatLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{110.f, 40.f}, 16));
-    }
-    // [2] UiScale
-    {
-        auto* row = addMulti(Str::LabelUiScale, [this](int i) {
-            uiScale_ = kUiScales[i];
-            refreshSelection();
-            setUiScale(uiScale_);
-            prefs_->setDouble(ConfigKey::kUiScale, uiScale_);
-        });
-        for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [3] FontScale
-    {
-        auto* row = addMulti(Str::LabelFontScale, [this](int i) {
-            fontScale_ = kUiScales[i];
-            refreshSelection();
-            setFontScale(fontScale_);
-            prefs_->setDouble(ConfigKey::kFontScale, fontScale_);
-        });
-        for (int i = 0; i < kUiScaleCount; ++i)
-            row->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [4] RenderScale
-    {
-        auto* row = addMulti(Str::LabelRenderScale, [this](int i) {
-            renderScale_ = kRenderScales[i];
-            refreshSelection();
-            window_->setRenderScale(renderScale_);
-            prefs_->setDouble(ConfigKey::kRenderScale, renderScale_);
-        });
-        row->stepX = 96.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale200), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale150), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale125), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale100), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale75), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale50), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale33), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale25), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::RenderScale10), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [5] UpscaleMode
-    {
-        auto* row = addMulti(Str::LabelUpscaleMode, [this](int i) {
-            upscaleMode_ = i;
-            refreshSelection();
-            window_->setUpscaleMode(upscaleMode_);
-            prefs_->setInt(ConfigKey::kUpscaleMode, upscaleMode_);
-        });
-        row->stepX = 100.f;
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleOff), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleBicubic), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-        row->addButton(std::make_unique<Button>(Str::T(Str::UpscaleFsr1), font_,
-                                                sf::Vector2f{0.f, 0.f},
-                                                sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [6] Theme
-    {
-        auto* row = addMulti(Str::LabelTheme, [this](int i) {
-            themeId_ = i;
-            refreshSelection();
-            applyTheme();
-        });
-        row->stepX = 110.f;
-        for (int i = 0; i < kThemeCount; ++i)
-            row->addButton(std::make_unique<Button>(themeName(static_cast<ThemeId>(i)),
-                                                    font_, sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{100.f, 40.f}, 18));
-    }
-    // [7] Language
-    {
-        auto* row = addMulti(Str::LabelLanguage, [this](int i) {
-            languageIdx_ = i;
-            refreshSelection();
-            applyLanguage();
-        });
-        row->stepX = 110.f;
-        for (const auto& code : Lang::instance().available()) {
-            std::string label = code;
-            if (code == "zh")
-                label = "中文";
-            else if (code == "zh-TW")
-                label = "繁體中文";
-            else if (code == "en")
-                label = "English";
-            else if (code == "ja")
-                label = "日本語";
-            else if (code == "ko")
-                label = "한국어";
-            row->addButton(std::make_unique<Button>(label, font_, sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{100.f, 40.f}, 18));
-        }
-    }
-    // [8] ClockPos
-    {
-        auto* row = addMulti(Str::LabelClockPos, [this](int i) {
-            clockPosition_ = i;
-            refreshSelection();
-            prefs_->setInt(ConfigKey::kClockPosition, clockPosition_);
-        });
-        row->stepX = 86.f;
-        for (int i = 0; i < kPosCount; ++i)
-            row->addButton(std::make_unique<Button>(kPosLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{76.f, 40.f}, 16));
-    }
-    // [9] ConsoleFont
-    {
-        auto* row = addMulti(Str::LabelConsoleFont, [this](int i) {
-            consoleFontSize_ = kConsoleFonts[i];
-            refreshSelection();
-            prefs_->setInt(ConfigKey::kConsoleFontSize, consoleFontSize_);
-        });
-        for (int i = 0; i < kConsoleFontCount; ++i)
-            row->addButton(std::make_unique<Button>(kConsoleFontLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [10] ConsoleHistory
-    {
-        auto* row = addMulti(Str::LabelConsoleHistory, [this](int i) {
-            consoleHistoryLines_ = kConsoleHistory[i];
-            refreshSelection();
-            prefs_->setInt(ConfigKey::kConsoleHistoryLines, consoleHistoryLines_);
-        });
-        for (int i = 0; i < kConsoleHistoryCount; ++i)
-            row->addButton(std::make_unique<Button>(std::to_string(kConsoleHistory[i]),
-                                                    font_, sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [11] ConsoleLineHeight
-    {
-        auto* row = addMulti(Str::LabelConsoleLineHeight, [this](int i) {
-            consoleLineHeight_ = kConsoleLineHeights[i];
-            refreshSelection();
-            prefs_->setInt(ConfigKey::kConsoleLineHeight, consoleLineHeight_);
-        });
-        for (int i = 0; i < kConsoleLineHeightCount; ++i)
-            row->addButton(std::make_unique<Button>(kConsoleLineHeightLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{86.f, 40.f}, 18));
-    }
-    // [12] ConsolePrompt
-    {
-        auto* row = addMulti(Str::LabelConsolePrompt, [this](int i) {
-            consolePrompt_ = i;
-            refreshSelection();
-            applyConsolePrompt();
-        });
-        row->stepX = 70.f;
-        for (int i = 0; i < kConsolePromptCount; ++i)
-            row->addButton(std::make_unique<Button>(kConsolePromptLabels[i], font_,
-                                                    sf::Vector2f{0.f, 0.f},
-                                                    sf::Vector2f{60.f, 40.f}, 18));
+    // FpsPos
+    rowFpsPos_ = addMulti(Str::LabelFpsPos, [this](int i) {
+        fpsPosition_ = i;
+        refreshSelection();
+        applyFpsPosition();
+    });
+    rowFpsPos_->stepX = 86.f;
+    for (int i = 0; i < kPosCount; ++i)
+        rowFpsPos_->addButton(std::make_unique<Button>(
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+
+    // FpsFormat
+    rowFpsFormat_ = addMulti(Str::LabelFpsFormat, [this](int i) {
+        fpsFormat_ = i;
+        refreshSelection();
+        applyFpsFormat();
+    });
+    rowFpsFormat_->stepX = 114.f;
+    for (int i = 0; i < kFpsFormatCount; ++i)
+        rowFpsFormat_->addButton(std::make_unique<Button>(kFpsFormatLabels[i], font_,
+                                                          sf::Vector2f{0.f, 0.f},
+                                                          sf::Vector2f{110.f, 40.f}, 16));
+
+    // UiScale
+    rowUiScale_ = addMulti(Str::LabelUiScale, [this](int i) {
+        uiScale_ = kUiScales[i];
+        refreshSelection();
+        setUiScale(uiScale_);
+        prefs_->setDouble(ConfigKey::kUiScale, uiScale_);
+    });
+    for (int i = 0; i < kUiScaleCount; ++i)
+        rowUiScale_->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                        sf::Vector2f{0.f, 0.f},
+                                                        sf::Vector2f{86.f, 40.f}, 18));
+
+    // FontScale
+    rowFontScale_ = addMulti(Str::LabelFontScale, [this](int i) {
+        fontScale_ = kUiScales[i];
+        refreshSelection();
+        setFontScale(fontScale_);
+        prefs_->setDouble(ConfigKey::kFontScale, fontScale_);
+    });
+    for (int i = 0; i < kUiScaleCount; ++i)
+        rowFontScale_->addButton(std::make_unique<Button>(kUiScaleLabels[i], font_,
+                                                          sf::Vector2f{0.f, 0.f},
+                                                          sf::Vector2f{86.f, 40.f}, 18));
+
+    // Theme
+    rowTheme_ = addMulti(Str::LabelTheme, [this](int i) {
+        themeId_ = i;
+        refreshSelection();
+        applyTheme();
+    });
+    rowTheme_->stepX = 110.f;
+    for (int i = 0; i < kThemeCount; ++i)
+        rowTheme_->addButton(std::make_unique<Button>(themeName(static_cast<ThemeId>(i)),
+                                                      font_, sf::Vector2f{0.f, 0.f},
+                                                      sf::Vector2f{100.f, 40.f}, 18));
+
+    // Language
+    rowLanguage_ = addMulti(Str::LabelLanguage, [this](int i) {
+        languageIdx_ = i;
+        refreshSelection();
+        applyLanguage();
+    });
+    rowLanguage_->stepX = 110.f;
+    for (const auto& code : Lang::instance().available()) {
+        std::string label = code;
+        if (code == "zh")
+            label = "中文";
+        else if (code == "zh-TW")
+            label = "繁體中文";
+        else if (code == "en")
+            label = "English";
+        else if (code == "ja")
+            label = "日本語";
+        else if (code == "ko")
+            label = "한국어";
+        rowLanguage_->addButton(std::make_unique<Button>(
+            label, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
     }
 
+    // ClockPos
+    rowClockPos_ = addMulti(Str::LabelClockPos, [this](int i) {
+        clockPosition_ = i;
+        refreshSelection();
+        prefs_->setInt(ConfigKey::kClockPosition, clockPosition_);
+    });
+    rowClockPos_->stepX = 86.f;
+    for (int i = 0; i < kPosCount; ++i)
+        rowClockPos_->addButton(std::make_unique<Button>(
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+
+    // ButtonCorner
+    rowButtonCorner_ = addMulti(Str::LabelButtonCorner, [this](int i) {
+        buttonCorner_ = kCorners[i];
+        refreshSelection();
+        applyButtonStyle();
+    });
+    for (int i = 0; i < kCornerCount; ++i)
+        rowButtonCorner_->addButton(
+            std::make_unique<Button>(kCornerLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                                     sf::Vector2f{86.f, 40.f}, 18));
+
+    // ButtonOutline
+    rowButtonOutline_ = addMulti(Str::LabelButtonOutline, [this](int i) {
+        buttonOutline_ = kOutlines[i];
+        refreshSelection();
+        applyButtonStyle();
+    });
+    for (int i = 0; i < kOutlineCount; ++i)
+        rowButtonOutline_->addButton(
+            std::make_unique<Button>(kOutlineLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                                     sf::Vector2f{86.f, 40.f}, 18));
+
+    // AnimationSpeed
+    rowAnimationSpeed_ = addMulti(Str::LabelAnimationSpeed, [this](int i) {
+        animationSpeedIndex_ = i;
+        refreshSelection();
+        applyAnimation();
+    });
+    for (int i = 0; i < kAnimSpeedCount; ++i)
+        rowAnimationSpeed_->addButton(
+            std::make_unique<Button>(kAnimSpeedLabels[i], font_, sf::Vector2f{0.f, 0.f},
+                                     sf::Vector2f{86.f, 40.f}, 18));
+
+    // NotificationPos
+    rowNotificationPos_ = addMulti(Str::LabelNotificationPos, [this](int i) {
+        notificationPosition_ = i;
+        refreshSelection();
+        applyNotification();
+    });
+    rowNotificationPos_->stepX = 86.f;
+    for (int i = 0; i < kPosCount; ++i)
+        rowNotificationPos_->addButton(std::make_unique<Button>(
+            kPosLabels[i], font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
+
     // Toggles
-    addToggle(Str::LabelFps, [this](bool v) {
+    rowFps_ = addToggle(Str::LabelFps, [this](bool v) {
         showFps_ = v;
         refreshSelection();
         prefs_->setBool(ConfigKey::kShowFps, v);
     });
-    addToggle(Str::LabelClock, [this](bool v) {
+    rowClock_ = addToggle(Str::LabelClock, [this](bool v) {
         showClock_ = v;
         refreshSelection();
         prefs_->setBool(ConfigKey::kShowClock, v);
     });
-    addToggle(Str::LabelConsoleAutoScroll, [this](bool v) {
-        consoleAutoScroll_ = v;
+    rowAnimation_ = addToggle(Str::LabelAnimation, [this](bool v) {
+        animationEnabled_ = v;
         refreshSelection();
-        prefs_->setBool(ConfigKey::kConsoleAutoScroll, v);
+        applyAnimation();
     });
-    addToggle(Str::LabelConsoleBlink, [this](bool v) {
-        consoleBlinkCursor_ = v;
+    rowNotification_ = addToggle(Str::LabelNotification, [this](bool v) {
+        notificationEnabled_ = v;
         refreshSelection();
-        prefs_->setBool(ConfigKey::kConsoleBlinkCursor, v);
+        applyNotification();
     });
 
-    // Console sliders
-    consoleMaskSlider_ =
-        std::make_unique<Slider>(font_, 0.f, 255.f, static_cast<float>(consoleMask_),
-                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    consoleMaskSlider_->setDefaultValue(160.f);
-
-    consolePanelAlphaSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 255.f, static_cast<float>(consolePanelAlpha_), sf::Vector2f{0.f, 0.f},
-        sf::Vector2f{240.f, 22.f});
-    consolePanelAlphaSlider_->setDefaultValue(220.f);
+    // 通知时长 Slider（配置里是毫秒）
+    notificationDurationSlider_ = std::make_unique<Slider>(
+        font_, 1000.f, 8000.f, static_cast<float>(notificationDuration_),
+        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    notificationDurationSlider_->setDefaultValue(3000.f);
 
     refreshLabels();
     refreshSelection();
@@ -373,20 +276,20 @@ void InterfaceTab::loadFromPrefs() {
     fpsFormat_ = indexOfFpsFormat(prefs_->getInt(ConfigKey::kFpsFormat, 1));
     uiScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kUiScale, 1.0));
     fontScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kFontScale, 1.0));
-    renderScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
-    upscaleMode_ = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
     themeId_ = prefs_->getInt(ConfigKey::kTheme, 0);
     showClock_ = prefs_->getBool(ConfigKey::kShowClock, false);
     clockPosition_ = prefs_->getInt(ConfigKey::kClockPosition, 0);
-    consoleMask_ = std::clamp(prefs_->getInt(ConfigKey::kConsoleMask, 160), 0, 255);
-    consolePanelAlpha_ =
-        std::clamp(prefs_->getInt(ConfigKey::kConsolePanelAlpha, 220), 0, 255);
-    consoleFontSize_ = prefs_->getInt(ConfigKey::kConsoleFontSize, 18);
-    consoleHistoryLines_ = prefs_->getInt(ConfigKey::kConsoleHistoryLines, 200);
-    consoleLineHeight_ = prefs_->getInt(ConfigKey::kConsoleLineHeight, 26);
-    consoleAutoScroll_ = prefs_->getBool(ConfigKey::kConsoleAutoScroll, true);
-    consoleBlinkCursor_ = prefs_->getBool(ConfigKey::kConsoleBlinkCursor, true);
-    consolePrompt_ = indexOfConsolePrompt(prefs_->getInt(ConfigKey::kConsolePrompt, 0));
+    buttonCorner_ = static_cast<float>(prefs_->getDouble(ConfigKey::kButtonCorner, 6.0));
+    buttonOutline_ =
+        static_cast<float>(prefs_->getDouble(ConfigKey::kButtonOutline, 2.0));
+    animationEnabled_ = prefs_->getBool(ConfigKey::kAnimationEnabled, true);
+    animationSpeedIndex_ = std::clamp(prefs_->getInt(ConfigKey::kAnimationSpeedIndex, 1),
+                                      0, kAnimSpeedCount - 1);
+    notificationEnabled_ = prefs_->getBool(ConfigKey::kNotificationEnabled, true);
+    notificationPosition_ =
+        std::clamp(prefs_->getInt(ConfigKey::kNotificationPosition, 0), 0, kPosCount - 1);
+    notificationDuration_ =
+        std::clamp(prefs_->getInt(ConfigKey::kNotificationDuration, 3000), 1000, 8000);
 
     {
         std::string langCode = prefs_->get(ConfigKey::kLanguage, "zh");
@@ -420,8 +323,31 @@ void InterfaceTab::applyLanguage() {
     Lang::instance().load(code);
     prefs_->set(ConfigKey::kLanguage, code);
 }
-void InterfaceTab::applyConsolePrompt() {
-    prefs_->setInt(ConfigKey::kConsolePrompt, consolePrompt_);
+void InterfaceTab::applyButtonStyle() {
+    ButtonStyle bs;
+    bs.cornerRadius = buttonCorner_;
+    bs.outlineThickness = buttonOutline_;
+    setButtonStyle(bs);
+    prefs_->setDouble(ConfigKey::kButtonCorner, buttonCorner_);
+    prefs_->setDouble(ConfigKey::kButtonOutline, buttonOutline_);
+}
+void InterfaceTab::applyAnimation() {
+    Anim::setEnabled(animationEnabled_);
+    static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
+    Anim::setSpeed(kSpeeds[std::clamp(animationSpeedIndex_, 0, kAnimSpeedCount - 1)]);
+    prefs_->setBool(ConfigKey::kAnimationEnabled, animationEnabled_);
+    prefs_->setInt(ConfigKey::kAnimationSpeedIndex, animationSpeedIndex_);
+}
+void InterfaceTab::applyNotification() {
+    NotificationSystem::instance().setEnabled(notificationEnabled_);
+    NotificationSystem::instance().setPosition(
+        static_cast<NotificationPos>(notificationPosition_));
+    // 立即生效（bootstrap 只在启动时读一次配置）
+    NotificationSystem::instance().setDefaultDuration(
+        static_cast<float>(notificationDuration_) / 1000.f);
+    prefs_->setBool(ConfigKey::kNotificationEnabled, notificationEnabled_);
+    prefs_->setInt(ConfigKey::kNotificationPosition, notificationPosition_);
+    prefs_->setInt(ConfigKey::kNotificationDuration, notificationDuration_);
 }
 
 void InterfaceTab::refreshLabels() {
@@ -433,48 +359,54 @@ void InterfaceTab::refreshLabels() {
     for (auto& row : multiRows_)
         row->refreshLabel();
 
-    labelConsoleMask_.setString(toSf(Str::T(Str::LabelConsoleMask)));
-    labelConsolePanelAlpha_.setString(toSf(Str::T(Str::LabelConsolePanelAlpha)));
+    labelNotificationDuration_.setString(toSf(Str::T(Str::LabelNotificationDuration)));
     hintUiScale_.setString(toSf(Str::T(Str::HintUiScale)));
 
     // 主题按钮文字（英文/日文等需要刷新）
-    if (multiRows_.size() > 6) {
-        auto& themeRow = *multiRows_[6];
-        for (int i = 0; i < kThemeCount && i < static_cast<int>(themeRow.buttons.size());
-             ++i) {
-            themeRow.buttons[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
+    if (rowTheme_) {
+        for (int i = 0;
+             i < kThemeCount && i < static_cast<int>(rowTheme_->buttons.size()); ++i) {
+            rowTheme_->buttons[i]->setText(Str::T(themeName(static_cast<ThemeId>(i))));
         }
     }
-    // 壁纸标签显示当前进度
 }
 
 void InterfaceTab::refreshSelection() {
-    if (toggles_.size() == 4) {
-        auto setRow = [](ToggleRow& row, bool v) {
-            row.currentValue = v;
-            row.onButton->setSelected(v);
-            row.offButton->setSelected(!v);
-        };
-        setRow(*toggles_[0], showFps_);
-        setRow(*toggles_[1], showClock_);
-        setRow(*toggles_[2], consoleAutoScroll_);
-        setRow(*toggles_[3], consoleBlinkCursor_);
-    }
-    if (multiRows_.size() == 13) {
-        multiRows_[0]->setSelected(indexOfPos(fpsPosition_));
-        multiRows_[1]->setSelected(fpsFormat_);
-        multiRows_[2]->setSelected(indexOfUiScale(uiScale_));
-        multiRows_[3]->setSelected(indexOfUiScale(fontScale_));
-        multiRows_[4]->setSelected(indexOfRenderScale(renderScale_));
-        multiRows_[5]->setSelected(upscaleMode_);
-        multiRows_[6]->setSelected(themeId_);
-        multiRows_[7]->setSelected(languageIdx_);
-        multiRows_[8]->setSelected(clockPosition_);
-        multiRows_[9]->setSelected(indexOfConsoleFont(consoleFontSize_));
-        multiRows_[10]->setSelected(indexOfConsoleHistory(consoleHistoryLines_));
-        multiRows_[11]->setSelected(indexOfConsoleLineHeight(consoleLineHeight_));
-        multiRows_[12]->setSelected(consolePrompt_);
-    }
+    auto setToggle = [](ToggleRow* row, bool v) {
+        if (!row)
+            return;
+        row->currentValue = v;
+        row->onButton->setSelected(v);
+        row->offButton->setSelected(!v);
+    };
+    setToggle(rowFps_, showFps_);
+    setToggle(rowClock_, showClock_);
+    setToggle(rowAnimation_, animationEnabled_);
+    setToggle(rowNotification_, notificationEnabled_);
+
+    if (rowFpsPos_)
+        rowFpsPos_->setSelected(indexOfPos(fpsPosition_));
+    if (rowFpsFormat_)
+        rowFpsFormat_->setSelected(fpsFormat_);
+    if (rowUiScale_)
+        rowUiScale_->setSelected(indexOfUiScale(uiScale_));
+    if (rowFontScale_)
+        rowFontScale_->setSelected(indexOfUiScale(fontScale_));
+    if (rowTheme_)
+        rowTheme_->setSelected(themeId_);
+    if (rowLanguage_)
+        rowLanguage_->setSelected(languageIdx_);
+    if (rowClockPos_)
+        rowClockPos_->setSelected(clockPosition_);
+    if (rowButtonCorner_)
+        rowButtonCorner_->setSelected(indexOfButtonCorner(buttonCorner_));
+    if (rowButtonOutline_)
+        rowButtonOutline_->setSelected(indexOfButtonOutline(buttonOutline_));
+    if (rowAnimationSpeed_)
+        rowAnimationSpeed_->setSelected(
+            std::clamp(animationSpeedIndex_, 0, kAnimSpeedCount - 1));
+    if (rowNotificationPos_)
+        rowNotificationPos_->setSelected(notificationPosition_);
 }
 
 void InterfaceTab::handleEvent(const sf::Event& ev) {
@@ -485,8 +417,7 @@ void InterfaceTab::handleEvent(const sf::Event& ev) {
     for (auto& row : multiRows_)
         for (auto& btn : row->buttons)
             btn->handleEvent(ev);
-    consoleMaskSlider_->handleEvent(ev);
-    consolePanelAlphaSlider_->handleEvent(ev);
+    notificationDurationSlider_->handleEvent(ev);
 }
 
 void InterfaceTab::update() {
@@ -511,13 +442,9 @@ void InterfaceTab::update() {
             }
         }
     }
-    if (consoleMaskSlider_->consumeChanged()) {
-        consoleMask_ = static_cast<int>(consoleMaskSlider_->value());
-        prefs_->setInt(ConfigKey::kConsoleMask, consoleMask_);
-    }
-    if (consolePanelAlphaSlider_->consumeChanged()) {
-        consolePanelAlpha_ = static_cast<int>(consolePanelAlphaSlider_->value());
-        prefs_->setInt(ConfigKey::kConsolePanelAlpha, consolePanelAlpha_);
+    if (notificationDurationSlider_->consumeChanged()) {
+        notificationDuration_ = static_cast<int>(notificationDurationSlider_->value());
+        applyNotification();
     }
 }
 
@@ -532,9 +459,7 @@ void InterfaceTab::registerFocus(std::vector<Button*>& out) {
 }
 
 bool InterfaceTab::anyEditing() const {
-    if (consoleMaskSlider_ && consoleMaskSlider_->isEditing())
-        return true;
-    if (consolePanelAlphaSlider_ && consolePanelAlphaSlider_->isEditing())
+    if (notificationDurationSlider_ && notificationDurationSlider_->isEditing())
         return true;
     return false;
 }
@@ -543,21 +468,25 @@ float InterfaceTab::render(sf::RenderTarget& target, float contentX, float ctrlX
                            float startY) {
     float y = startY;
 
-    auto drawToggle = [&](ToggleRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        row.onButton->setPosition({ctrlX, y});
-        row.offButton->setPosition({ctrlX + 96.f, y});
-        row.onButton->render(target);
-        row.offButton->render(target);
+    auto drawToggle = [&](ToggleRow* row) {
+        if (!row)
+            return;
+        row->label.setPosition({contentX, y + 8.f});
+        target.draw(row->label);
+        row->onButton->setPosition({ctrlX, y});
+        row->offButton->setPosition({ctrlX + 96.f, y});
+        row->onButton->render(target);
+        row->offButton->render(target);
         y += kRowH;
     };
-    auto drawMulti = [&](MultiRow& row) {
-        row.label.setPosition({contentX, y + 8.f});
-        target.draw(row.label);
-        for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
-            row.buttons[i]->render(target);
+    auto drawMulti = [&](MultiRow* row) {
+        if (!row)
+            return;
+        row->label.setPosition({contentX, y + 8.f});
+        target.draw(row->label);
+        for (size_t i = 0; i < row->buttons.size(); ++i) {
+            row->buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row->stepX, y});
+            row->buttons[i]->render(target);
         }
         y += kRowH;
     };
@@ -570,32 +499,44 @@ float InterfaceTab::render(sf::RenderTarget& target, float contentX, float ctrlX
     };
 
     // FPS
-    drawToggle(*toggles_[0]);
-    drawMulti(*multiRows_[0]); // FpsPos
-    drawMulti(*multiRows_[1]); // FpsFormat
+    drawToggle(rowFps_);
+    drawMulti(rowFpsPos_);
+    drawMulti(rowFpsFormat_);
     // UI 缩放
-    drawMulti(*multiRows_[2]); // UiScale
-    drawMulti(*multiRows_[3]); // FontScale
+    drawMulti(rowUiScale_);
+    drawMulti(rowFontScale_);
     hintUiScale_.setPosition({contentX, y - 26.f});
     target.draw(hintUiScale_);
-    // 渲染缩放
-    drawMulti(*multiRows_[4]); // RenderScale
-    drawMulti(*multiRows_[5]); // UpscaleMode
     // 主题 / 语言
-    drawMulti(*multiRows_[6]); // Theme
-    drawMulti(*multiRows_[7]); // Language
+    drawMulti(rowTheme_);
+    drawMulti(rowLanguage_);
     // 时钟
-    drawToggle(*toggles_[1]);
-    drawMulti(*multiRows_[8]); // ClockPos
-    // 控制台
-    drawSlider(labelConsoleMask_, *consoleMaskSlider_);
-    drawSlider(labelConsolePanelAlpha_, *consolePanelAlphaSlider_);
-    drawMulti(*multiRows_[9]);  // ConsoleFont
-    drawMulti(*multiRows_[10]); // ConsoleHistory
-    drawMulti(*multiRows_[11]); // ConsoleLineHeight
-    drawToggle(*toggles_[2]);   // AutoScroll
-    drawToggle(*toggles_[3]);   // Blink
-    drawMulti(*multiRows_[12]); // ConsolePrompt
+    drawToggle(rowClock_);
+    drawMulti(rowClockPos_);
+    // 按钮样式
+    drawMulti(rowButtonCorner_);
+    drawMulti(rowButtonOutline_);
+    // 动画
+    drawToggle(rowAnimation_);
+    drawMulti(rowAnimationSpeed_);
+    // 通知
+    drawToggle(rowNotification_);
+    drawMulti(rowNotificationPos_);
+    drawSlider(labelNotificationDuration_, *notificationDurationSlider_);
 
     return y;
+}
+
+void InterfaceTab::reapply() {
+    loadFromPrefs();
+    // 这几个改的是全局单例（主题表 / 语言 / 按钮样式 / 动画 / 通知），
+    // 光重读配置不改它们，界面上是看不出变化的
+    setUiScale(uiScale_);
+    setFontScale(fontScale_);
+    applyTheme();
+    applyLanguage();
+    applyButtonStyle();
+    applyAnimation();
+    applyNotification();
+    refreshSelection();
 }

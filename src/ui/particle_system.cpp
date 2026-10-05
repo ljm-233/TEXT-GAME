@@ -14,14 +14,17 @@ float randRange(float lo, float hi) {
 }
 constexpr float kGravity = 800.f;
 
-}
+} // namespace
 
-void ParticleSystem::emit(Vec2 pos, int count, sf::Color color,
-                          float speedMin, float speedMax,
-                          float lifeMin, float lifeMax,
-                          float sizeMin, float sizeMax) {
-    for (int i = 0; i < count; ++i) {
-        if (particles_.size() >= kMaxParticles) break;
+void ParticleSystem::emit(Vec2 pos, int count, sf::Color color, float speedMin,
+                          float speedMax, float lifeMin, float lifeMax, float sizeMin,
+                          float sizeMax) {
+    // 密度只在**生成数量**上生效：低配机器调小它，画面元素还在，
+    // 只是每颗爆得少一些（而不是整个特效消失）
+    const int n = static_cast<int>(static_cast<float>(count) * densityScale_);
+    for (int i = 0; i < n; ++i) {
+        if (particles_.size() >= kMaxParticles)
+            break;
         Particle p;
         p.pos = pos;
         float angle = randRange(0.f, 6.2831853f);
@@ -39,23 +42,19 @@ void ParticleSystem::emit(Vec2 pos, int count, sf::Color color,
 }
 
 void ParticleSystem::emitCoin(Vec2 pos) {
-    emit(pos, 12, sf::Color(255, 210, 60),
-         80.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
+    emit(pos, 12, sf::Color(255, 210, 60), 80.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
 }
 
 void ParticleSystem::emitJump(Vec2 pos) {
-    emit(pos, 6, sf::Color(200, 220, 255),
-         40.f, 100.f, 0.2f, 0.4f, 2.f, 4.f);
+    emit(pos, 6, sf::Color(200, 220, 255), 40.f, 100.f, 0.2f, 0.4f, 2.f, 4.f);
 }
 
 void ParticleSystem::emitStomp(Vec2 pos) {
-    emit(pos, 14, sf::Color(240, 80, 80),
-         100.f, 250.f, 0.4f, 0.7f, 3.f, 6.f);
+    emit(pos, 14, sf::Color(240, 80, 80), 100.f, 250.f, 0.4f, 0.7f, 3.f, 6.f);
 }
 
 void ParticleSystem::emitHurt(Vec2 pos) {
-    emit(pos, 10, sf::Color(255, 100, 100),
-         100.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
+    emit(pos, 10, sf::Color(255, 100, 100), 100.f, 200.f, 0.4f, 0.7f, 3.f, 5.f);
 }
 
 // ============================================================
@@ -67,24 +66,22 @@ void ParticleSystem::emitLand(Vec2 pos, float intensity) {
     // ===== ① 两侧碎石（向左右上方散开）=====
     int pebbleCount = static_cast<int>(6 * intensity);
     for (int i = 0; i < pebbleCount; ++i) {
-        if (particles_.size() >= kMaxParticles) break;
+        if (particles_.size() >= kMaxParticles)
+            break;
         Particle p;
         p.pos = pos;
 
         // 随机决定向左还是向右
         bool left = (i % 2 == 0);
-        float angle = left
-            ? randRange(-2.9f, -1.4f)   // 左上方向（弧度）
-            : randRange(-1.7f, -0.2f);  // 右上方向
+        float angle = left ? randRange(-2.9f, -1.4f)  // 左上方向（弧度）
+                           : randRange(-1.7f, -0.2f); // 右上方向
 
         float speed = randRange(60.f, 160.f) * intensity;
-        p.vel = {std::cos(angle) * speed,
-                 std::sin(angle) * speed - 30.f};
+        p.vel = {std::cos(angle) * speed, std::sin(angle) * speed - 30.f};
 
         // 灰白碎石
-    std::uint8_t shade = static_cast<std::uint8_t>(randRange(140.f, 200.f));
-    p.color = sf::Color(shade, shade,
-                    static_cast<std::uint8_t>(shade + 10));
+        std::uint8_t shade = static_cast<std::uint8_t>(randRange(140.f, 200.f));
+        p.color = sf::Color(shade, shade, static_cast<std::uint8_t>(shade + 10));
 
         p.life = randRange(0.25f, 0.45f);
         p.maxLife = p.life;
@@ -99,15 +96,15 @@ void ParticleSystem::emitLand(Vec2 pos, float intensity) {
     // ===== ② 尘云（大的淡色圆）=====
     int dustCount = static_cast<int>(4 * intensity);
     for (int i = 0; i < dustCount; ++i) {
-        if (particles_.size() >= kMaxParticles) break;
+        if (particles_.size() >= kMaxParticles)
+            break;
         Particle p;
         p.pos = pos;
         p.pos.x += randRange(-8.f, 8.f);
 
         float angle = randRange(-2.8f, -0.35f);
         float speed = randRange(30.f, 70.f) * intensity;
-        p.vel = {std::cos(angle) * speed,
-                 std::sin(angle) * speed - 20.f};
+        p.vel = {std::cos(angle) * speed, std::sin(angle) * speed - 20.f};
 
         // 淡灰色尘云
         p.color = sf::Color(180, 180, 190, 180);
@@ -117,7 +114,7 @@ void ParticleSystem::emitLand(Vec2 pos, float intensity) {
         p.size = randRange(6.f, 12.f) * intensity;
         p.rotation = 0.f;
         p.rotSpeed = 0.f;
-        p.isSquare = false;   // 圆形
+        p.isSquare = false; // 圆形
 
         particles_.push_back(p);
     }
@@ -135,10 +132,9 @@ void ParticleSystem::update(float dt) {
         p.life -= dt;
         p.rotation += p.rotSpeed * dt;
     }
-    particles_.erase(
-        std::remove_if(particles_.begin(), particles_.end(),
-            [](const Particle& p) { return p.life <= 0.f; }),
-        particles_.end());
+    particles_.erase(std::remove_if(particles_.begin(), particles_.end(),
+                                    [](const Particle& p) { return p.life <= 0.f; }),
+                     particles_.end());
 }
 
 void ParticleSystem::render(sf::RenderTarget& target) {
@@ -148,8 +144,7 @@ void ParticleSystem::render(sf::RenderTarget& target) {
     for (const auto& p : particles_) {
         float alpha = p.life / p.maxLife;
         sf::Color c = p.color;
-        c.a = static_cast<std::uint8_t>(
-            std::min(255.f, alpha * p.color.a));
+        c.a = static_cast<std::uint8_t>(std::min(255.f, alpha * p.color.a));
 
         if (p.isSquare) {
             // 方块（碎石）：带旋转

@@ -40,6 +40,12 @@ constexpr const char* TabInterface = "界面";
 constexpr const char* TabOther = "其他";
 constexpr const char* TabKeys = "按键";
 
+// 0.3.8 设置页重排后的新页名
+constexpr const char* TabControls = "操作"; // 键位 + 手柄（原「按键」）
+// TabGame 已经存在（值同为"游戏"，见文件后段的游戏内文案区），直接复用
+constexpr const char* TabConsole = "控制台"; // 从「界面」独立出来
+constexpr const char* TabAdvanced = "高级";  // 日志 / 调试 / 文件位置 / 设置分享
+
 constexpr const char* LabelResolution = "分辨率";
 constexpr const char* LabelFullscreen = "全屏";
 constexpr const char* LabelVsync = "垂直同步";
@@ -83,6 +89,51 @@ constexpr const char* HintUiScale = "* 修改后返回主菜单再进入生效";
 constexpr const char* ResetDefault = "恢复默认设置";
 constexpr const char* ResetConfirm = "恢复默认设置？所有自定义将被清除";
 constexpr const char* NextWallpaper = "下一张 →";
+
+// ===== 0.3.8 设置系统重做：新增文案 =====
+
+// 页面说明 / 通用
+constexpr const char* HintAdvanced = "以下为排查问题用的设置，一般不需要修改";
+constexpr const char* ButtonResetTab = "恢复本页默认";
+constexpr const char* HintResetTab = "只重置本页的设置项，不影响其它页";
+constexpr const char* HintScroll = "内容超出屏幕，滚轮可上下滚动";
+constexpr const char* ResetTabConfirm = "恢复本页默认设置？只影响本页";
+
+// 操作页
+constexpr const char* ButtonResetKeys = "恢复默认按键";
+constexpr const char* HintResetKeys = "只重置下面这些键位";
+
+// 画面页新增
+constexpr const char* LabelParticleDensity = "粒子密度";
+constexpr const char* LabelShakeIntensity = "震动强度";
+constexpr const char* HintShakeIntensity = "只影响镜头抖动幅度，与手柄振动无关";
+
+// 界面页新增
+constexpr const char* LabelNotificationDuration = "通知时长";
+constexpr const char* LabelUiSound = "界面音效";
+constexpr const char* HintUiSound = "按钮点击等界面反馈音";
+
+// 高级页
+constexpr const char* LabelAdvancedLog = "日志";
+constexpr const char* LabelAdvancedFiles = "文件位置";
+constexpr const char* LabelShareSettings = "设置分享";
+constexpr const char* LabelShareCode = "分享码";
+constexpr const char* ShareCodePlaceholder = "点「导出设置」生成，或把别人的码粘贴到这里";
+constexpr const char* ButtonOpenConfigDir = "打开配置目录";
+constexpr const char* ButtonOpenLogDir = "打开日志目录";
+constexpr const char* ButtonExportSettings = "导出设置";
+constexpr const char* ButtonImportSettings = "导入设置";
+constexpr const char* HintShareSettings =
+    "只包含观感/音量/按键等换台机器也成立的项，不含分辨率与窗口设置";
+constexpr const char* ShareExported = "已导出并复制到剪贴板，共";
+constexpr const char* ShareExportFailed = "导出失败：没有可导出的设置项";
+constexpr const char* ShareImported = "已导入";
+constexpr const char* ShareImportedUnit = "项，重启游戏后生效";
+constexpr const char* ShareImportInvalid = "分享码无效或已损坏";
+constexpr const char* ShareImportEmpty =
+    "这个码里没有可导入的设置项（可能不是本游戏的设置码）";
+constexpr const char* ShareOpenedDir = "已交给系统文件管理器打开";
+constexpr const char* ShareOpenDirFailed = "打开失败：系统里没有可用的文件管理器";
 
 // ===== 控制台 =====
 constexpr const char* ConsoleTitle = "=== TEXT-GAME 控制台 ===";

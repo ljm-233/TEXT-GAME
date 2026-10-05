@@ -15,17 +15,14 @@
 #include <cmath>
 
 GameWorld::SpriteSheets GameWorld::SpriteSheets::fromFactories() {
-    return {PlayerSpriteFactory::getSheet(),
-            CoinSpriteFactory::getSheet(),
+    return {PlayerSpriteFactory::getSheet(), CoinSpriteFactory::getSheet(),
             EnemySpriteFactory::getSheet()};
 }
 
-GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex,
-                     SpriteSheets sheets)
-    : level_(std::move(level)),
-      levelIndex_(levelIndex),
-      sheets_(std::move(sheets)) {
-
+GameWorld::GameWorld(std::unique_ptr<Level> level, int levelIndex, SpriteSheets sheets)
+      : level_(std::move(level)),
+        levelIndex_(levelIndex),
+        sheets_(std::move(sheets)) {
     camera_.setLevelBounds(static_cast<float>(level_->pixelWidth()),
                            static_cast<float>(level_->pixelHeight()));
 
@@ -46,13 +43,12 @@ void GameWorld::spawnPlayer(Vec2 spawn) {
 
 void GameWorld::spawnLevelObjects() {
     for (const auto& pos : level_->coinSpawns())
-        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(),
-                                     sheets_.coin));
+        objects_.push_back(std::make_unique<Coin>(pos, level_->tileSize(), sheets_.coin));
     totalCoins_ = static_cast<int>(level_->coinSpawns().size());
 
     for (const auto& pos : level_->enemySpawns())
-        objects_.push_back(std::make_unique<Enemy>(pos, level_->tileSize(),
-                                      sheets_.enemy));
+        objects_.push_back(
+            std::make_unique<Enemy>(pos, level_->tileSize(), sheets_.enemy));
 
     for (const auto& pos : level_->jumpPadSpawns())
         objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
@@ -92,14 +88,18 @@ void GameWorld::setViewSize(float w, float h) {
 }
 
 void GameWorld::handleEvent(const sf::Event& event) {
-    if (state_ != State::Playing) return;
-    if (player_) player_->handleEvent(event);
+    if (state_ != State::Playing)
+        return;
+    if (player_)
+        player_->handleEvent(event);
 }
 
 void GameWorld::update(float dt) {
-    if (state_ != State::Playing) return;
+    if (state_ != State::Playing)
+        return;
 
-    if (player_) player_->handleGamepad();
+    if (player_)
+        player_->handleGamepad();
 
     accumulator_ += dt;
     int iterations = 0;
@@ -114,20 +114,22 @@ void GameWorld::update(float dt) {
         }
 
         // ② 玩家物理
-        if (player_) player_->update(step, *level_);
+        if (player_)
+            player_->update(step, *level_);
 
         // ③ 玩家站台检测
         if (player_) {
             AABB pb = player_->bounds();
             for (auto& obj : objects_) {
-                if (obj->type() != GameObject::Type::Platform) continue;
+                if (obj->type() != GameObject::Type::Platform)
+                    continue;
                 auto* mp = static_cast<MovingPlatform*>(obj.get());
                 AABB plat = mp->bounds();
 
-                bool overlapX = pb.right() > plat.left() + 1.f &&
-                                pb.left() < plat.right() - 1.f;
-                bool nearTop  = pb.bottom() >= plat.top() - 4.f &&
-                                pb.bottom() <= plat.top() + 10.f;
+                bool overlapX =
+                    pb.right() > plat.left() + 1.f && pb.left() < plat.right() - 1.f;
+                bool nearTop =
+                    pb.bottom() >= plat.top() - 4.f && pb.bottom() <= plat.top() + 10.f;
 
                 if (overlapX && nearTop && player_->velocity().y >= -1.f) {
                     player_->landOnPlatform(plat.top());
@@ -140,14 +142,14 @@ void GameWorld::update(float dt) {
         // ④ 其他对象（跳过平台和玩家）
         for (auto& obj : objects_) {
             auto t = obj->type();
-            if (t != GameObject::Type::Platform &&
-                t != GameObject::Type::Player) {
+            if (t != GameObject::Type::Platform && t != GameObject::Type::Player) {
                 obj->update(step, *level_);
             }
         }
 
         checkCollisionsSafe();
-        if (state_ != State::Playing) return;
+        if (state_ != State::Playing)
+            return;
         accumulator_ -= step;
         ++iterations;
     }
@@ -172,7 +174,8 @@ void GameWorld::update(float dt) {
     if (player_ && player_->consumeFellOut()) {
         --lives_;
         bus_.emit(EvHurt{player_->bounds().center()});
-        if (screenShake_) camera_.shake(8.f, 0.3f);
+        if (screenShake_)
+            camera_.shake(8.f * shakeIntensity_, 0.3f);
         if (lives_ <= 0) {
             pendingRestart_ = true;
             respawnDelayTimer_ = 0.5f;
@@ -194,8 +197,8 @@ void GameWorld::update(float dt) {
             // 冻结游戏逻辑，但保留摄像机的震屏效果。
             // 粒子由 GameScene 每帧推进，不在这里管。
             camera_.updateShake(dt);
-            if (player_) camera_.follow(player_->bounds().center(),
-                                        {0.f, 0.f}, dt);
+            if (player_)
+                camera_.follow(player_->bounds().center(), {0.f, 0.f}, dt);
             return;
         }
         // 延迟结束，触发事件并从存档点重生
@@ -204,136 +207,143 @@ void GameWorld::update(float dt) {
         return;
     }
 
-    objects_.erase(
-        std::remove_if(objects_.begin(), objects_.end(),
-            [](const std::unique_ptr<GameObject>& o) {
-                return o->isRemovable();
-            }),
-        objects_.end());
+    objects_.erase(std::remove_if(objects_.begin(), objects_.end(),
+                                  [](const std::unique_ptr<GameObject>& o) {
+                                      return o->isRemovable();
+                                  }),
+                   objects_.end());
 
-    if (player_) camera_.follow(player_->bounds().center(),
-                                player_->velocity(), dt);
+    if (player_)
+        camera_.follow(player_->bounds().center(), player_->velocity(), dt);
     camera_.updateShake(dt);
 }
 
 void GameWorld::checkCollisionsSafe() {
-    if (!player_) return;
+    if (!player_)
+        return;
     AABB pb = player_->bounds();
 
     for (auto& obj : objects_) {
-        if (obj.get() == player_) continue;
-        if (obj->type() == GameObject::Type::Platform) continue;
-        if (!obj->bounds().intersects(pb)) continue;
+        if (obj.get() == player_)
+            continue;
+        if (obj->type() == GameObject::Type::Platform)
+            continue;
+        if (!obj->bounds().intersects(pb))
+            continue;
 
         switch (obj->type()) {
-            case GameObject::Type::Coin: {
-                auto* c = static_cast<Coin*>(obj.get());
-                if (!c->collected()) {
-                    c->collect();
-                    ++coins_;
-                    bus_.emit(EvCoined{c->bounds().center()});
-                }
-                break;
+        case GameObject::Type::Coin: {
+            auto* c = static_cast<Coin*>(obj.get());
+            if (!c->collected()) {
+                c->collect();
+                ++coins_;
+                bus_.emit(EvCoined{c->bounds().center()});
             }
-            case GameObject::Type::Enemy: {
-                auto* e = static_cast<Enemy*>(obj.get());
-                if (e->killed()) break;
-
-                bool falling = player_->velocity().y > 0.f;
-                float overlap = pb.bottom() - e->bounds().top();
-                bool fromAbove = overlap < GameConst::kStompTolerance;
-
-                if (falling && fromAbove) {
-                    e->kill();
-                    player_->bounce();
-                    bus_.emit(EvStomped{e->bounds().center()});
-                    if (screenShake_) camera_.shake(4.f, 0.15f);
-                } else if (!player_->isInvincible()) {
-                    player_->takeDamage();
-                    --lives_;
-                    bus_.emit(EvHurt{pb.center()});
-                    if (screenShake_) camera_.shake(8.f, 0.3f);
-                    if (lives_ <= 0) {
-                        pendingRestart_ = true;
-                        respawnDelayTimer_ = 0.5f;
-                        return;
-                    }
-                }
-                break;
-            }
-            case GameObject::Type::JumpPad: {
-                auto* jp = static_cast<JumpPad*>(obj.get());
-                if (jp->canTrigger()) {
-                    player_->setVelocityY(JumpPad::kLaunchSpeed);
-                    jp->trigger();
-                    bus_.emit(EvJumpPad{pb.center()});
-                }
-                break;
-            }
-            case GameObject::Type::Checkpoint: {
-                auto* cp = static_cast<Checkpoint*>(obj.get());
-                if (!cp->isActive()) {
-                    // ⭐ 取消上一个激活的存档点
-                    if (activeCheckpoint_ && activeCheckpoint_ != cp) {
-                        activeCheckpoint_->deactivate();
-                    }
-                    cp->activate();
-                    activeCheckpoint_ = cp;
-                    player_->setSpawn(cp->respawnPos());
-                    bus_.emit(EvCheckpoint{cp->bounds().center()});
-                }
-                break;
-            }
-            case GameObject::Type::Key: {
-                auto* k = static_cast<Key*>(obj.get());
-                if (!k->collected()) {
-                    k->collect();
-                    player_->addKey();
-                    bus_.emit(EvCoined{k->bounds().center()});
-
-                    for (auto& entry : doors_) {
-                        entry.door->unlock();
-                        level_->setDynamicSolid(entry.tx, entry.ty, false);
-                    }
-                }
-                break;
-            }
-            case GameObject::Type::Door:
-                // 门是动态瓦片（Level::dynamicSolid_），
-                // Player 的瓦片碰撞会自动挡住，这里不需要处理
+            break;
+        }
+        case GameObject::Type::Enemy: {
+            auto* e = static_cast<Enemy*>(obj.get());
+            if (e->killed())
                 break;
 
-            case GameObject::Type::Spike: {
-                if (!player_->isInvincible()) {
-                    player_->takeDamage();
-                    --lives_;
-                    bus_.emit(EvHurt{pb.center()});
-                    if (screenShake_) camera_.shake(8.f, 0.3f);
-                    if (lives_ <= 0) {
-                        pendingRestart_ = true;
-                        respawnDelayTimer_ = 0.5f;
-                        return;
-                    }
+            bool falling = player_->velocity().y > 0.f;
+            float overlap = pb.bottom() - e->bounds().top();
+            bool fromAbove = overlap < GameConst::kStompTolerance;
+
+            if (falling && fromAbove) {
+                e->kill();
+                player_->bounce();
+                bus_.emit(EvStomped{e->bounds().center()});
+                if (screenShake_)
+                    camera_.shake(4.f * shakeIntensity_, 0.15f);
+            } else if (!player_->isInvincible()) {
+                player_->takeDamage();
+                --lives_;
+                bus_.emit(EvHurt{pb.center()});
+                if (screenShake_)
+                    camera_.shake(8.f * shakeIntensity_, 0.3f);
+                if (lives_ <= 0) {
+                    pendingRestart_ = true;
+                    respawnDelayTimer_ = 0.5f;
+                    return;
                 }
-                break;
             }
-            default:
-                break;
+            break;
+        }
+        case GameObject::Type::JumpPad: {
+            auto* jp = static_cast<JumpPad*>(obj.get());
+            if (jp->canTrigger()) {
+                player_->setVelocityY(JumpPad::kLaunchSpeed);
+                jp->trigger();
+                bus_.emit(EvJumpPad{pb.center()});
+            }
+            break;
+        }
+        case GameObject::Type::Checkpoint: {
+            auto* cp = static_cast<Checkpoint*>(obj.get());
+            if (!cp->isActive()) {
+                // ⭐ 取消上一个激活的存档点
+                if (activeCheckpoint_ && activeCheckpoint_ != cp) {
+                    activeCheckpoint_->deactivate();
+                }
+                cp->activate();
+                activeCheckpoint_ = cp;
+                player_->setSpawn(cp->respawnPos());
+                bus_.emit(EvCheckpoint{cp->bounds().center()});
+            }
+            break;
+        }
+        case GameObject::Type::Key: {
+            auto* k = static_cast<Key*>(obj.get());
+            if (!k->collected()) {
+                k->collect();
+                player_->addKey();
+                bus_.emit(EvCoined{k->bounds().center()});
+
+                for (auto& entry : doors_) {
+                    entry.door->unlock();
+                    level_->setDynamicSolid(entry.tx, entry.ty, false);
+                }
+            }
+            break;
+        }
+        case GameObject::Type::Door:
+            // 门是动态瓦片（Level::dynamicSolid_），
+            // Player 的瓦片碰撞会自动挡住，这里不需要处理
+            break;
+
+        case GameObject::Type::Spike: {
+            if (!player_->isInvincible()) {
+                player_->takeDamage();
+                --lives_;
+                bus_.emit(EvHurt{pb.center()});
+                if (screenShake_)
+                    camera_.shake(8.f * shakeIntensity_, 0.3f);
+                if (lives_ <= 0) {
+                    pendingRestart_ = true;
+                    respawnDelayTimer_ = 0.5f;
+                    return;
+                }
+            }
+            break;
+        }
+        default:
+            break;
         }
     }
 }
 
 bool GameWorld::checkGoalReached() const {
-    if (!level_->hasGoal() || !player_) return false;
+    if (!level_->hasGoal() || !player_)
+        return false;
     AABB goal{level_->goalPos().x, level_->goalPos().y,
               static_cast<float>(level_->tileSize()),
               static_cast<float>(level_->tileSize())};
     return player_->bounds().intersects(goal);
 }
 
-void GameWorld::renderShadow(sf::RenderTarget& target,
-                             Vec2 worldPos,
-                             float width, float height) const {
+void GameWorld::renderShadow(sf::RenderTarget& target, Vec2 worldPos, float width,
+                             float height) const {
     // ⭐ 一次性生成径向渐变阴影纹理
     if (!shadowTexReady_) {
         constexpr unsigned kSize = 64;
@@ -344,11 +354,12 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
                 float dx = (x + 0.5f) - half;
                 float dy = (y + 0.5f) - half;
                 float r = std::sqrt(dx * dx + dy * dy) / half;
-                if (r >= 1.f) continue;
+                if (r >= 1.f)
+                    continue;
                 // ⭐ 内 40% 完全不透明，外部到边缘平滑衰减
                 float t = std::clamp((r - 0.4f) / 0.6f, 0.f, 1.f);
                 float a = 1.f - t;
-                a = a * a;   // 边缘再柔一点
+                a = a * a; // 边缘再柔一点
                 auto a8 = static_cast<std::uint8_t>(a * 255.f);
                 img.setPixel({x, y}, sf::Color(0, 0, 0, a8));
             }
@@ -364,8 +375,8 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
 
     float shadowY = worldPos.y + height;
 
-    for (int ty = static_cast<int>((worldPos.y + height) / ts);
-         ty < level_->height(); ++ty) {
+    for (int ty = static_cast<int>((worldPos.y + height) / ts); ty < level_->height();
+         ++ty) {
         if (level_->isSolid(tx, ty)) {
             shadowY = static_cast<float>(ty * ts);
             break;
@@ -382,11 +393,10 @@ void GameWorld::renderShadow(sf::RenderTarget& target,
 
     // ⭐ 用 sprite 绘制渐变阴影
     sf::Sprite s(*shadowTex_);
-    s.setOrigin({32.f, 32.f});   // 纹理中心
+    s.setOrigin({32.f, 32.f}); // 纹理中心
     s.setPosition({worldPos.x + width * 0.5f, shadowY - 2.f});
     s.setScale({rx / 32.f, ry / 32.f});
-    s.setColor(sf::Color(255, 255, 255,
-        static_cast<std::uint8_t>(200 * alphaFactor)));
+    s.setColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(200 * alphaFactor)));
     target.draw(s);
 }
 
@@ -402,16 +412,36 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
 
         sf::Color color;
         switch (obj->type()) {
-            case GameObject::Type::Player:     color = sf::Color(0, 255, 0);   break;
-            case GameObject::Type::Enemy:      color = sf::Color(255, 0, 0);   break;
-            case GameObject::Type::Coin:       color = sf::Color(255, 255, 0); break;
-            case GameObject::Type::JumpPad:    color = sf::Color(0, 200, 255); break;
-            case GameObject::Type::Checkpoint: color = sf::Color(255, 128, 0); break;
-            case GameObject::Type::Platform:   color = sf::Color(160, 120, 80); break;
-            case GameObject::Type::Key:        color = sf::Color(255, 210, 60); break;
-            case GameObject::Type::Door:       color = sf::Color(140, 90, 50);  break;
-            case GameObject::Type::Spike:      color = sf::Color(200, 200, 210); break;
-            default:                            color = sf::Color(200, 200, 200); break;
+        case GameObject::Type::Player:
+            color = sf::Color(0, 255, 0);
+            break;
+        case GameObject::Type::Enemy:
+            color = sf::Color(255, 0, 0);
+            break;
+        case GameObject::Type::Coin:
+            color = sf::Color(255, 255, 0);
+            break;
+        case GameObject::Type::JumpPad:
+            color = sf::Color(0, 200, 255);
+            break;
+        case GameObject::Type::Checkpoint:
+            color = sf::Color(255, 128, 0);
+            break;
+        case GameObject::Type::Platform:
+            color = sf::Color(160, 120, 80);
+            break;
+        case GameObject::Type::Key:
+            color = sf::Color(255, 210, 60);
+            break;
+        case GameObject::Type::Door:
+            color = sf::Color(140, 90, 50);
+            break;
+        case GameObject::Type::Spike:
+            color = sf::Color(200, 200, 210);
+            break;
+        default:
+            color = sf::Color(200, 200, 200);
+            break;
         }
         rect.setOutlineColor(color);
         target.draw(rect);
@@ -421,24 +451,23 @@ void GameWorld::renderDebugColliders(sf::RenderTarget& target) {
 void GameWorld::render(sf::RenderTarget& target) {
     Vec2 camTL = camera_.effectivePosition();
 
-    level_->render(target,
-                   camTL.x, camTL.y,
-                   camera_.viewWidth(), camera_.viewHeight());
+    level_->render(target, camTL.x, camTL.y, camera_.viewWidth(), camera_.viewHeight());
 
     if (pseudo3D_) {
         for (const auto& obj : objects_) {
             switch (obj->type()) {
-                case GameObject::Type::Player: {
-                    AABB b = obj->bounds();
-                    renderShadow(target, {b.x, b.y}, b.w, b.h);
-                    break;
-                }
-                case GameObject::Type::Enemy: {
-                    AABB b = obj->bounds();
-                    renderShadow(target, {b.x, b.y}, b.w, b.h);
-                    break;
-                }
-                default: break;
+            case GameObject::Type::Player: {
+                AABB b = obj->bounds();
+                renderShadow(target, {b.x, b.y}, b.w, b.h);
+                break;
+            }
+            case GameObject::Type::Enemy: {
+                AABB b = obj->bounds();
+                renderShadow(target, {b.x, b.y}, b.w, b.h);
+                break;
+            }
+            default:
+                break;
             }
         }
     }
@@ -447,7 +476,8 @@ void GameWorld::render(sf::RenderTarget& target) {
         obj->render(target);
     }
 
-    if (showColliders_) renderDebugColliders(target);
+    if (showColliders_)
+        renderDebugColliders(target);
 }
 
 void GameWorld::respawnAtCheckpoint() {
@@ -474,7 +504,6 @@ void GameWorld::killAllEnemies() {
         }
     }
 }
-
 
 void GameWorld::reset() {
     lives_ = initialLives_;

@@ -33,8 +33,7 @@ public:
         static SpriteSheets fromFactories();
     };
 
-    GameWorld(std::unique_ptr<Level> level, int levelIndex,
-              SpriteSheets sheets = {});
+    GameWorld(std::unique_ptr<Level> level, int levelIndex, SpriteSheets sheets = {});
 
     void handleEvent(const sf::Event& event);
     void update(float dt);
@@ -47,6 +46,9 @@ public:
     }
     void setShowColliders(bool b) { showColliders_ = b; }
     void setScreenShake(bool b) { screenShake_ = b; }
+    /// 镜头抖动幅度倍率（设置里的「震动强度」，0.0~2.0）。
+    /// 注意与手柄振动强度无关 —— 那个是触觉反馈。
+    void setShakeIntensity(float m) { shakeIntensity_ = m < 0.f ? 0.f : m; }
     void setPseudo3D(bool b) {
         pseudo3D_ = b;
         if (level_)
@@ -70,7 +72,7 @@ public:
     EventBus& bus() { return bus_; }
 
     void reset();
-    void respawnAtCheckpoint();   // 从最近的存档点重生（生命重置，金币保留）
+    void respawnAtCheckpoint(); // 从最近的存档点重生（生命重置，金币保留）
 
     // ⭐ 调试：清空所有敌人
     void killAllEnemies();
@@ -96,7 +98,7 @@ private:
 
     std::vector<std::unique_ptr<GameObject>> objects_;
     Player* player_ = nullptr;
-    Checkpoint* activeCheckpoint_ = nullptr;   // 当前激活的存档点（最多一个）
+    Checkpoint* activeCheckpoint_ = nullptr; // 当前激活的存档点（最多一个）
 
     Camera camera_;
     // ⚠️ 必须是 unique_ptr，不能是按值的 sf::Texture：
@@ -113,18 +115,19 @@ private:
     int coins_ = 0;
     int totalCoins_ = 0;
     State state_ = State::Playing;
-    bool  pendingRestart_ = false;   // 生命耗尽，等待延迟后重生
-    float respawnDelayTimer_ = 0.f;  // 生命耗尽后的重生延迟
+    bool pendingRestart_ = false;   // 生命耗尽，等待延迟后重生
+    float respawnDelayTimer_ = 0.f; // 生命耗尽后的重生延迟
 
     float accumulator_ = 0.f;
 
     bool showColliders_ = false;
     bool screenShake_ = true;
+    float shakeIntensity_ = 1.f;
     bool pseudo3D_ = true;
     struct DoorEntry {
         Door* door;
-        int   tx;
-        int   ty;
+        int tx;
+        int ty;
     };
     std::vector<DoorEntry> doors_;
 };

@@ -3,9 +3,6 @@
 #include "theme.h"
 #include "ui_scale.h"
 #include "utils/utf8.h"
-#include "utils/animation.h"
-#include "notification.h"
-#include "button_style.h"
 #include "focus_group.h"
 #include "config/keys.h"
 
@@ -17,6 +14,11 @@ namespace {
 
 constexpr float kRowH = 50.f;
 
+// ⭐ 渲染缩放 9 档（顺序必须和 rowRenderScale_ 里按钮的顺序一致）
+const float kRenderScales[] = {2.0f, 1.5f,        1.25f, 1.0f, 0.75f,
+                               0.5f, 1.0f / 3.0f, 0.25f, 0.10f};
+constexpr int kRenderScaleCount = 9;
+
 // ⭐ 画面预设
 struct PostPreset {
     float saturation, contrast, brightness, gamma, vignette;
@@ -27,268 +29,244 @@ struct PostPreset {
 // 顺序必须和 presetRow_ 里按钮的顺序一致
 const PostPreset kPresets[] = {
     // 原版
-    {100, 100, 100, 100,  0,    0, 70,   0,  0,  0,  0},
+    {100, 100, 100, 100, 0, 0, 70, 0, 0, 0, 0},
     // 复古 CRT
-    {105, 110, 105, 105, 40,   30, 60,  35, 15, 30,  0},
+    {105, 110, 105, 105, 40, 30, 60, 35, 15, 30, 0},
     // 电影感
-    {110, 115,  95, 100, 50,   60, 55,  15, 20,  0,  0},
+    {110, 115, 95, 100, 50, 60, 55, 15, 20, 0, 0},
     // 像素 8-bit
-    {120, 105, 100, 100, 15,   20, 70,  10, 10, 20, 55},
+    {120, 105, 100, 100, 15, 20, 70, 10, 10, 20, 55},
     // 夜晚
-    { 90, 110,  85, 100, 60,   50, 50,  20, 20,  0,  0},
+    {90, 110, 85, 100, 60, 50, 50, 20, 20, 0, 0},
 };
 constexpr int kPresetCount = 5;
 
-int indexOfLives(int lives) {
-    const int kLives[] = {1, 3, 5, 10, 100};
-    for (int i = 0; i < 5; ++i) if (kLives[i] == lives) return i;
-    return 0;
-}
-int indexOfButtonCorner(float c) {
-    const float kCorners[] = {0.f, 6.f, 14.f};
-    for (int i = 0; i < 3; ++i)
-        if (std::abs(kCorners[i] - c) < 0.5f) return i;
-    return 1;
-}
-int indexOfButtonOutline(float o) {
-    const float kOutlines[] = {0.f, 2.f, 4.f};
-    for (int i = 0; i < 3; ++i)
-        if (std::abs(kOutlines[i] - o) < 0.5f) return i;
-    return 1;
+// 容差 0.01 找档位；找不到回退到 1.0 那一档（下标 3）
+int indexOfRenderScale(float s) {
+    for (int i = 0; i < kRenderScaleCount; ++i)
+        if (std::abs(kRenderScales[i] - s) < 0.01f)
+            return i;
+    return 3;
 }
 
 } // namespace
 
-GraphicsTab::GraphicsTab(const sf::Font& font,
-                         std::shared_ptr<Preferences> prefs,
+GraphicsTab::GraphicsTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
                          std::shared_ptr<Window> window)
       : font_(font),
         prefs_(std::move(prefs)),
         window_(std::move(window)),
-        labelPostSaturation_    (font, sf::String(), scaledFontSize(20)),
-        labelPostContrast_      (font, sf::String(), scaledFontSize(20)),
-        labelPostBrightness_    (font, sf::String(), scaledFontSize(20)),
-        labelPostGamma_         (font, sf::String(), scaledFontSize(20)),
-        labelPostVignette_      (font, sf::String(), scaledFontSize(20)),
-        labelPostBloomStrength_ (font, sf::String(), scaledFontSize(20)),
+        labelPostSaturation_(font, sf::String(), scaledFontSize(20)),
+        labelPostContrast_(font, sf::String(), scaledFontSize(20)),
+        labelPostBrightness_(font, sf::String(), scaledFontSize(20)),
+        labelPostGamma_(font, sf::String(), scaledFontSize(20)),
+        labelPostVignette_(font, sf::String(), scaledFontSize(20)),
+        labelPostBloomStrength_(font, sf::String(), scaledFontSize(20)),
         labelPostBloomThreshold_(font, sf::String(), scaledFontSize(20)),
-        labelPostChromatic_     (font, sf::String(), scaledFontSize(20)),
-        labelPostGrain_         (font, sf::String(), scaledFontSize(20)),
-        labelPostScanline_      (font, sf::String(), scaledFontSize(20)),
-        labelPostDither_        (font, sf::String(), scaledFontSize(20)) {
-
+        labelPostChromatic_(font, sf::String(), scaledFontSize(20)),
+        labelPostGrain_(font, sf::String(), scaledFontSize(20)),
+        labelPostScanline_(font, sf::String(), scaledFontSize(20)),
+        labelPostDither_(font, sf::String(), scaledFontSize(20)),
+        labelShakeIntensity_(font, sf::String(), scaledFontSize(20)) {
     loadFromPrefs();
 
     // ===== 标签颜色 =====
     auto labelColor = sf::Color(230, 230, 230);
-    for (auto* t : {&labelPostSaturation_, &labelPostContrast_,
-                    &labelPostBrightness_, &labelPostGamma_,
-                    &labelPostVignette_, &labelPostBloomStrength_,
-                    &labelPostBloomThreshold_, &labelPostChromatic_,
-                    &labelPostGrain_, &labelPostScanline_, &labelPostDither_}) {
+    for (auto* t : {&labelPostSaturation_, &labelPostContrast_, &labelPostBrightness_,
+                    &labelPostGamma_, &labelPostVignette_, &labelPostBloomStrength_,
+                    &labelPostBloomThreshold_, &labelPostChromatic_, &labelPostGrain_,
+                    &labelPostScanline_, &labelPostDither_, &labelShakeIntensity_}) {
         t->setFillColor(labelColor);
     }
 
     // ===== Toggle 辅助 =====
-    auto makeToggle = [&](const std::string& onText,
-                          const std::string& offText) {
-        auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
+    auto makeToggle = [&](const std::string& onText, const std::string& offText) {
+        auto on = std::make_unique<Button>(onText, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(offText, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
-    auto addToggle = [&](const char* key, std::function<void(bool)> cb) {
+    // 返回行对象在堆上的地址；行由 toggles_ 里的 unique_ptr 持有，
+    // vector 扩容搬的是 unique_ptr，指向的对象不动，缓存裸指针安全。
+    auto addToggle = [&](const char* key, std::function<void(bool)> cb) -> ToggleRow* {
         auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
         auto [on, off] = makeToggle(Str::On, Str::Off);
-        row->onButton  = std::move(on);
+        row->onButton = std::move(on);
         row->offButton = std::move(off);
+        ToggleRow* ptr = row.get();
         toggles_.push_back(std::move(row));
+        return ptr;
     };
-    auto addMultiRow = [&](const char* key,
-                           std::function<void(int)> cb) {
+    auto addMultiRow = [&](const char* key, std::function<void(int)> cb) {
         auto row = std::make_unique<MultiRow>(font_, key, std::move(cb));
         multiRows_.push_back(std::move(row));
         return multiRows_.back().get();
     };
 
-    // ===== InitialLives =====
+    // ===== RenderScale =====
     {
-        const char* kLivesLabels[] = {"1", "3", "5", "10", "100"};
-        auto* row = addMultiRow(Str::LabelInitialLives, [this](int i) {
-            const int kLives[] = {1, 3, 5, 10, 100};
-            initialLives_ = kLives[i];
+        rowRenderScale_ = addMultiRow(Str::LabelRenderScale, [this](int i) {
+            renderScale_ = kRenderScales[i];
             refreshSelection();
-            prefs_->setInt(ConfigKey::kInitialLives, initialLives_);
+            window_->setRenderScale(renderScale_);
+            prefs_->setDouble(ConfigKey::kRenderScale, renderScale_);
         });
-        for (int i = 0; i < 5; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kLivesLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
+        rowRenderScale_->stepX = 96.f;
+        const char* kLabels[] = {
+            Str::RenderScale200, Str::RenderScale150, Str::RenderScale125,
+            Str::RenderScale100, Str::RenderScale75,  Str::RenderScale50,
+            Str::RenderScale33,  Str::RenderScale25,  Str::RenderScale10};
+        for (const char* label : kLabels) {
+            rowRenderScale_->addButton(
+                std::make_unique<Button>(Str::T(label), font_, sf::Vector2f{0.f, 0.f},
+                                         sf::Vector2f{86.f, 40.f}, 18));
+        }
+    }
+
+    // ===== UpscaleMode =====
+    {
+        rowUpscaleMode_ = addMultiRow(Str::LabelUpscaleMode, [this](int i) {
+            upscaleMode_ = i;
+            refreshSelection();
+            window_->setUpscaleMode(upscaleMode_);
+            prefs_->setInt(ConfigKey::kUpscaleMode, upscaleMode_);
+        });
+        rowUpscaleMode_->stepX = 100.f;
+        const char* kLabels[] = {Str::UpscaleOff, Str::UpscaleBicubic, Str::UpscaleFsr1};
+        for (const char* label : kLabels) {
+            rowUpscaleMode_->addButton(
+                std::make_unique<Button>(Str::T(label), font_, sf::Vector2f{0.f, 0.f},
+                                         sf::Vector2f{86.f, 40.f}, 18));
         }
     }
 
     // ===== Toggles =====
-    addToggle(Str::LabelAnimation, [this](bool v) {
-        animationEnabled_ = v; refreshSelection(); applyAnimation();
+    rowPseudo3D_ = addToggle(Str::LabelPseudo3D, [this](bool v) {
+        pseudo3D_ = v;
+        refreshSelection();
+        applyPseudo3D();
     });
-    addToggle(Str::LabelPseudo3D, [this](bool v) {
-        pseudo3D_ = v; refreshSelection(); applyPseudo3D();
+    rowParallax_ = addToggle(Str::LabelParallax, [this](bool v) {
+        parallaxEnabled_ = v;
+        refreshSelection();
+        applyParallax();
     });
-    addToggle(Str::LabelParallax, [this](bool v) {
-        parallaxEnabled_ = v; refreshSelection(); applyParallax();
+    rowPlayerAnim_ = addToggle(Str::LabelPlayerAnimation, [this](bool v) {
+        playerAnimEnabled_ = v;
+        refreshSelection();
+        applyPlayerAnimation();
     });
-    addToggle(Str::LabelPlayerAnimation, [this](bool v) {
-        playerAnimEnabled_ = v; refreshSelection(); applyPlayerAnimation();
+    rowParticles_ = addToggle(Str::LabelParticles, [this](bool v) {
+        particlesEnabled_ = v;
+        refreshSelection();
+        applyParticles();
     });
-    addToggle(Str::LabelLevelIntro, [this](bool v) {
-        levelIntroEnabled_ = v; refreshSelection(); applyLevelIntro();
-    });
-    addToggle(Str::LabelParticles, [this](bool v) {
-        particlesEnabled_ = v; refreshSelection(); applyParticles();
-    });
-    addToggle(Str::LabelScreenShake, [this](bool v) {
-        screenShake_ = v; refreshSelection(); applyScreenShake();
-    });
-    addToggle(Str::LabelNotification, [this](bool v) {
-        notificationEnabled_ = v; refreshSelection(); applyNotification();
-    });
-    addToggle(Str::LabelShowColliders, [this](bool v) {
-        showColliders_ = v; refreshSelection(); applyShowColliders();
+    rowScreenShake_ = addToggle(Str::LabelScreenShake, [this](bool v) {
+        screenShake_ = v;
+        refreshSelection();
+        applyScreenShake();
     });
 
-    // ===== AnimationSpeed =====
+    // ===== ParticleDensity =====
     {
-        const char* kAnimSpeedLabels[] = {"慢", "正常", "快"};
-        auto* row = addMultiRow(Str::LabelAnimationSpeed, [this](int i) {
-            animationSpeedIndex_ = i;
-            refreshSelection(); applyAnimation();
+        rowParticleDensity_ = addMultiRow(Str::LabelParticleDensity, [this](int i) {
+            particleDensity_ = i;
+            refreshSelection();
+            prefs_->setInt(ConfigKey::kParticleDensity, particleDensity_);
         });
-        for (int i = 0; i < 3; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kAnimSpeedLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
+        rowParticleDensity_->stepX = 86.f;
+        const char* kLabels[] = {"关", "少", "标准", "多"};
+        for (const char* label : kLabels) {
+            rowParticleDensity_->addButton(std::make_unique<Button>(
+                label, font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 18));
         }
     }
 
-    // ===== NotificationPos =====
-    {
-        const char* kPosLabels[] = {"左上", "右上", "左下", "右下"};
-        auto* row = addMultiRow(Str::LabelNotificationPos, [this](int i) {
-            notificationPosition_ = i;
-            refreshSelection(); applyNotification();
-        });
-        row->stepX = 86.f;
-        for (int i = 0; i < 4; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kPosLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{76.f, 40.f}, 16));
-        }
-    }
-
-    // ===== ButtonCorner =====
-    {
-        const char* kLabels[] = {"直角", "小圆", "大圆"};
-        auto* row = addMultiRow(Str::LabelButtonCorner, [this](int i) {
-            const float kCorners[] = {0.f, 6.f, 14.f};
-            buttonCorner_ = kCorners[i];
-            refreshSelection(); applyButtonStyle();
-        });
-        for (int i = 0; i < 3; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-        }
-    }
-
-    // ===== ButtonOutline =====
-    {
-        const char* kLabels[] = {"无", "细", "粗"};
-        auto* row = addMultiRow(Str::LabelButtonOutline, [this](int i) {
-            const float kOutlines[] = {0.f, 2.f, 4.f};
-            buttonOutline_ = kOutlines[i];
-            refreshSelection(); applyButtonStyle();
-        });
-        for (int i = 0; i < 3; ++i) {
-            row->addButton(std::make_unique<Button>(
-                kLabels[i], font_,
-                sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18));
-        }
-    }
+    // ===== ShakeIntensity =====
+    shakeIntensitySlider_ =
+        std::make_unique<Slider>(font_, 0.f, 200.f, shakeIntensity_ * 100.f,
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    shakeIntensitySlider_->setDefaultValue(100.f);
 
     // ===== 预设 =====
     {
-        presetRow_ = std::make_unique<MultiRow>(
-            font_, Str::LabelPreset, [this](int i) { applyPreset(i); });
+        presetRow_ = std::make_unique<MultiRow>(font_, Str::LabelPreset,
+                                                [this](int i) { applyPreset(i); });
         presetRow_->stepX = 112.f;
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetDefault),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetCRT),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetDefault), font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{100.f, 40.f}, 18));
+        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetCRT), font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{100.f, 40.f}, 18));
         presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetCinematic),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetPixel8),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
-        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetNight),
-            font_, sf::Vector2f{0.f, 0.f}, sf::Vector2f{100.f, 40.f}, 18));
+                                                       font_, sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{100.f, 40.f}, 18));
+        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetPixel8), font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{100.f, 40.f}, 18));
+        presetRow_->addButton(std::make_unique<Button>(Str::T(Str::PresetNight), font_,
+                                                       sf::Vector2f{0.f, 0.f},
+                                                       sf::Vector2f{100.f, 40.f}, 18));
     }
 
     // ===== 后处理 Slider =====
     {
         auto& pp = window_->postProcess();
-        saturationSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 200.f, pp.saturation() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        saturationSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 200.f, pp.saturation() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         saturationSlider_->setDefaultValue(100.f);
 
-        contrastSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 200.f, pp.contrast() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        contrastSlider_ =
+            std::make_unique<Slider>(font_, 50.f, 200.f, pp.contrast() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         contrastSlider_->setDefaultValue(100.f);
 
-        brightnessSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 200.f, pp.brightness() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        brightnessSlider_ =
+            std::make_unique<Slider>(font_, 50.f, 200.f, pp.brightness() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         brightnessSlider_->setDefaultValue(100.f);
 
-        gammaSlider_ = std::make_unique<Slider>(
-            font_, 50.f, 250.f, pp.gamma() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        gammaSlider_ =
+            std::make_unique<Slider>(font_, 50.f, 250.f, pp.gamma() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         gammaSlider_->setDefaultValue(100.f);
 
-        vignetteSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.vignette() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        vignetteSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.vignette() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         vignetteSlider_->setDefaultValue(0.f);
 
-        bloomStrengthSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 200.f, pp.bloomStrength() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        bloomStrengthSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 200.f, pp.bloomStrength() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         bloomStrengthSlider_->setDefaultValue(0.f);
 
-        bloomThresholdSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.bloomThreshold() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        bloomThresholdSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.bloomThreshold() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         bloomThresholdSlider_->setDefaultValue(70.f);
 
-        chromaticSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.chromatic() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        chromaticSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.chromatic() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         chromaticSlider_->setDefaultValue(0.f);
 
-        grainSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.grain() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        grainSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.grain() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         grainSlider_->setDefaultValue(0.f);
 
-        scanlineSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.scanline() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        scanlineSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.scanline() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         scanlineSlider_->setDefaultValue(0.f);
 
-        ditherSlider_ = std::make_unique<Slider>(
-            font_, 0.f, 100.f, pp.dither() * 100.f,
-            sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+        ditherSlider_ =
+            std::make_unique<Slider>(font_, 0.f, 100.f, pp.dither() * 100.f,
+                                     sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
         ditherSlider_->setDefaultValue(0.f);
     }
 
@@ -297,68 +275,51 @@ GraphicsTab::GraphicsTab(const sf::Font& font,
 }
 
 void GraphicsTab::loadFromPrefs() {
-    animationEnabled_      = prefs_->getBool(ConfigKey::kAnimationEnabled, true);
-    animationSpeedIndex_   = std::clamp(prefs_->getInt(ConfigKey::kAnimationSpeedIndex, 1), 0, 2);
-    pseudo3D_              = prefs_->getBool(ConfigKey::kPseudo3d, true);
-    parallaxEnabled_       = prefs_->getBool(ConfigKey::kParallax, true);
-    playerAnimEnabled_     = prefs_->getBool(ConfigKey::kPlayerAnimation, true);
-    levelIntroEnabled_     = prefs_->getBool(ConfigKey::kLevelIntro, true);
-    particlesEnabled_      = prefs_->getBool(ConfigKey::kParticles, true);
-    screenShake_           = prefs_->getBool(ConfigKey::kScreenShake, true);
-    notificationEnabled_   = prefs_->getBool(ConfigKey::kNotificationEnabled, true);
-    showColliders_         = prefs_->getBool(ConfigKey::kShowColliders, false);
-    initialLives_          = prefs_->getInt(ConfigKey::kInitialLives, 1);
-    notificationPosition_  = prefs_->getInt(ConfigKey::kNotificationPosition, 1);
-    buttonCorner_          = static_cast<float>(prefs_->getDouble(ConfigKey::kButtonCorner, 6.0));
-    buttonOutline_         = static_cast<float>(prefs_->getDouble(ConfigKey::kButtonOutline, 2.0));
+    pseudo3D_ = prefs_->getBool(ConfigKey::kPseudo3d, true);
+    parallaxEnabled_ = prefs_->getBool(ConfigKey::kParallax, true);
+    playerAnimEnabled_ = prefs_->getBool(ConfigKey::kPlayerAnimation, true);
+    particlesEnabled_ = prefs_->getBool(ConfigKey::kParticles, true);
+    screenShake_ = prefs_->getBool(ConfigKey::kScreenShake, true);
+    renderScale_ = static_cast<float>(prefs_->getDouble(ConfigKey::kRenderScale, 1.0));
+    upscaleMode_ = prefs_->getInt(ConfigKey::kUpscaleMode, 1);
+    particleDensity_ = std::clamp(prefs_->getInt(ConfigKey::kParticleDensity, 2), 0, 3);
+    shakeIntensity_ = std::clamp(
+        static_cast<float>(prefs_->getDouble(ConfigKey::kShakeIntensity, 1.0)), 0.f, 2.f);
 }
 
-void GraphicsTab::applyAnimation() {
-    Anim::setEnabled(animationEnabled_);
-    static const float kSpeeds[] = {0.5f, 1.0f, 2.0f};
-    Anim::setSpeed(kSpeeds[std::clamp(animationSpeedIndex_, 0, 2)]);
-    prefs_->setBool(ConfigKey::kAnimationEnabled, animationEnabled_);
-    prefs_->setInt(ConfigKey::kAnimationSpeedIndex, animationSpeedIndex_);
+void GraphicsTab::applyPseudo3D() {
+    prefs_->setBool(ConfigKey::kPseudo3d, pseudo3D_);
 }
-void GraphicsTab::applyPseudo3D()     { prefs_->setBool(ConfigKey::kPseudo3d, pseudo3D_); }
-void GraphicsTab::applyParallax()     { prefs_->setBool(ConfigKey::kParallax, parallaxEnabled_); }
-void GraphicsTab::applyPlayerAnimation() { prefs_->setBool(ConfigKey::kPlayerAnimation, playerAnimEnabled_); }
-void GraphicsTab::applyLevelIntro()   { prefs_->setBool(ConfigKey::kLevelIntro, levelIntroEnabled_); }
-void GraphicsTab::applyParticles()    { prefs_->setBool(ConfigKey::kParticles, particlesEnabled_); }
-void GraphicsTab::applyScreenShake()  { prefs_->setBool(ConfigKey::kScreenShake, screenShake_); }
-void GraphicsTab::applyShowColliders(){ prefs_->setBool(ConfigKey::kShowColliders, showColliders_); }
-void GraphicsTab::applyNotification() {
-    NotificationSystem::instance().setEnabled(notificationEnabled_);
-    NotificationSystem::instance().setPosition(
-        static_cast<NotificationPos>(notificationPosition_));
-    prefs_->setBool(ConfigKey::kNotificationEnabled, notificationEnabled_);
-    prefs_->setInt(ConfigKey::kNotificationPosition, notificationPosition_);
+void GraphicsTab::applyParallax() {
+    prefs_->setBool(ConfigKey::kParallax, parallaxEnabled_);
 }
-void GraphicsTab::applyButtonStyle() {
-    ButtonStyle bs;
-    bs.cornerRadius     = buttonCorner_;
-    bs.outlineThickness = buttonOutline_;
-    setButtonStyle(bs);
-    prefs_->setDouble(ConfigKey::kButtonCorner,  buttonCorner_);
-    prefs_->setDouble(ConfigKey::kButtonOutline, buttonOutline_);
+void GraphicsTab::applyPlayerAnimation() {
+    prefs_->setBool(ConfigKey::kPlayerAnimation, playerAnimEnabled_);
+}
+void GraphicsTab::applyParticles() {
+    prefs_->setBool(ConfigKey::kParticles, particlesEnabled_);
+}
+void GraphicsTab::applyScreenShake() {
+    prefs_->setBool(ConfigKey::kScreenShake, screenShake_);
 }
 
 void GraphicsTab::applyPreset(int idx) {
-    if (idx < 0 || idx >= kPresetCount) return;
+    if (idx < 0 || idx >= kPresetCount)
+        return;
     const auto& p = kPresets[idx];
 
     auto& pp = window_->postProcess();
-    pp.setSaturation    (p.saturation      / 100.f);
-    pp.setContrast      (p.contrast        / 100.f);
-    pp.setBrightness    (p.brightness      / 100.f);
-    pp.setGamma         (p.gamma           / 100.f);
-    pp.setVignette      (p.vignette        / 100.f);
-    pp.setBloomStrength (p.bloomStrength   / 100.f);
-    pp.setBloomThreshold(p.bloomThreshold  / 100.f);
-    pp.setChromatic     (p.chromatic       / 100.f);
-    pp.setGrain         (p.grain           / 100.f);
-    pp.setScanline      (p.scanline        / 100.f);
-    pp.setDither        (p.dither          / 100.f);
+    pp.setSaturation(p.saturation / 100.f);
+    pp.setContrast(p.contrast / 100.f);
+    pp.setBrightness(p.brightness / 100.f);
+    pp.setGamma(p.gamma / 100.f);
+    pp.setVignette(p.vignette / 100.f);
+    pp.setBloomStrength(p.bloomStrength / 100.f);
+    pp.setBloomThreshold(p.bloomThreshold / 100.f);
+    pp.setChromatic(p.chromatic / 100.f);
+    pp.setGrain(p.grain / 100.f);
+    pp.setScanline(p.scanline / 100.f);
+    pp.setDither(p.dither / 100.f);
 
     saturationSlider_->setValue(p.saturation);
     contrastSlider_->setValue(p.contrast);
@@ -372,17 +333,17 @@ void GraphicsTab::applyPreset(int idx) {
     scanlineSlider_->setValue(p.scanline);
     ditherSlider_->setValue(p.dither);
 
-    prefs_->setDouble(ConfigKey::kPostSaturation,      p.saturation      / 100.f);
-    prefs_->setDouble(ConfigKey::kPostContrast,        p.contrast        / 100.f);
-    prefs_->setDouble(ConfigKey::kPostBrightness,      p.brightness      / 100.f);
-    prefs_->setDouble(ConfigKey::kPostGamma,           p.gamma           / 100.f);
-    prefs_->setDouble(ConfigKey::kPostVignette,        p.vignette        / 100.f);
-    prefs_->setDouble(ConfigKey::kPostBloomStrength,  p.bloomStrength   / 100.f);
-    prefs_->setDouble(ConfigKey::kPostBloomThreshold, p.bloomThreshold  / 100.f);
-    prefs_->setDouble(ConfigKey::kPostChromatic,       p.chromatic       / 100.f);
-    prefs_->setDouble(ConfigKey::kPostGrain,           p.grain           / 100.f);
-    prefs_->setDouble(ConfigKey::kPostScanline,        p.scanline        / 100.f);
-    prefs_->setDouble(ConfigKey::kPostDither,          p.dither          / 100.f);
+    prefs_->setDouble(ConfigKey::kPostSaturation, p.saturation / 100.f);
+    prefs_->setDouble(ConfigKey::kPostContrast, p.contrast / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBrightness, p.brightness / 100.f);
+    prefs_->setDouble(ConfigKey::kPostGamma, p.gamma / 100.f);
+    prefs_->setDouble(ConfigKey::kPostVignette, p.vignette / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBloomStrength, p.bloomStrength / 100.f);
+    prefs_->setDouble(ConfigKey::kPostBloomThreshold, p.bloomThreshold / 100.f);
+    prefs_->setDouble(ConfigKey::kPostChromatic, p.chromatic / 100.f);
+    prefs_->setDouble(ConfigKey::kPostGrain, p.grain / 100.f);
+    prefs_->setDouble(ConfigKey::kPostScanline, p.scanline / 100.f);
+    prefs_->setDouble(ConfigKey::kPostDither, p.dither / 100.f);
 }
 
 void GraphicsTab::resetPost() {
@@ -430,7 +391,8 @@ void GraphicsTab::refreshLabels() {
         row->onButton->setText(Str::T(Str::On));
         row->offButton->setText(Str::T(Str::Off));
     }
-    for (auto& row : multiRows_) row->refreshLabel();
+    for (auto& row : multiRows_)
+        row->refreshLabel();
     if (presetRow_) {
         presetRow_->label.setString(toSf(Str::T(Str::LabelPreset)));
         if (presetRow_->buttons.size() >= 5) {
@@ -441,48 +403,66 @@ void GraphicsTab::refreshLabels() {
             presetRow_->buttons[4]->setText(Str::T(Str::PresetNight));
         }
     }
-    labelPostSaturation_    .setString(toSf(Str::T(Str::LabelPostSaturation)));
-    labelPostContrast_      .setString(toSf(Str::T(Str::LabelPostContrast)));
-    labelPostBrightness_    .setString(toSf(Str::T(Str::LabelPostBrightness)));
-    labelPostGamma_         .setString(toSf(Str::T(Str::LabelPostGamma)));
-    labelPostVignette_      .setString(toSf(Str::T(Str::LabelPostVignette)));
-    labelPostBloomStrength_ .setString(toSf(Str::T(Str::LabelPostBloomStrength)));
+    labelPostSaturation_.setString(toSf(Str::T(Str::LabelPostSaturation)));
+    labelPostContrast_.setString(toSf(Str::T(Str::LabelPostContrast)));
+    labelPostBrightness_.setString(toSf(Str::T(Str::LabelPostBrightness)));
+    labelPostGamma_.setString(toSf(Str::T(Str::LabelPostGamma)));
+    labelPostVignette_.setString(toSf(Str::T(Str::LabelPostVignette)));
+    labelPostBloomStrength_.setString(toSf(Str::T(Str::LabelPostBloomStrength)));
     labelPostBloomThreshold_.setString(toSf(Str::T(Str::LabelPostBloomThreshold)));
-    labelPostChromatic_     .setString(toSf(Str::T(Str::LabelPostChromatic)));
-    labelPostGrain_         .setString(toSf(Str::T(Str::LabelPostGrain)));
-    labelPostScanline_      .setString(toSf(Str::T(Str::LabelPostScanline)));
-    labelPostDither_        .setString(toSf(Str::T(Str::LabelPostDither)));
+    labelPostChromatic_.setString(toSf(Str::T(Str::LabelPostChromatic)));
+    labelPostGrain_.setString(toSf(Str::T(Str::LabelPostGrain)));
+    labelPostScanline_.setString(toSf(Str::T(Str::LabelPostScanline)));
+    labelPostDither_.setString(toSf(Str::T(Str::LabelPostDither)));
+    labelShakeIntensity_.setString(toSf(Str::T(Str::LabelShakeIntensity)));
 }
 
 void GraphicsTab::refreshSelection() {
-    if (toggles_.size() == 9) {
-        toggles_[0]->currentValue = animationEnabled_;       toggles_[0]->onButton->setSelected(animationEnabled_);       toggles_[0]->offButton->setSelected(!animationEnabled_);
-        toggles_[1]->currentValue = pseudo3D_;               toggles_[1]->onButton->setSelected(pseudo3D_);               toggles_[1]->offButton->setSelected(!pseudo3D_);
-        toggles_[2]->currentValue = parallaxEnabled_;        toggles_[2]->onButton->setSelected(parallaxEnabled_);        toggles_[2]->offButton->setSelected(!parallaxEnabled_);
-        toggles_[3]->currentValue = playerAnimEnabled_;      toggles_[3]->onButton->setSelected(playerAnimEnabled_);      toggles_[3]->offButton->setSelected(!playerAnimEnabled_);
-        toggles_[4]->currentValue = levelIntroEnabled_;      toggles_[4]->onButton->setSelected(levelIntroEnabled_);      toggles_[4]->offButton->setSelected(!levelIntroEnabled_);
-        toggles_[5]->currentValue = particlesEnabled_;       toggles_[5]->onButton->setSelected(particlesEnabled_);       toggles_[5]->offButton->setSelected(!particlesEnabled_);
-        toggles_[6]->currentValue = screenShake_;            toggles_[6]->onButton->setSelected(screenShake_);            toggles_[6]->offButton->setSelected(!screenShake_);
-        toggles_[7]->currentValue = notificationEnabled_;    toggles_[7]->onButton->setSelected(notificationEnabled_);    toggles_[7]->offButton->setSelected(!notificationEnabled_);
-        toggles_[8]->currentValue = showColliders_;          toggles_[8]->onButton->setSelected(showColliders_);          toggles_[8]->offButton->setSelected(!showColliders_);
+    if (rowPseudo3D_) {
+        rowPseudo3D_->currentValue = pseudo3D_;
+        rowPseudo3D_->onButton->setSelected(pseudo3D_);
+        rowPseudo3D_->offButton->setSelected(!pseudo3D_);
     }
-    if (multiRows_.size() == 5) {
-        multiRows_[0]->setSelected(indexOfLives(initialLives_));
-        multiRows_[1]->setSelected(std::clamp(animationSpeedIndex_, 0, 2));
-        multiRows_[2]->setSelected(notificationPosition_);
-        multiRows_[3]->setSelected(indexOfButtonCorner(buttonCorner_));
-        multiRows_[4]->setSelected(indexOfButtonOutline(buttonOutline_));
+    if (rowParallax_) {
+        rowParallax_->currentValue = parallaxEnabled_;
+        rowParallax_->onButton->setSelected(parallaxEnabled_);
+        rowParallax_->offButton->setSelected(!parallaxEnabled_);
     }
+    if (rowPlayerAnim_) {
+        rowPlayerAnim_->currentValue = playerAnimEnabled_;
+        rowPlayerAnim_->onButton->setSelected(playerAnimEnabled_);
+        rowPlayerAnim_->offButton->setSelected(!playerAnimEnabled_);
+    }
+    if (rowParticles_) {
+        rowParticles_->currentValue = particlesEnabled_;
+        rowParticles_->onButton->setSelected(particlesEnabled_);
+        rowParticles_->offButton->setSelected(!particlesEnabled_);
+    }
+    if (rowScreenShake_) {
+        rowScreenShake_->currentValue = screenShake_;
+        rowScreenShake_->onButton->setSelected(screenShake_);
+        rowScreenShake_->offButton->setSelected(!screenShake_);
+    }
+    if (rowRenderScale_)
+        rowRenderScale_->setSelected(indexOfRenderScale(renderScale_));
+    if (rowUpscaleMode_)
+        rowUpscaleMode_->setSelected(upscaleMode_);
+    if (rowParticleDensity_)
+        rowParticleDensity_->setSelected(particleDensity_);
 }
 
 void GraphicsTab::handleEvent(const sf::Event& ev) {
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) btn->handleEvent(ev);
+        for (auto& btn : row->buttons)
+            btn->handleEvent(ev);
     for (auto& row : toggles_) {
         row->onButton->handleEvent(ev);
         row->offButton->handleEvent(ev);
     }
-    for (auto& btn : presetRow_->buttons) btn->handleEvent(ev);
+    for (auto& btn : presetRow_->buttons)
+        btn->handleEvent(ev);
+    if (shakeIntensitySlider_)
+        shakeIntensitySlider_->handleEvent(ev);
     saturationSlider_->handleEvent(ev);
     contrastSlider_->handleEvent(ev);
     brightnessSlider_->handleEvent(ev);
@@ -517,13 +497,20 @@ void GraphicsTab::update() {
     // toggles
     for (auto& row : toggles_) {
         if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged) row->onChanged(true);
+            if (row->onChanged)
+                row->onChanged(true);
             return;
         }
         if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged) row->onChanged(false);
+            if (row->onChanged)
+                row->onChanged(false);
             return;
         }
+    }
+    // 震动强度
+    if (shakeIntensitySlider_ && shakeIntensitySlider_->consumeChanged()) {
+        shakeIntensity_ = shakeIntensitySlider_->value() / 100.f;
+        prefs_->setDouble(ConfigKey::kShakeIntensity, shakeIntensity_);
     }
     // 后处理 slider
     {
@@ -577,28 +564,29 @@ void GraphicsTab::update() {
 
 void GraphicsTab::registerFocus(std::vector<Button*>& out) {
     for (auto& row : multiRows_)
-        for (auto& btn : row->buttons) out.push_back(btn.get());
+        for (auto& btn : row->buttons)
+            out.push_back(btn.get());
     for (auto& row : toggles_) {
         out.push_back(row->onButton.get());
         out.push_back(row->offButton.get());
     }
-    for (auto& btn : presetRow_->buttons) out.push_back(btn.get());
+    for (auto& btn : presetRow_->buttons)
+        out.push_back(btn.get());
 }
 
 bool GraphicsTab::anyEditing() const {
-    for (auto* s : {saturationSlider_.get(), contrastSlider_.get(),
-                    brightnessSlider_.get(), gammaSlider_.get(),
-                    vignetteSlider_.get(), bloomStrengthSlider_.get(),
-                    bloomThresholdSlider_.get(), chromaticSlider_.get(),
-                    grainSlider_.get(), scanlineSlider_.get(),
-                    ditherSlider_.get()}) {
-        if (s && s->isEditing()) return true;
+    for (auto* s :
+         {saturationSlider_.get(), contrastSlider_.get(), brightnessSlider_.get(),
+          gammaSlider_.get(), vignetteSlider_.get(), bloomStrengthSlider_.get(),
+          bloomThresholdSlider_.get(), chromaticSlider_.get(), grainSlider_.get(),
+          scanlineSlider_.get(), ditherSlider_.get(), shakeIntensitySlider_.get()}) {
+        if (s && s->isEditing())
+            return true;
     }
     return false;
 }
 
-float GraphicsTab::render(sf::RenderTarget& target,
-                          float contentX, float ctrlX,
+float GraphicsTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
                           float startY) {
     float y = startY;
 
@@ -615,8 +603,7 @@ float GraphicsTab::render(sf::RenderTarget& target,
         row.label.setPosition({contentX, y + 8.f});
         target.draw(row.label);
         for (size_t i = 0; i < row.buttons.size(); ++i) {
-            row.buttons[i]->setPosition(
-                {ctrlX + static_cast<float>(i) * row.stepX, y});
+            row.buttons[i]->setPosition({ctrlX + static_cast<float>(i) * row.stepX, y});
             row.buttons[i]->render(target);
         }
         y += kRowH;
@@ -629,34 +616,33 @@ float GraphicsTab::render(sf::RenderTarget& target,
         y += kRowH;
     };
 
-    // 初始生命
-    drawMulti(*multiRows_[0]);
-    // 动画开关
-    drawToggle(*toggles_[0]);
-    // 动画速度
-    drawMulti(*multiRows_[1]);
+    // 渲染缩放
+    if (rowRenderScale_)
+        drawMulti(*rowRenderScale_);
+    // 超分辨率
+    if (rowUpscaleMode_)
+        drawMulti(*rowUpscaleMode_);
     // 伪 3D
-    drawToggle(*toggles_[1]);
+    if (rowPseudo3D_)
+        drawToggle(*rowPseudo3D_);
     // 视差背景
-    drawToggle(*toggles_[2]);
+    if (rowParallax_)
+        drawToggle(*rowParallax_);
     // 玩家动画
-    drawToggle(*toggles_[3]);
-    // 关卡开场
-    drawToggle(*toggles_[4]);
+    if (rowPlayerAnim_)
+        drawToggle(*rowPlayerAnim_);
     // 粒子
-    drawToggle(*toggles_[5]);
+    if (rowParticles_)
+        drawToggle(*rowParticles_);
+    // 粒子密度
+    if (rowParticleDensity_)
+        drawMulti(*rowParticleDensity_);
     // 屏幕震动
-    drawToggle(*toggles_[6]);
-    // 通知
-    drawToggle(*toggles_[7]);
-    // 通知位置
-    drawMulti(*multiRows_[2]);
-    // 按钮圆角
-    drawMulti(*multiRows_[3]);
-    // 按钮边框
-    drawMulti(*multiRows_[4]);
-    // 显示碰撞盒
-    drawToggle(*toggles_[8]);
+    if (rowScreenShake_)
+        drawToggle(*rowScreenShake_);
+    // 震动强度
+    if (shakeIntensitySlider_)
+        drawSlider(labelShakeIntensity_, *shakeIntensitySlider_);
 
     // 预设
     {
@@ -671,17 +657,39 @@ float GraphicsTab::render(sf::RenderTarget& target,
     }
 
     // 后处理
-    drawSlider(labelPostSaturation_,     *saturationSlider_);
-    drawSlider(labelPostContrast_,       *contrastSlider_);
-    drawSlider(labelPostBrightness_,     *brightnessSlider_);
-    drawSlider(labelPostGamma_,          *gammaSlider_);
-    drawSlider(labelPostVignette_,       *vignetteSlider_);
-    drawSlider(labelPostBloomStrength_,  *bloomStrengthSlider_);
+    drawSlider(labelPostSaturation_, *saturationSlider_);
+    drawSlider(labelPostContrast_, *contrastSlider_);
+    drawSlider(labelPostBrightness_, *brightnessSlider_);
+    drawSlider(labelPostGamma_, *gammaSlider_);
+    drawSlider(labelPostVignette_, *vignetteSlider_);
+    drawSlider(labelPostBloomStrength_, *bloomStrengthSlider_);
     drawSlider(labelPostBloomThreshold_, *bloomThresholdSlider_);
-    drawSlider(labelPostChromatic_,      *chromaticSlider_);
-    drawSlider(labelPostGrain_,          *grainSlider_);
-    drawSlider(labelPostScanline_,       *scanlineSlider_);
-    drawSlider(labelPostDither_,         *ditherSlider_);
+    drawSlider(labelPostChromatic_, *chromaticSlider_);
+    drawSlider(labelPostGrain_, *grainSlider_);
+    drawSlider(labelPostScanline_, *scanlineSlider_);
+    drawSlider(labelPostDither_, *ditherSlider_);
 
     return y;
+}
+
+void GraphicsTab::reapply() {
+    loadFromPrefs();
+    // 渲染缩放与超分是**推给 window_ 才生效**的（不是每帧读配置），
+    // 重置后必须重新推一次，否则键删了、画面还是旧参数
+    if (window_) {
+        window_->setRenderScale(renderScale_);
+        window_->setUpscaleMode(upscaleMode_);
+    }
+    // 震动强度也是滑块驱动的，重置后要把滑块拨回默认位置
+    if (shakeIntensitySlider_)
+        shakeIntensitySlider_->setValue(shakeIntensity_ * 100.f);
+    // 后处理的 uniform 是即时生效的，重置后必须重新灌一遍 ——
+    // 否则滑块回到默认位置了，画面还是旧的效果
+    resetPost();
+    applyPseudo3D();
+    applyParallax();
+    applyPlayerAnimation();
+    applyParticles();
+    applyScreenShake();
+    refreshSelection();
 }

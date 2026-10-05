@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(text_game VERSION 0.3.7 LANGUAGES CXX)
+project(text_game VERSION 0.3.8 LANGUAGES CXX)
 
 # ============================================================
 # 平台检测
@@ -642,6 +642,16 @@ target_link_libraries(validate_levels PRIVATE text_game_core)
 # 它抓到过两个纯逻辑测试发现不了的 bug，细节见源文件顶部注释。
 add_executable(wallpaper_smoke tools/wallpaper_smoke.cpp)
 target_link_libraries(wallpaper_smoke PRIVATE text_game_core)
+
+# ============================================================
+# 设置页冒烟测试（独立目标，**需要 DISPLAY，手动跑**）
+# ============================================================
+# 逐页、逐个可聚焦控件模拟点击，检查"点这一页的控件只改了这一页的键"。
+# 各页控件曾经靠数字下标引用，搬一行就可能"点这个改了那个"，而且静默。
+#
+#   ./build/release/settings_smoke
+add_executable(settings_smoke tools/settings_smoke.cpp)
+target_link_libraries(settings_smoke PRIVATE text_game_core)
 
 # ============================================================
 # clang-tidy（-DCLANG_TIDY=ON 开启）

@@ -4,8 +4,6 @@
 #include "ui_scale.h"
 #include "utils/utf8.h"
 #include "sound_manager.h"
-#include "infrastructure/gamepad.h"
-#include "focus_group.h"
 #include "config/keys.h"
 
 #include <algorithm>
@@ -15,93 +13,88 @@ namespace {
 constexpr float kRowH = 50.f;
 }
 
-AudioTab::AudioTab(const sf::Font& font,
-                   std::shared_ptr<Preferences> prefs,
+AudioTab::AudioTab(const sf::Font& font, std::shared_ptr<Preferences> prefs,
                    std::shared_ptr<Window> window)
       : font_(font),
         prefs_(std::move(prefs)),
         window_(std::move(window)),
-        labelMasterVolume_    (font, sf::String(), scaledFontSize(20)),
-        labelSoundVolume_     (font, sf::String(), scaledFontSize(20)),
-        labelBGMVolume_       (font, sf::String(), scaledFontSize(20)),
-        labelVibrationIntensity_(font, sf::String(), scaledFontSize(20)) {
-
+        labelMasterVolume_(font, sf::String(), scaledFontSize(20)),
+        labelSoundVolume_(font, sf::String(), scaledFontSize(20)),
+        labelBGMVolume_(font, sf::String(), scaledFontSize(20)) {
     // 从 prefs 加载状态
     loadFromPrefs();
 
     // ⭐ 创建 Slider
-    masterVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, masterVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    masterVolumeSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 100.f, masterVolume_ * 100.f,
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     masterVolumeSlider_->setDefaultValue(100.f);
 
-    soundVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, soundVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    soundVolumeSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 100.f, soundVolume_ * 100.f,
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     soundVolumeSlider_->setDefaultValue(60.f);
 
-    bgmVolumeSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, bgmVolume_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
+    bgmVolumeSlider_ =
+        std::make_unique<Slider>(font_, 0.f, 100.f, bgmVolume_ * 100.f,
+                                 sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
     bgmVolumeSlider_->setDefaultValue(40.f);
 
-    gamepadVibrationSlider_ = std::make_unique<Slider>(
-        font_, 0.f, 100.f, gamepadVibrationIntensity_ * 100.f,
-        sf::Vector2f{0.f, 0.f}, sf::Vector2f{240.f, 22.f});
-    gamepadVibrationSlider_->setDefaultValue(100.f);
-
     // ⭐ 创建 Toggle
-    auto makeToggle = [&](const std::string& onText,
-                          const std::string& offText) {
-        auto on  = std::make_unique<Button>(onText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
-        auto off = std::make_unique<Button>(offText, font_,
-                       sf::Vector2f{0.f, 0.f}, sf::Vector2f{86.f, 40.f}, 18);
+    auto makeToggle = [&](const std::string& onText, const std::string& offText) {
+        auto on = std::make_unique<Button>(onText, font_, sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{86.f, 40.f}, 18);
+        auto off = std::make_unique<Button>(offText, font_, sf::Vector2f{0.f, 0.f},
+                                            sf::Vector2f{86.f, 40.f}, 18);
         return std::make_pair(std::move(on), std::move(off));
     };
 
     auto addToggle = [&](const char* key, std::function<void(bool)> cb) {
         auto row = std::make_unique<ToggleRow>(font_, key, std::move(cb));
         auto [on, off] = makeToggle(Str::On, Str::Off);
-        row->onButton  = std::move(on);
+        row->onButton = std::move(on);
         row->offButton = std::move(off);
         toggles_.push_back(std::move(row));
     };
 
     addToggle(Str::LabelSound, [this](bool v) {
-        soundEnabled_ = v; refreshSelection(); applySound();
+        soundEnabled_ = v;
+        refreshSelection();
+        applySound();
     });
     addToggle(Str::LabelBGM, [this](bool v) {
-        bgmEnabled_ = v; refreshSelection(); applyBGM();
+        bgmEnabled_ = v;
+        refreshSelection();
+        applyBGM();
     });
-    addToggle(Str::LabelGamepad, [this](bool v) {
-        gamepadEnabled_ = v; refreshSelection(); applyGamepad();
-    });
-    addToggle(Str::LabelGamepadVibration, [this](bool v) {
-        gamepadVibrationEnabled_ = v; refreshSelection(); applyGamepadVibration();
+    // 0.3.8：手柄开关与振动挪去「操作」页（它们不是音频），
+    // 这里补上一个真正的音频项 —— 界面音效，跟"音效总开关"分开，
+    // 有人想留游戏音效但嫌菜单点击声吵。
+    addToggle(Str::LabelUiSound, [this](bool v) {
+        uiSoundEnabled_ = v;
+        refreshSelection();
+        applyUiSound();
     });
 
     auto labelColor = sf::Color(230, 230, 230);
     labelMasterVolume_.setFillColor(labelColor);
     labelSoundVolume_.setFillColor(labelColor);
     labelBGMVolume_.setFillColor(labelColor);
-    labelVibrationIntensity_.setFillColor(labelColor);
 
     refreshSelection();
     refreshLabels();
 }
 
 void AudioTab::loadFromPrefs() {
-    soundEnabled_            = prefs_->getBool(ConfigKey::kAudioSoundEnabled, true);
-    bgmEnabled_              = prefs_->getBool(ConfigKey::kAudioBgmEnabled, true);
-    gamepadEnabled_          = prefs_->getBool(ConfigKey::kGamepadEnabled, true);
-    gamepadVibrationEnabled_ = prefs_->getBool(ConfigKey::kGamepadVibrationEnabled, true);
+    soundEnabled_ = prefs_->getBool(ConfigKey::kAudioSoundEnabled, true);
+    bgmEnabled_ = prefs_->getBool(ConfigKey::kAudioBgmEnabled, true);
+    uiSoundEnabled_ = prefs_->getBool(ConfigKey::kUiSoundEnabled, true);
 
-    masterVolume_ = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioMasterVolume, 1.0));
-    soundVolume_  = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioSoundVolume, 0.6));
-    bgmVolume_    = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioBgmVolume, 0.4));
-    gamepadVibrationIntensity_ = static_cast<float>(
-        prefs_->getDouble(ConfigKey::kGamepadVibrationIntensity, 1.0));
+    masterVolume_ =
+        static_cast<float>(prefs_->getDouble(ConfigKey::kAudioMasterVolume, 1.0));
+    soundVolume_ =
+        static_cast<float>(prefs_->getDouble(ConfigKey::kAudioSoundVolume, 0.6));
+    bgmVolume_ = static_cast<float>(prefs_->getDouble(ConfigKey::kAudioBgmVolume, 0.4));
 }
 
 void AudioTab::applySound() {
@@ -109,7 +102,8 @@ void AudioTab::applySound() {
     SoundManager::instance().setSFXVolume(soundVolume_);
     prefs_->setBool(ConfigKey::kAudioSoundEnabled, soundEnabled_);
     prefs_->setDouble(ConfigKey::kAudioSoundVolume, soundVolume_);
-    if (soundEnabled_) SoundManager::instance().playCoin();
+    if (soundEnabled_)
+        SoundManager::instance().playCoin();
 }
 
 void AudioTab::applyBGM() {
@@ -119,14 +113,11 @@ void AudioTab::applyBGM() {
     prefs_->setDouble(ConfigKey::kAudioBgmVolume, bgmVolume_);
 }
 
-void AudioTab::applyGamepad() {
-    prefs_->setBool(ConfigKey::kGamepadEnabled, gamepadEnabled_);
-    FocusGroup::instance().setEnabled(gamepadEnabled_);
-}
-
-void AudioTab::applyGamepadVibration() {
-    prefs_->setBool(ConfigKey::kGamepadVibrationEnabled, gamepadVibrationEnabled_);
-    Gamepad::instance().setVibrationEnabled(gamepadVibrationEnabled_);
+void AudioTab::applyUiSound() {
+    SoundManager::instance().setUiSoundEnabled(uiSoundEnabled_);
+    prefs_->setBool(ConfigKey::kUiSoundEnabled, uiSoundEnabled_);
+    if (uiSoundEnabled_)
+        SoundManager::instance().playClick();
 }
 
 void AudioTab::refreshLabels() {
@@ -138,12 +129,11 @@ void AudioTab::refreshLabels() {
     labelMasterVolume_.setString(toSf(Str::T(Str::LabelMasterVolume)));
     labelSoundVolume_.setString(toSf(Str::T(Str::LabelSoundVolume)));
     labelBGMVolume_.setString(toSf(Str::T(Str::LabelBGMVolume)));
-    labelVibrationIntensity_.setString(
-        toSf(Str::T(Str::LabelVibrationIntensity)));
 }
 
 void AudioTab::refreshSelection() {
-    if (toggles_.size() != 4) return;
+    if (toggles_.size() != 3)
+        return;
     auto setRow = [](ToggleRow& row, bool v) {
         row.currentValue = v;
         row.onButton->setSelected(v);
@@ -151,13 +141,11 @@ void AudioTab::refreshSelection() {
     };
     setRow(*toggles_[0], soundEnabled_);
     setRow(*toggles_[1], bgmEnabled_);
-    setRow(*toggles_[2], gamepadEnabled_);
-    setRow(*toggles_[3], gamepadVibrationEnabled_);
+    setRow(*toggles_[2], uiSoundEnabled_);
 
     masterVolumeSlider_->setValue(masterVolume_ * 100.f);
     soundVolumeSlider_->setValue(soundVolume_ * 100.f);
     bgmVolumeSlider_->setValue(bgmVolume_ * 100.f);
-    gamepadVibrationSlider_->setValue(gamepadVibrationIntensity_ * 100.f);
 }
 
 void AudioTab::handleEvent(const sf::Event& ev) {
@@ -168,7 +156,6 @@ void AudioTab::handleEvent(const sf::Event& ev) {
     }
     soundVolumeSlider_->handleEvent(ev);
     bgmVolumeSlider_->handleEvent(ev);
-    gamepadVibrationSlider_->handleEvent(ev);
 }
 
 void AudioTab::update() {
@@ -180,11 +167,13 @@ void AudioTab::update() {
 
     for (auto& row : toggles_) {
         if (row->onButton->consumeClick() && !row->currentValue) {
-            if (row->onChanged) row->onChanged(true);
+            if (row->onChanged)
+                row->onChanged(true);
             return;
         }
         if (row->offButton->consumeClick() && row->currentValue) {
-            if (row->onChanged) row->onChanged(false);
+            if (row->onChanged)
+                row->onChanged(false);
             return;
         }
     }
@@ -199,12 +188,6 @@ void AudioTab::update() {
         SoundManager::instance().setMusicVolume(bgmVolume_);
         prefs_->setDouble(ConfigKey::kAudioBgmVolume, bgmVolume_);
     }
-    if (gamepadVibrationSlider_->consumeChanged()) {
-        gamepadVibrationIntensity_ = gamepadVibrationSlider_->value() / 100.f;
-        Gamepad::instance().setVibrationIntensity(gamepadVibrationIntensity_);
-        prefs_->setDouble(ConfigKey::kGamepadVibrationIntensity,
-                          gamepadVibrationIntensity_);
-    }
 }
 
 void AudioTab::registerFocus(std::vector<Button*>& out) {
@@ -215,15 +198,16 @@ void AudioTab::registerFocus(std::vector<Button*>& out) {
 }
 
 bool AudioTab::anyEditing() const {
-    if (masterVolumeSlider_ && masterVolumeSlider_->isEditing()) return true;
-    if (soundVolumeSlider_  && soundVolumeSlider_->isEditing())  return true;
-    if (bgmVolumeSlider_    && bgmVolumeSlider_->isEditing())    return true;
-    if (gamepadVibrationSlider_ && gamepadVibrationSlider_->isEditing()) return true;
+    if (masterVolumeSlider_ && masterVolumeSlider_->isEditing())
+        return true;
+    if (soundVolumeSlider_ && soundVolumeSlider_->isEditing())
+        return true;
+    if (bgmVolumeSlider_ && bgmVolumeSlider_->isEditing())
+        return true;
     return false;
 }
 
-float AudioTab::render(sf::RenderTarget& target,
-                       float contentX, float ctrlX,
+float AudioTab::render(sf::RenderTarget& target, float contentX, float ctrlX,
                        float startY) {
     float y = startY;
 
@@ -255,12 +239,16 @@ float AudioTab::render(sf::RenderTarget& target,
     drawToggleRow(*toggles_[1]);
     // BGM 音量
     drawSlider(labelBGMVolume_, *bgmVolumeSlider_);
-    // 手柄
+    // 界面音效（0.3.8 新增；手柄相关的三项已挪去「操作」页）
     drawToggleRow(*toggles_[2]);
-    // 手柄振动
-    drawToggleRow(*toggles_[3]);
-    // 振动强度
-    drawSlider(labelVibrationIntensity_, *gamepadVibrationSlider_);
 
     return y;
+}
+
+void AudioTab::reapply() {
+    loadFromPrefs();
+    applySound();
+    applyBGM();
+    applyUiSound();
+    refreshSelection();
 }

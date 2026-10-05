@@ -23,8 +23,19 @@ public:
         text_ = std::make_unique<sf::Text>(font, sf::String(), 18);
     }
 
+    /// 传给 push() 的 duration 用这个值 = "用配置里的默认时长"。
+    ///
+    /// 用哨兵而不是把默认值改成可变量，是为了区分两种调用：
+    ///   - 没写 duration 的（正常通知）→ 跟随设置里的「通知时长」
+    ///   - 显式写了 1.2f 的（F3 清空敌人那种调试提示）→ 保持自己的短时长
+    static constexpr float kUseDefaultDuration = -1.f;
+
     void push(const std::string& text, NotificationType type = NotificationType::Info,
-              float duration = 3.f);
+              float duration = kUseDefaultDuration);
+
+    /// 设置里的「通知时长」（秒）
+    void setDefaultDuration(float seconds) { defaultDuration_ = seconds; }
+    float defaultDuration() const { return defaultDuration_; }
 
     void clear();
 
@@ -51,11 +62,13 @@ private:
     std::deque<Entry> queue_;
     const sf::Font* font_ = nullptr;
     bool enabled_ = true;
+    /// 调用方没显式给时长时用它（设置里的「通知时长」，默认与旧行为一致）
+    float defaultDuration_ = 3.f;
     NotificationPos pos_ = NotificationPos::TopRight;
 
     // ⭐ 复用渲染对象，避免每帧构造 sf::Text
     mutable std::unique_ptr<sf::Text> text_;
-    mutable sf::RectangleShape        panel_;
+    mutable sf::RectangleShape panel_;
 
     static constexpr size_t kMaxVisible = 6;
     static constexpr float kWidth = 340.f;

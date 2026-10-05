@@ -65,6 +65,10 @@ public:
     void registerFocus(std::vector<Button*>& out);
     bool anyEditing() const { return false; } // 本页没有文本输入
 
+    /// 「恢复本页默认」用：重读配置，并把需要立即生效的东西重新应用一次。
+    /// 与 loadFromPrefs() 的区别是它**会**去改全局状态（主题、音量、后处理器…）。
+    void reapply();
+
 private:
     /// 把已经解码好的缩略图上传成小纹理。缩略图是后台线程逐个产出的，
     /// 所以这一步要**反复调**，直到全部就位。
