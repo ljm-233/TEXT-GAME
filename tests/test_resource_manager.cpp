@@ -15,6 +15,19 @@ namespace {
 
 namespace fs = std::filesystem;
 
+/// 平台无关地比较路径字符串。
+///
+/// ⚠️ 拿 `.string()` 和写死的 "/a/b" 比是**平台相关**的：Windows 上
+///    `path("C:\\tmp") / "x"` 用反斜杠拼出来是 `C:\tmp\x`，跟 POSIX 字面量对不上
+///    （CI 的 Windows job 就是这么红的）。
+///    `make_preferred()` 把分隔符统一成当前平台的首选形式再比。
+///    另外 `fs::path == fs::path` 是**逐段**比较的，不受内部分隔符影响 ——
+///    两边都是路径时优先用 path 比。
+bool samePath(const std::string& a, const std::string& b) {
+    return std::filesystem::path(a).make_preferred() ==
+           std::filesystem::path(b).make_preferred();
+}
+
 /// 手工装一个别名表（不依赖 Paths，测试更直接）
 ResourceManager makeManager() {
     ResourceManager rm;
@@ -123,7 +136,8 @@ TEST_CASE("ResourceManager - 不能靠同名前缀蒙混过关") {
     // 它**不在** levels 的子树里 —— 逐段比较才拦得住，纯字符串前缀比较会放过
     CHECK(rm.get("levels", "../levels2/x").empty());
     CHECK(rm.get("assets", "ett").empty() == false); // assets 自己的子路径正常
-    CHECK(rm.get("assets2", "x").string() == "/pkg/assets2/x");
+    // 这一处用 .string() 比是因为路径是拼出来的（Windows 上会用反斜杠）
+    CHECK(samePath(rm.get("assets2", "x").string(), "/pkg/assets2/x"));
 }
 
 TEST_CASE("ResourceManager - 没爬出子树的 .. 是允许的") {
@@ -156,6 +170,14 @@ TEST_CASE("ResourceManager - expand 展开 ${path:别名}") {
     CHECK(rm.expand("x=${path:lang}/zh.txt") == "x=/pkg/assets/lang/zh.txt");
     CHECK(rm.expand("${path:lang} 和 ${path:levels}") ==
           "/pkg/assets/lang 和 /pkg/assets/levels");
+
+    // 子路径整个写进花括号里时，拼出来的是**当前平台的原生分隔符**；
+    // 写成 "${path:别名}/子路径"（斜杠在花括号外面）时那一段是配置里的字面文本，
+    // 不会被改写 —— 需要跨平台一致的路径就用前一种写法。
+    CHECK(rm.expand("${path:levels/level1.txt}") ==
+          rm.get("levels", "level1.txt").string());
+    CHECK(samePath(rm.expand("${path:levels}/level1.txt"),
+                   rm.get("levels", "level1.txt").string()));
 }
 
 TEST_CASE("ResourceManager - expand 对不需要展开的值零成本原样返回") {

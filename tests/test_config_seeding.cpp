@@ -25,6 +25,19 @@ namespace {
 
 namespace fs = std::filesystem;
 
+/// 平台无关地比较路径字符串。
+///
+/// ⚠️ 拿 `.string()` 和写死的 "/a/b" 比是**平台相关**的：Windows 上
+///    `path("C:\\tmp") / "x"` 用反斜杠拼出来是 `C:\tmp\x`，跟 POSIX 字面量对不上
+///    （CI 的 Windows job 就是这么红的）。
+///    `make_preferred()` 把分隔符统一成当前平台的首选形式再比。
+///    另外 `fs::path == fs::path` 是**逐段**比较的，不受内部分隔符影响 ——
+///    两边都是路径时优先用 path 比。
+bool samePath(const std::string& a, const std::string& b) {
+    return std::filesystem::path(a).make_preferred() ==
+           std::filesystem::path(b).make_preferred();
+}
+
 /// 一个独立沙箱：Paths 挂在临时目录下，assets/defaults/ 由用例决定放不放。
 struct Sandbox {
     fs::path root;
@@ -259,8 +272,12 @@ TEST_CASE("Config::get - 展开值里的 ${path:别名}") {
                         "plain=3\n");
     auto prefs = box.prefs();
 
-    CHECK(prefs->get("wallpaper_file") == (box.root / "wallpaper" / "a.jpg").string());
-    CHECK(prefs->get("lang_file") == (box.root / "assets" / "lang" / "zh.txt").string());
+    // box.root 是**真实临时目录**，Windows 上是带反斜杠的原生路径，
+    // 所以这里必须用 samePath 而不是字符串相等
+    CHECK(samePath(prefs->get("wallpaper_file"),
+                   (box.root / "wallpaper" / "a.jpg").string()));
+    CHECK(samePath(prefs->get("lang_file"),
+                   (box.root / "assets" / "lang" / "zh.txt").string()));
 
     // 不含 ${ 的值原样返回（绝大多数键走这条）
     CHECK(prefs->get("plain") == "3");
