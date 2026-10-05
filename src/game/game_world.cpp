@@ -483,10 +483,12 @@ void GameWorld::reset() {
     accumulator_ = 0.f;
 
     // ⭐ 对象即将销毁，先清空指针避免悬垂
+    // player_ 只是 objects_ 里的观察指针，clear() 之后立刻悬垂。
+    // 下面的 spawnPlayer() 会重新建一个 keys_ 为 0 的新玩家，没必要在这里 resetKeys()。
     activeCheckpoint_ = nullptr;
+    player_ = nullptr;
     objects_.clear();
     doors_.clear();
-    if (player_) player_->resetKeys();
 
     for (int ty = 0; ty < level_->height(); ++ty)
         for (int tx = 0; tx < level_->width(); ++tx)
