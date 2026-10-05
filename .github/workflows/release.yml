@@ -7,19 +7,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ============================================================
+  # Linux：tar.gz / zip / deb / rpm / AppImage 五种一起出
+  # ============================================================
   release-linux:
     name: Linux
     runs-on: ubuntu-latest
     container: archlinux:latest
+
+    env:
+      # appimagetool 自己也是个 AppImage，而容器里没有 FUSE。
+      # 这个变量让 AppImage 运行时改为先解包再执行。
+      APPIMAGE_EXTRACT_AND_RUN: "1"
 
     steps:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm \
-            base-devel cmake ninja sfml git
+            base-devel cmake ninja sfml git \
+            dpkg rpm-tools squashfs-tools file desktop-file-utils zsync
 
       - uses: actions/checkout@v4
+
+      - name: Install appimagetool
+        run: |
+          # 只在 AUR（appimagetool-bin），容器里装不了，直接取官方 AppImage
+          curl -fsSL -o /usr/local/bin/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+          appimagetool --version || true
 
       - name: Configure
         run: |
@@ -30,28 +47,89 @@ jobs:
       - name: Build
         run: cmake --build build -j
 
-      - name: Package
+      - name: Package (tar.gz / zip)
         run: |
           cd build
           cpack
 
-      - name: Verify bundle is self-contained
+      - name: Package (deb)
         run: |
           cd build
-          mkdir -p /tmp/verify
-          tar xzf TEXT-GAME-*-Linux.tar.gz -C /tmp/verify
-          test -x /tmp/verify/TEXT-GAME
+          # dpkg 必须在 PATH 里，否则 CPackDeb 拿不到 dpkg --print-architecture，
+          # 打出来的包 Architecture 字段是空的、装不上
+          cpack -G DEB
 
-          count=$(ls /tmp/verify/lib/*.so* 2>/dev/null | wc -l)
-          echo "包内库数量: $count"
-          [ "$count" -ge 5 ] || { echo "lib/ 几乎是空的，依赖没打进去"; exit 1; }
+      - name: Package (rpm)
+        run: |
+          cd build
+          cpack -G RPM
 
-          # 启动器就是靠这个环境变量让直接 + 间接依赖都走包内的
-          if LD_LIBRARY_PATH=/tmp/verify/lib ldd /tmp/verify/text_game | grep -q "not found"; then
-            echo "有未解析的依赖："
-            LD_LIBRARY_PATH=/tmp/verify/lib ldd /tmp/verify/text_game | grep "not found"
+      - name: Package (AppImage)
+        run: |
+          # 脚本默认找 build/release-package（本机 preset 的目录名），
+          # CI 里的构建目录就叫 build，所以显式指一下
+          TEXTGAME_BUILD_DIR=build ./packaging/build_appimage.sh
+
+      # 每个包型都验一遍。这些都是用真实翻车换来的检查：
+      #   - deb 的空 Architecture 字段（漏装 dpkg 时就是这样）
+      #   - tar.gz 的 lib/ 断链（漏 FOLLOW_SYMLINK_CHAIN）
+      #   - AppImage 的依赖闭包不完整
+      - name: Verify packages
+        run: |
+          set -e
+          cd build
+
+          echo "== 产出了哪些包 =="
+          ls -la *.tar.gz *.zip *.deb *.rpm *.AppImage
+
+          echo "== tar.gz =="
+          rm -rf /tmp/v && mkdir -p /tmp/v
+          tar xzf TEXT-GAME-*-Linux.tar.gz -C /tmp/v
+          test -x /tmp/v/TEXT-GAME
+          count=$(ls /tmp/v/lib/*.so* | wc -l)
+          echo "  lib/: $count 个"
+          [ "$count" -ge 5 ] || { echo "  lib/ 几乎是空的"; exit 1; }
+          if LD_LIBRARY_PATH=/tmp/v/lib ldd /tmp/v/text_game | grep -q "not found"; then
+            echo "  有未解析依赖："
+            LD_LIBRARY_PATH=/tmp/v/lib ldd /tmp/v/text_game | grep "not found"
             exit 1
           fi
+          test -f /tmp/v/assets/font.ttf
+
+          echo "== zip =="
+          # 先把清单落到文件再 grep。直接 `unzip -l | grep -q` 的话，
+          # grep 一命中就退出、把上游掐断，unzip/tar 会报 "写错误"，
+          # 看着像失败其实是自己人干的。
+          unzip -l TEXT-GAME-*-Linux.zip > /tmp/zip-list.txt
+          grep -q "TEXT-GAME" /tmp/zip-list.txt || { echo "  zip 没有内容"; exit 1; }
+
+          echo "== deb =="
+          arch=$(dpkg-deb -f TEXT-GAME-*-Linux.deb Architecture)
+          echo "  Architecture: $arch"
+          [ -n "$arch" ] && [ "$arch" != "i386" ] || { echo "  Architecture 不对（漏装 dpkg 时会是空的或 i386）"; exit 1; }
+          dpkg-deb -c TEXT-GAME-*-Linux.deb > /tmp/deb-list.txt
+          grep -q "libsfml" /tmp/deb-list.txt || { echo "  deb 里没带 SFML"; exit 1; }
+
+          echo "== rpm =="
+          rarch=$(rpm -qp --qf '%{ARCH}' TEXT-GAME-*-Linux.rpm)
+          echo "  ARCH: $rarch"
+          [ "$rarch" = "x86_64" ] || { echo "  rpm 架构不对"; exit 1; }
+
+          echo "== AppImage =="
+          rm -rf /tmp/ai && mkdir -p /tmp/ai
+          ./TEXT-GAME-*-x86_64.AppImage --appimage-extract > /dev/null
+          mv squashfs-root /tmp/ai/root
+          test -x /tmp/ai/root/usr/bin/text_game
+          test -f /tmp/ai/root/usr/bin/assets/font.ttf
+          acount=$(ls /tmp/ai/root/usr/lib/*.so* | wc -l)
+          echo "  usr/lib: $acount 个"
+          [ "$acount" -ge 5 ] || { echo "  AppImage 里没带库"; exit 1; }
+          if LD_LIBRARY_PATH=/tmp/ai/root/usr/lib ldd /tmp/ai/root/usr/bin/text_game | grep -q "not found"; then
+            echo "  AppImage 有未解析依赖"
+            exit 1
+          fi
+
+          echo "全部通过"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -60,7 +138,13 @@ jobs:
           path: |
             build/*.tar.gz
             build/*.zip
+            build/*.deb
+            build/*.rpm
+            build/*.AppImage
 
+  # ============================================================
+  # macOS：自带依赖的 .app
+  # ============================================================
   release-macos:
     name: macOS
     runs-on: macos-14
@@ -88,7 +172,7 @@ jobs:
       # macOS 的包一旦"看起来能打出来但其实起不来"，下载的人只会看到
       # 一句 SIGKILL / Library not loaded，很难查。所以这里把三件最容易
       # 悄悄坏掉的事钉成硬检查：
-      #   1. 资源在可执行文件旁边 —— Paths 就是靠这个判定"打包模式"的，
+      #   1. 资源在 Contents/Resources/ —— Paths 判定"打包模式"看的就是它，
       #      不在的话会退回开发模式，去用编译期的 PROJECT_ROOT
       #   2. Mach-O 的代码签名还有效（strip / install_name_tool 都会毁掉它，
       #      Apple Silicon 上内核随后直接 SIGKILL）
@@ -101,14 +185,12 @@ jobs:
           tar xzf TEXT-GAME-*-macOS.tar.gz -C /tmp/verify
 
           # 包根只该有一个 .app。多出来的那个是"某处把 bundle 目录名写死了"
-          # 的典型症状 —— 上一次演练就是这么凭空多出一个只装资源的空 bundle，
-          # 而且它挡住了真正的那个（glob 按字典序取第一个）。
+          # 的典型症状 —— 而且 glob 按字典序可能让假的挡住真的那个。
           apps=$(ls -d /tmp/verify/*.app 2>/dev/null | wc -l)
           echo ".app 数量: $apps"
           [ "$apps" -eq 1 ] || { echo "包根下应当只有 1 个 .app"; ls -d /tmp/verify/*.app; exit 1; }
 
           APP=$(ls -d /tmp/verify/*.app)
-          test -n "$APP" || { echo "包根下没有 .app"; exit 1; }
           FW="$APP/Contents/Frameworks"
 
           echo "== 包内布局 =="
@@ -157,9 +239,77 @@ jobs:
           name: TEXT-GAME-macOS
           path: build/*.tar.gz
 
+  # ============================================================
+  # Windows：NSIS 安装包（自带 SFML 及其依赖 DLL）
+  # ============================================================
+  release-windows:
+    name: Windows
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg integrate install
+
+      - name: Install SFML via vcpkg
+        run: C:\vcpkg\vcpkg install sfml:x64-windows
+
+      # makensis 在 runner 镜像里预装了，但不在非交互 shell 的 PATH 上
+      - name: Add NSIS to PATH
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files (x86)\NSIS"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Package (NSIS)
+        run: |
+          cd build
+          cpack -G NSIS
+
+      - name: Verify installer
+        run: |
+          $exe = Get-ChildItem build\*.exe -ErrorAction SilentlyContinue
+          if (-not $exe) { Write-Error "没有生成安装包"; exit 1 }
+          foreach ($e in $exe) {
+            Write-Host ("安装包: {0}  {1:N1} MB" -f $e.Name, ($e.Length / 1MB))
+          }
+
+          # 安装树里必须有 SFML 的 DLL —— 少了这一条，装到没装 vcpkg 的
+          # 机器上就是"缺 sfml-graphics-3.dll"，而且只有在别人机器上才发现
+          $dlls = Get-ChildItem -Recurse -Path build\_CPack_Packages -Filter 'sfml-*.dll' -ErrorAction SilentlyContinue
+          Write-Host ("打包进去的 SFML DLL: {0} 个" -f $dlls.Count)
+          if ($dlls.Count -lt 4) { Write-Error "SFML DLL 没打进去"; exit 1 }
+
+          $fonts = Get-ChildItem -Recurse -Path build\_CPack_Packages -Filter 'font.ttf' -ErrorAction SilentlyContinue
+          if (-not $fonts) { Write-Error "assets 没打进去"; exit 1 }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TEXT-GAME-Windows
+          path: build/*.exe
+
+  # ============================================================
+  # 建 Release
+  # ============================================================
   create-release:
     name: Create Release
-    needs: [release-linux, release-macos]
+    needs: [release-linux, release-macos, release-windows]
     runs-on: ubuntu-latest
 
     # workflow_dispatch 只拿来当"打包演练"用：跑完能拿到 artifacts，
@@ -178,7 +328,12 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*.tar.gz
+          # 三个平台的产物全挂上去。以前这里只写了 *.tar.gz，
+          # 于是 zip / deb / rpm 明明打出来了却没进 release。
+          files: |
+            artifacts/TEXT-GAME-Linux/*
+            artifacts/TEXT-GAME-macOS/*
+            artifacts/TEXT-GAME-Windows/*
           generate_release_notes: true
           draft: false
           prerelease: false
