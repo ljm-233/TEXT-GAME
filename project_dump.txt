@@ -1,658 +1,480 @@
 
-===== ./include/scene/playtest_request.h =====
+===== ./include/scene/stats_scene.h =====
 #pragma once
-#include <optional>
-#include <string>
+#include "background.h"
+#include "button.h"
+#include "save_manager.h"
+#include "scene.h"
+#include "stats.h"
+#include <memory>
 #include <vector>
 
-/// 编辑器「试玩」的交接通道：把**当前编辑中**（未保存）的关卡从编辑器交给关卡场景。
-///
-/// 为什么需要它：`GameScene` 只认磁盘上的关卡序号（`levelIndex_`），而试玩的语义
-/// 恰恰是"玩你现在改到一半的那份"。既有的交接范式是"共享服务持有待处理数据"
-/// （`SaveManager::setPendingSave`），这里照抄那个形状 —— 而不是给场景加一堆
-/// 只有试玩才用得上的字段。
-///
-/// ⚠️ **取走是一次性的**：`take()` 之后请求就没了。否则试玩结束回到编辑器、
-///  以后再从选关页进普通关卡，会莫名其妙又玩到那份旧草稿 —— 而且没有任何提示，
-///  看起来就像"关卡加载错了"。
-class PlaytestRequest {
+//
+// 成绩 / 统计页。
+//
+// 数据全部来自 Stats::summarize()（纯函数，有单测）—— 这里只负责排版，
+// 一个字都不自己算。每关一行（关卡 / 星级 / 最佳时间 / 最佳金币）+ 总计 + 进度条。
+//
+// ⚠️ 关卡数不写死：一屏放不下就按可用高度分栏（栏数在 render 里按窗口高度算，
+// 不存状态）。每行的 sf::Text 是**成员**，按关数只增不减地扩容 ——
+// 绝不在 render 里构造 sf::Text（SFML 3.1 析构会死锁）。
+//
+class StatsScene : public Scene {
 public:
-    struct Request {
-        std::vector<std::string> lines; ///< 关卡的 ASCII 文本（一行一条）
-        std::string sourceName;         ///< 来源文件名，只用于显示
-    };
+    StatsScene(std::shared_ptr<Background> background,
+               std::shared_ptr<SaveManager> saveManager, const sf::Font& font,
+               std::shared_ptr<Logger> logger);
 
-    /// 编辑器按 F5 时调用
-    void request(std::vector<std::string> lines, std::string sourceName) {
-        pending_ = Request{std::move(lines), std::move(sourceName)};
-    }
+    void onEnter() override;
+    void onResume() override;
 
-    /// 取走（取一次就清空）。没有待处理请求时返回 nullopt。
-    std::optional<Request> take() {
-        auto out = std::move(pending_);
-        pending_.reset();
-        return out;
-    }
+    void handleEvent(const sf::Event& event) override;
+    void update(float dt) override;
+    void render(Window& window) override;
 
-    bool has() const { return pending_.has_value(); }
-    void clear() { pending_.reset(); }
-
-    /// 这份草稿能不能试玩 —— 至少要有一个玩家出生点 'P'。
-    ///
-    /// 没有 'P' 的话关卡**确实**能构造出来，但玩家会被摆在 (0,0)，
-    /// 大概率正好卡在边界墙里：画面在动、按什么都没反应。与其让用户对着一个
-    /// 动不了的画面发愣，不如在按 F5 的时候就说清楚。
-    static bool hasPlayerSpawn(const std::vector<std::string>& lines) {
-        for (const auto& line : lines)
-            if (line.find('P') != std::string::npos)
-                return true;
-        return false;
-    }
+    SceneId nextScene() const override { return nextScene_; }
+    std::string windowTitleHint() const override;
 
 private:
-    std::optional<Request> pending_;
+    void reload();          // 读存档列表 + 选中项 + 统计 + 文字
+    void refreshLabels();   // 只重设文字（语言切换 / 切换存档）
+    void ensureRowTexts();  // 按关数补足每行的 Text（只增不减）
+    void selectSave(int i); // 上一个 / 下一个存档（环绕）
+    void syncFocus();
+
+    std::shared_ptr<Background>  background_;
+    std::shared_ptr<SaveManager> saveManager_;
+    std::shared_ptr<Logger>      logger_;
+    const sf::Font&              font_;
+
+    std::vector<SaveInfo> saves_;   // listSaves() 已按 lastPlayed 降序
+    int                   index_ = -1; // saves_ 下标；-1 = 一个存档都没有
+    Stats::Summary        summary_;
+
+    std::unique_ptr<Button> prevSaveButton_;
+    std::unique_ptr<Button> nextSaveButton_;
+    std::unique_ptr<Button> backButton_;
+
+    sf::Text titleText_;
+    sf::Text saveText_;      // "当前存档: 名字  (1/3)"
+    sf::Text emptyText_;     // 一个存档都没有
+    sf::Text noRecordText_;  // 全新存档：还没有记录
+    sf::Text summaryText_;   // 多行总计
+    sf::Text progressText_;  // "进度：33%"
+
+    // 表头
+    sf::Text colLevelText_;
+    sf::Text colStarsText_;
+    sf::Text colTimeText_;
+    sf::Text colCoinsText_;
+
+    // 每关一组的四列文字（按需扩容，常驻成员）
+    std::vector<std::unique_ptr<sf::Text>> levelTexts_;
+    std::vector<std::unique_ptr<sf::Text>> starTexts_;
+    std::vector<std::unique_ptr<sf::Text>> timeTexts_;
+    std::vector<std::unique_ptr<sf::Text>> coinTexts_;
+
+    sf::RectangleShape panel_;
+    sf::RectangleShape progressBg_;
+    sf::RectangleShape progressFill_;
+
+    SceneId nextScene_ = SceneId::None;
+    int     lastLangVersion_ = -1;
 };
 
-===== ./tests/test_enemy.cpp =====
-#include "doctest.h"
-#include "enemy.h"
-#include "game_constants.h"
-#include "game_world.h"
-#include "level.h"
-
+===== ./src/scene/stats_scene.cpp =====
+#include "stats_scene.h"
+#include "focus_group.h"
+#include "theme.h"
+#include "utils/lang.h"
+#include "utils/text_strings.h"
+#include "utils/utf8.h"
 #include <algorithm>
 #include <cmath>
-#include <memory>
-#include <string>
-#include <vector>
-
-// 三种新敌人（W 巡逻 / F 飞行 / B 跳跃）的行为与生成。
-//
-// 和 test_entities.cpp 一样，这里**一个 render() 都不调**，全部走
-// "无 sprite 模式"（构造 Enemy 时 sheet 传 nullptr）—— sprite factory
-// 内部用 RenderTexture，没有 GL 上下文时 SFML 会直接 SIGABRT。
-namespace {
-
-constexpr int kTile = 32;
-constexpr float kStep = 1.f / 60.f;
-
-/// 造一个 20×5 的房间。row2 是第 2 行的中间 18 个字符（首尾 '#' 由这里补）。
-/// 第 4 行整行是地板，第 3 行是空的 —— 所以第 2 行的敌人脚下隔了一格。
-std::unique_ptr<Level> makeRoom(const std::string& row2) {
-    REQUIRE(row2.size() == 18);
-    const std::string text = "####################\n"
-                             "#                  #\n"
-                             "#" +
-                             row2 +
-                             "#\n"
-                             "#                  #\n"
-                             "####################";
-    auto level = std::make_unique<Level>();
-    level->loadFromString(text);
-    return level;
-}
-
-/// row2 里第 nth 次出现的 ch 所在的 tile 像素坐标
-Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
-    int seen = 0;
-    for (std::size_t i = 0; i < row2.size(); ++i) {
-        if (row2[i] == ch && ++seen == nth)
-            return {static_cast<float>(static_cast<int>(i) + 1) * kTile,
-                    2.f * kTile};
-    }
-    REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
-    return {-1.f, -1.f};
-}
-
-/// 地板只从 tile 6 往右的一段平台，左边是空的（和 test_entities.cpp 用的是同一张图）
-Level makeLedgeLevel() {
-    const char* text =
-        "####################\n"
-        "#                  #\n"
-        "#                  #\n"
-        "#                  #\n"
-        "#     ##############";
-    Level level;
-    level.loadFromString(text);
-    return level;
-}
-
-/// 左右两边都有墙、地面只有 tile 1 一格空档的房间
-Level makeWallLevel() {
-    const char* text =
-        "####################\n"
-        "#                  #\n"
-        "#                  #\n"
-        "##                 #\n"
-        "####################";
-    Level level;
-    level.loadFromString(text);
-    return level;
-}
-
-/// 统计 world 里某种 kind 的敌人数量
-int countKind(const GameWorld& world, EnemyKind kind) {
-    int n = 0;
-    for (const auto& o : world.objects())
-        if (o->type() == GameObject::Type::Enemy &&
-            static_cast<const Enemy*>(o.get())->kind() == kind)
-            ++n;
-    return n;
-}
-
-} // namespace
-
-// ============================================================
-// 关卡字符 → spawn 容器
-// ============================================================
-
-TEST_CASE("Level - W/F/B 各自进自己的容器，E 一个都不受影响") {
-    const std::string row = " W  F  B  E       ";
-    auto level = makeRoom(row);
-
-    CHECK(level->patrolSpawns().size() == 1);
-    CHECK(level->flyerSpawns().size() == 1);
-    CHECK(level->jumperSpawns().size() == 1);
-    CHECK(level->enemySpawns().size() == 1); // E 还是走老容器
-
-    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W').x));
-    CHECK(level->patrolSpawns()[0].y == doctest::Approx(tileOf(row, 'W').y));
-    CHECK(level->flyerSpawns()[0].x == doctest::Approx(tileOf(row, 'F').x));
-    CHECK(level->jumperSpawns()[0].x == doctest::Approx(tileOf(row, 'B').x));
-    CHECK(level->enemySpawns()[0].x == doctest::Approx(tileOf(row, 'E').x));
-}
-
-TEST_CASE("Level - 同一种新敌人可以放多个") {
-    const std::string row = " W W  F  B  E     ";
-    auto level = makeRoom(row);
-
-    REQUIRE(level->patrolSpawns().size() == 2);
-    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W', 1).x));
-    CHECK(level->patrolSpawns()[1].x == doctest::Approx(tileOf(row, 'W', 2).x));
-    CHECK(level->enemySpawns().size() == 1);
-}
-
-TEST_CASE("Level - 重新加载会清空三种新敌人的容器") {
-    Level level;
-    level.loadFromString("####\n#WF#\n#B #\n####");
-    REQUIRE(level.patrolSpawns().size() == 1);
-    REQUIRE(level.flyerSpawns().size() == 1);
-    REQUIRE(level.jumperSpawns().size() == 1);
-
-    level.loadFromString("####\n#  #\n#  #\n####");
-
-    CHECK(level.patrolSpawns().empty());
-    CHECK(level.flyerSpawns().empty());
-    CHECK(level.jumperSpawns().empty());
-}
-
-// ============================================================
-// GameWorld 按 kind 生成
-// ============================================================
-
-TEST_CASE("GameWorld - 按关卡字符生成对应 kind 的敌人，数量与位置正确") {
-    const std::string row = " W  F  B  E       ";
-    GameWorld world(makeRoom(row), 1);
-
-    int enemies = 0;
-    for (const auto& o : world.objects())
-        if (o->type() == GameObject::Type::Enemy)
-            ++enemies;
-    CHECK(enemies == 4);
-    CHECK(countKind(world, EnemyKind::Basic) == 1);
-    CHECK(countKind(world, EnemyKind::Patrol) == 1);
-    CHECK(countKind(world, EnemyKind::Flyer) == 1);
-    CHECK(countKind(world, EnemyKind::Jumper) == 1);
-
-    // 位置：敌人碰撞盒是 28×28，在格子里居中 → 中心 = 格子左上 + 16
-    for (const auto& o : world.objects()) {
-        if (o->type() != GameObject::Type::Enemy)
-            continue;
-        const auto* e = static_cast<const Enemy*>(o.get());
-        char ch = '?';
-        switch (e->kind()) {
-        case EnemyKind::Basic:  ch = 'E'; break;
-        case EnemyKind::Patrol: ch = 'W'; break;
-        case EnemyKind::Flyer:  ch = 'F'; break;
-        case EnemyKind::Jumper: ch = 'B'; break;
-        }
-        const Vec2 expected = tileOf(row, ch);
-        CHECK(e->bounds().center().x == doctest::Approx(expected.x + 16.f));
-        CHECK(e->bounds().center().y == doctest::Approx(expected.y + 16.f));
-    }
-}
-
-TEST_CASE("Enemy - 旧的三参数构造等价于 EnemyKind::Basic") {
-    auto level = makeRoom("                  ");
-    Enemy legacy({320.f, 96.f}, kTile, nullptr);
-
-    CHECK(legacy.kind() == EnemyKind::Basic);
-}
-
-// ============================================================
-// W 巡逻
-// ============================================================
-
-TEST_CASE("Enemy - 巡逻(W) 走到平台边缘会掉头，不会掉下去") {
-    Level level = makeLedgeLevel();
-    Enemy enemy(EnemyKind::Patrol, {8 * kTile + 0.f, 3 * kTile + 0.f}, kTile,
-                nullptr);
-
-    bool turned = false;
-    float minLeft = enemy.bounds().left();
-    for (int i = 0; i < 600; ++i) {
-        enemy.update(0.02f, level);
-        const float left = enemy.bounds().left();
-        if (left > minLeft + 0.5f) { // 开始往回走
-            turned = true;
-            break;
-        }
-        minLeft = std::min(minLeft, left);
-    }
-
-    CHECK_MESSAGE(turned, "巡逻兵走到平台边缘没有掉头");
-    // 平台从 tile 6 开始（x = 192），掉头点必须还在平台上
-    CHECK_MESSAGE(minLeft >= 6.f * kTile - 0.001f,
-                  "巡逻兵已经走出平台才掉头，会掉下去");
-}
-
-TEST_CASE("Enemy - 巡逻(W) 掉头时会在端点停一下") {
-    Level level = makeWallLevel();
-    Enemy enemy(EnemyKind::Patrol, {3 * kTile + 0.f, 3 * kTile + 0.f}, kTile,
-                nullptr);
-
-    // 先向左走，直到第一帧"没有继续向左"——那就是掉头帧
-    bool reversed = false;
-    int stalled = 0;
-    for (int i = 0; i < 400; ++i) {
-        const float before = enemy.bounds().x;
-        enemy.update(0.02f, level);
-        const float after = enemy.bounds().x;
-
-        if (!reversed) {
-            if (after < before) // 还在向左
-                continue;
-            reversed = true; // 掉头帧（不论有没有停顿，这一帧都不动）
-            continue;
-        }
-        if (std::abs(after - before) < 0.001f)
-            ++stalled;
-        else
-            break;
-    }
-
-    REQUIRE(reversed);
-    // kPatrolPauseTime = 0.35s，0.02s 一帧 → 大约 17 帧
-    CHECK(stalled >= 10);
-}
-
-TEST_CASE("Enemy - 现有 E(Basic) 掉头后立刻反向，一个新字段都没碰") {
-    Level level = makeWallLevel();
-    Enemy enemy({3 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
-
-    bool reversed = false;
-    int stalled = 0;
-    for (int i = 0; i < 400; ++i) {
-        const float before = enemy.bounds().x;
-        enemy.update(0.02f, level);
-        const float after = enemy.bounds().x;
-
-        if (!reversed) {
-            if (after < before)
-                continue;
-            reversed = true;
-            continue;
-        }
-        if (std::abs(after - before) < 0.001f)
-            ++stalled;
-        else
-            break;
-    }
-
-    REQUIRE(reversed);
-    CHECK_MESSAGE(stalled == 0, "E 掉头之后不该有任何停顿 —— 它的行为必须逐字不变");
-}
-
-TEST_CASE("Enemy - E 的行为与新增 kind 之前一致：不受重力，y 恒定") {
-    auto level = makeRoom("                  ");
-    Enemy enemy({8 * kTile + 0.f, 2 * kTile + 0.f}, kTile, nullptr);
-    const float y0 = enemy.bounds().y;
-
-    bool movedX = false;
-    for (int i = 0; i < 120; ++i) {
-        enemy.update(kStep, level);
-        CHECK(enemy.bounds().y == doctest::Approx(y0)); // 没有重力
-        movedX = movedX || (enemy.bounds().x < 8 * kTile);
-    }
-    CHECK(movedX); // 还是照常左右走
-}
-
-// ============================================================
-// F 飞行
-// ============================================================
-
-TEST_CASE("Enemy - 飞行(F) 不受重力：正弦上下浮动，永不落地") {
-    auto level = makeRoom("                  ");
-    Enemy enemy(EnemyKind::Flyer, {8 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
-                nullptr);
-
-    const float y0 = enemy.bounds().y;
-    float minY = y0, maxY = y0;
-    bool touchedGround = false;
-    for (int i = 0; i < 240; ++i) { // 4 秒 > 一个正弦周期
-        enemy.update(kStep, level);
-        minY = std::min(minY, enemy.bounds().y);
-        maxY = std::max(maxY, enemy.bounds().y);
-        if (enemy.bounds().bottom() >= 4.f * kTile)
-            touchedGround = true;
-    }
-
-    CHECK_FALSE(touchedGround); // 地板在第 4 行，飞行兵永远够不着
-    CHECK_MESSAGE(maxY - minY > 30.f, "飞行兵没有上下浮动（正弦没生效）");
-    // 浮动中心就是出生高度，振幅不超过 kFlyerBobAmp
-    CHECK(minY >= y0 - GameConst::kFlyerBobAmp - 0.5f);
-    CHECK(maxY <= y0 + GameConst::kFlyerBobAmp + 0.5f);
-}
-
-TEST_CASE("Enemy - 飞行(F) 水平巡游，撞墙反向") {
-    auto level = makeRoom("                  ");
-    // 贴着左墙出生，一路向左，很快就会撞墙
-    Enemy enemy(EnemyKind::Flyer, {2 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
-                nullptr);
-
-    bool movedLeft = false;
-    bool turned = false;
-    float minX = enemy.bounds().x;
-    bool leftLevel = false;
-    for (int i = 0; i < 600; ++i) {
-        enemy.update(kStep, level);
-        const float x = enemy.bounds().x;
-        if (x < minX - 0.001f) {
-            minX = x;
-            movedLeft = true;
-        } else if (movedLeft && x > minX + 0.5f) {
-            turned = true;
-            break;
-        }
-        if (enemy.bounds().left() < 0.f ||
-            enemy.bounds().right() > static_cast<float>(level.pixelWidth()))
-            leftLevel = true;
-    }
-
-    CHECK(movedLeft);
-    CHECK_MESSAGE(turned, "飞行兵撞到墙没有反向");
-    CHECK_FALSE(leftLevel);
-}
-
-TEST_CASE("Enemy - 飞行(F) 走到关卡边界也会反向（没有墙的关卡）") {
-    // 故意做一个左右都没有墙的关卡
-    const char* text =
-        "                    \n"
-        "                    \n"
-        "                    \n"
-        "                    \n"
-        "####################";
-    Level level;
-    level.loadFromString(text);
-
-    Enemy enemy(EnemyKind::Flyer, {1 * kTile + 0.f, 1 * kTile + 0.f}, kTile,
-                nullptr);
-
-    bool turned = false;
-    float minX = enemy.bounds().x;
-    for (int i = 0; i < 600; ++i) {
-        enemy.update(kStep, level);
-        const float x = enemy.bounds().x;
-        if (x < minX) {
-            minX = x;
-        } else if (x > minX + 0.5f) {
-            turned = true;
-            break;
-        }
-    }
-
-    CHECK(turned);
-    // 边界检查是在移动之前做的，所以最多越界一帧的位移
-    CHECK(minX > -GameConst::kFlyerSpeed * kStep - 0.001f);
-}
-
-// ============================================================
-// B 跳跃
-// ============================================================
-
-TEST_CASE("Enemy - 跳跃(B) 会落到地面，然后周期性起跳") {
-    auto level = makeRoom("                  ");
-    Enemy enemy(EnemyKind::Jumper, {8 * kTile + 0.f, 2 * kTile + 0.f}, kTile,
-                nullptr);
-
-    // 先落地（地板在第 4 行，顶面 y = 128 → 敌人 y = 128 - 28 = 100）
-    for (int i = 0; i < 120 && enemy.bounds().y < 99.5f; ++i)
-        enemy.update(kStep, level);
-    const float groundY = enemy.bounds().y;
-    REQUIRE(groundY == doctest::Approx(100.f));
-
-    int jumps = 0;
-    float minY = groundY;
-    float maxY = groundY;
-    bool onGround = true;
-    for (int i = 0; i < 300; ++i) { // 5 秒：起跳周期 ≈ 0.9s 待机 + 0.47s 滞空
-        enemy.update(kStep, level);
-        const float y = enemy.bounds().y;
-        minY = std::min(minY, y);
-        maxY = std::max(maxY, y);
-
-        const bool nowOnGround = y >= groundY - 0.5f;
-        if (onGround && !nowOnGround)
-            ++jumps;
-        onGround = nowOnGround;
-    }
-
-    CHECK_MESSAGE(minY < groundY - 30.f, "跳跃兵根本没有离地（起跳没生效）");
-    CHECK_MESSAGE(jumps >= 2, "跳跃兵只跳了一次 —— 不是周期性的");
-    // 每次都落回同一块地板，从不陷进去
-    CHECK(maxY - groundY < 0.5f);
-}
-
-TEST_CASE("Enemy - E 不会跳（重力只对跳跃(B) 生效）") {
-    auto level = makeRoom("                  ");
-    Enemy enemy({8 * kTile + 0.f, 2 * kTile + 0.f}, kTile, nullptr);
-    const float y0 = enemy.bounds().y;
-
-    for (int i = 0; i < 300; ++i) {
-        enemy.update(kStep, level);
-        CHECK(enemy.bounds().y == doctest::Approx(y0));
-    }
-}
-
-===== ./tests/test_playtest_request.cpp =====
-#include "doctest.h"
-#include "scene/playtest_request.h"
-
-#include "level.h"
-
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
-
-namespace fs = std::filesystem;
-
-// 编辑器「试玩」的交接通道。
-//
-// 这个类本身很薄（就是一个可有可无的槽位），但它的**一次性语义**是关键的：
-// 如果 take() 之后不清空，那么"试玩 → 退出回编辑器 → 从选关页进正式关卡"
-// 这一串会让正式关卡又玩到那份旧草稿，而且没有任何提示 —— 看起来就像
-// "关卡加载错了"。
+#include <cstdio>
 
 namespace {
 
-std::vector<std::string> draft() {
-    return {"#####", "#P C#", "#####"};
+// 时间显示与游戏里既有的一致：LevelSelect 的每关 PB 与完成 overlay 都是两位小数
+std::string fmtTime(float seconds) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.2fs", seconds);
+    return buf;
 }
+
+// 三星串：与 LevelSelect / 完成 overlay 同一种字符（实心 / 空心）
+std::string fmtStars(int stars) {
+    std::string out;
+    for (int i = 0; i < 3; ++i)
+        out += (i < stars) ? "\u2605" : "\u2606";
+    return out;
+}
+
+void centerOn(sf::Text& t, float x, float y) {
+    auto b = t.getLocalBounds();
+    t.setOrigin({b.position.x + b.size.x / 2.f, b.position.y + b.size.y / 2.f});
+    t.setPosition({x, y});
+}
+
+void leftAt(sf::Text& t, float x, float y) {
+    t.setOrigin({0.f, 0.f});
+    t.setPosition({x, y});
+}
+
+// 表格几何
+constexpr float kColW   = 420.f;
+constexpr float kColGap = 40.f;
+constexpr float kOffLevel = 0.f;
+constexpr float kOffStars = 80.f;
+constexpr float kOffTime  = 190.f;
+constexpr float kOffCoins = 330.f;
 
 } // namespace
 
-TEST_CASE("试玩交接 - 取走一次之后就没有了") {
-    PlaytestRequest req;
-    CHECK(!req.has());
+StatsScene::StatsScene(std::shared_ptr<Background>  background,
+                       std::shared_ptr<SaveManager> saveManager, const sf::Font& font,
+                       std::shared_ptr<Logger> logger)
+    : background_(std::move(background)),
+      saveManager_(std::move(saveManager)),
+      logger_(std::move(logger)),
+      font_(font),
+      titleText_(font, sf::String(), scaledFontSize(44)),
+      saveText_(font, sf::String(), scaledFontSize(22)),
+      emptyText_(font, sf::String(), scaledFontSize(24)),
+      noRecordText_(font, sf::String(), scaledFontSize(24)),
+      summaryText_(font, sf::String(), scaledFontSize(22)),
+      progressText_(font, sf::String(), scaledFontSize(20)),
+      colLevelText_(font, sf::String(), scaledFontSize(20)),
+      colStarsText_(font, sf::String(), scaledFontSize(20)),
+      colTimeText_(font, sf::String(), scaledFontSize(20)),
+      colCoinsText_(font, sf::String(), scaledFontSize(20)) {
 
-    req.request(draft(), "editor.txt");
-    CHECK(req.has());
+    titleText_.setFillColor(getTheme().textPrimary);
+    saveText_.setFillColor(getTheme().textSecondary);
+    emptyText_.setFillColor(getTheme().textSecondary);
+    noRecordText_.setFillColor(getTheme().textSecondary);
+    summaryText_.setFillColor(getTheme().textPrimary);
+    summaryText_.setLineSpacing(1.35f);
+    progressText_.setFillColor(getTheme().textPrimary);
+    for (auto* t : {&colLevelText_, &colStarsText_, &colTimeText_, &colCoinsText_})
+        t->setFillColor(getTheme().textSecondary);
 
-    auto first = req.take();
-    REQUIRE(first.has_value());
-    CHECK(first->lines.size() == 3);
-    CHECK(first->sourceName == "editor.txt");
-
-    // ⚠️ 这一条是整个类的存在理由：第二次必须是空的
-    CHECK(!req.has());
-    CHECK(!req.take().has_value());
+    prevSaveButton_ = std::make_unique<Button>(Str::T(Str::StatsPrev), font_,
+                                               sf::Vector2f{0.f, 0.f},
+                                               sf::Vector2f{48.f, 44.f},
+                                               scaledFontSize(22));
+    nextSaveButton_ = std::make_unique<Button>(Str::T(Str::StatsNext), font_,
+                                               sf::Vector2f{0.f, 0.f},
+                                               sf::Vector2f{48.f, 44.f},
+                                               scaledFontSize(22));
+    backButton_ = std::make_unique<Button>(Str::T(Str::Back), font_,
+                                           sf::Vector2f{0.f, 0.f},
+                                           sf::Vector2f{180.f, 52.f},
+                                           scaledFontSize(22));
 }
 
-TEST_CASE("试玩交接 - 没有请求时 take 返回空") {
-    PlaytestRequest req;
-    CHECK(!req.take().has_value());
-    req.clear(); // 空的时候 clear 也不该有事
-    CHECK(!req.has());
+std::string StatsScene::windowTitleHint() const {
+    return Str::T(Str::Stats);
 }
 
-TEST_CASE("试玩交接 - 后一次请求覆盖前一次") {
-    PlaytestRequest req;
-    req.request({"aa"}, "first.txt");
-    req.request({"bb", "cc"}, "second.txt");
+void StatsScene::reload() {
+    // listSaves() 已经按 lastPlayed 降序排好，第一个就是"最近玩的"——
+    // 不需要在这里再比一遍时间戳。
+    saves_ = saveManager_->listSaves();
 
-    auto r = req.take();
-    REQUIRE(r.has_value());
-    CHECK(r->lines.size() == 2);
-    CHECK(r->sourceName == "second.txt");
-}
-
-TEST_CASE("试玩交接 - clear 能丢掉待处理请求") {
-    PlaytestRequest req;
-    req.request(draft(), "editor.txt");
-    req.clear();
-    CHECK(!req.has());
-    CHECK(!req.take().has_value());
-}
-
-TEST_CASE("试玩交接 - 没有玩家出生点的草稿要能识别出来") {
-    // 没有 'P'：关卡能构造出来，但玩家会被摆在 (0,0)，大概率卡在边界墙里
-    CHECK(!PlaytestRequest::hasPlayerSpawn({"#####", "#   #", "#####"}));
-    CHECK(!PlaytestRequest::hasPlayerSpawn({}));
-
-    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#P  #", "#####"}));
-    // 'P' 出现在任意位置都算（行中间、行尾）
-    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#  P#", "#####"}));
-    CHECK(PlaytestRequest::hasPlayerSpawn({"P"}));
-}
-
-TEST_CASE("试玩交接 - 空草稿也能安全地放进通道") {
-    PlaytestRequest req;
-    req.request({}, "");
-    REQUIRE(req.has());
-    auto r = req.take();
-    REQUIRE(r.has_value());
-    CHECK(r->lines.empty());
-    CHECK(r->sourceName.empty());
-}
-
-// ============================================================
-// 「编辑器里的内容 → 关卡场景能解析」——这是试玩功能真正的风险点
-// ============================================================
-//
-// 上面几条只验了交接通道本身。但试玩失败最可能的方式是：编辑器内存里的那份
-// `lines_` 格式与 `Level::loadFromString` 对不上 —— 功能表面上是通的（F5 能按、
-// 场景也切了），实际一进就弹"关卡解析失败"。
-//
-// 所以这里**原样复刻**两边的变换：
-//   EditorScene::loadFile()     去掉 '\r'、按最长行补空格到等宽
-//   EditorScene::startPlaytest()  逐行拼接、每行末尾补 '\n'
-// 然后把结果交给真的 Level 解析，并且对 assets/levels 里的**真实文件**也跑一遍。
-
-namespace {
-
-/// 复刻 EditorScene::loadFile 的读盘变换（\r 去掉、补到等宽）
-std::vector<std::string> readLikeEditor(const fs::path& path) {
-    std::vector<std::string> lines;
-    std::ifstream in(path);
-    REQUIRE(in.good());
-    std::string line;
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r')
-            line.pop_back();
-        lines.push_back(line);
+    if (saves_.empty()) {
+        index_ = -1;
+        summary_ = {};
+    } else {
+        if (index_ < 0 || index_ >= static_cast<int>(saves_.size()))
+            index_ = 0;
+        summary_ = Stats::summarize(saves_[static_cast<std::size_t>(index_)]);
     }
-    std::size_t w = 0;
-    for (const auto& l : lines)
-        w = std::max(w, l.size());
-    for (auto& l : lines)
-        l.resize(w, ' ');
-    return lines;
+
+    ensureRowTexts();
+    refreshLabels();
+    syncFocus();
 }
 
-/// 复刻 EditorScene::startPlaytest 的拼接
-std::string joinLikePlaytest(const std::vector<std::string>& lines) {
-    std::string text;
-    for (const auto& line : lines) {
-        text += line;
-        text += '\n';
+void StatsScene::ensureRowTexts() {
+    const auto need = summary_.levels.size();
+    if (levelTexts_.size() >= need)
+        return;
+
+    const unsigned rowFont = scaledFontSize(18);
+    const unsigned n = static_cast<unsigned>(need - levelTexts_.size());
+    for (unsigned i = 0; i < n; ++i) {
+        levelTexts_.push_back(std::make_unique<sf::Text>(font_, sf::String(), rowFont));
+        starTexts_.push_back(std::make_unique<sf::Text>(font_, sf::String(), rowFont));
+        timeTexts_.push_back(std::make_unique<sf::Text>(font_, sf::String(), rowFont));
+        coinTexts_.push_back(std::make_unique<sf::Text>(font_, sf::String(), rowFont));
     }
-    return text;
 }
 
-} // namespace
+void StatsScene::refreshLabels() {
+    lastLangVersion_ = Lang::instance().version();
 
-TEST_CASE("试玩交接 - 编辑器读过的东西一定能被关卡解析（真实关卡文件）") {
-    const fs::path dir = fs::path(PROJECT_ROOT) / "assets" / "levels";
-    REQUIRE(fs::is_directory(dir));
+    titleText_.setString(toSf(Str::T(Str::Stats)));
+    backButton_->setText(Str::T(Str::Back));
 
-    int checked = 0;
-    for (const auto& entry : fs::directory_iterator(dir)) {
-        if (entry.path().extension() != ".txt")
-            continue;
-        const auto lines = readLikeEditor(entry.path());
-        REQUIRE(!lines.empty());
-
-        Level level;
-        const bool ok = level.loadFromString(joinLikePlaytest(lines));
-        CHECK_MESSAGE(ok, "关卡解析失败: " << entry.path().filename().string());
-
-        // 尺寸要对得上（编辑器是按"最长行"算宽度的）
-        std::size_t w = 0;
-        for (const auto& l : lines)
-            w = std::max(w, l.size());
-        CHECK(level.width() == static_cast<int>(w));
-        CHECK(level.height() == static_cast<int>(lines.size()));
-
-        // 而且必须能通过试玩的前置检查（有玩家出生点）
-        const bool spawn = PlaytestRequest::hasPlayerSpawn(lines);
-        CHECK_MESSAGE(spawn, "没有玩家出生点: " << entry.path().filename().string());
-        ++checked;
+    if (index_ < 0) {
+        saveText_.setString(sf::String());
+        emptyText_.setString(toSf(Str::T(Str::NoSaveHint)));
+        noRecordText_.setString(sf::String());
+        summaryText_.setString(sf::String());
+        progressText_.setString(sf::String());
+        return;
     }
-    CHECK(checked >= 5); // 仓库里现在有 6 个
+    emptyText_.setString(sf::String());
+
+    std::string name = Str::T(Str::SaveLabel) + saves_[static_cast<std::size_t>(index_)].name;
+    if (saves_.size() > 1) {
+        name += "  (" + std::to_string(index_ + 1) + "/" +
+                std::to_string(saves_.size()) + ")";
+    }
+    saveText_.setString(toSf(name));
+
+    // ---- 总计（全部来自 summarize，不在这里重算） ----
+    const auto& s = summary_;
+    const std::string sep = Str::T(Str::AchvProgressSeparator); // " / "
+    std::string sum;
+    sum += Str::T(Str::StatsSummaryCleared) + std::to_string(s.clearedLevels) + sep +
+           std::to_string(s.levels.size()) + "\n";
+    sum += Str::T(Str::StatsSummaryStars) + std::to_string(s.totalStars) + sep +
+           std::to_string(s.maxStars) + "\n";
+    sum += Str::T(Str::StatsSummaryTime) + fmtTime(s.totalBestTime) + "\n";
+    sum += Str::T(Str::StatsSummaryCoins) + std::to_string(s.totalBestCoins);
+    summaryText_.setString(toSf(sum));
+
+    const int pct = static_cast<int>(std::lround(s.progress() * 100.f));
+    progressText_.setString(
+        toSf(Str::T(Str::StatsProgress) + std::to_string(pct) + "%"));
+
+    noRecordText_.setString(s.anyRecord ? sf::String() : toSf(Str::T(Str::StatsNoRecord)));
+
+    // ---- 表头 ----
+    colLevelText_.setString(toSf(Str::T(Str::StatsColLevel)));
+    colStarsText_.setString(toSf(Str::T(Str::StatsColStars)));
+    colTimeText_.setString(toSf(Str::T(Str::StatsColTime)));
+    colCoinsText_.setString(toSf(Str::T(Str::StatsColCoins)));
+
+    // ---- 每关一行 ----
+    const sf::Color primary   = getTheme().textPrimary;
+    const sf::Color secondary = getTheme().textSecondary;
+    const sf::Color accent    = getTheme().buttonSelected;
+
+    for (std::size_t i = 0; i < s.levels.size(); ++i) {
+        const auto& row = s.levels[i];
+
+        levelTexts_[i]->setString(toSf(std::to_string(row.level)));
+        starTexts_[i]->setString(toSf(fmtStars(row.stars)));
+        // 没有记录显示 "--"，别让人把 0.00s 当成"打过但零秒"
+        timeTexts_[i]->setString(toSf(row.bestTime > 0.f ? fmtTime(row.bestTime)
+                                                         : Str::T(Str::StatsEmpty)));
+        coinTexts_[i]->setString(toSf(row.bestCoins > 0
+                                          ? std::to_string(row.bestCoins)
+                                          : Str::T(Str::StatsEmpty)));
+
+        const sf::Color c = row.cleared ? primary : secondary;
+        levelTexts_[i]->setFillColor(c);
+        timeTexts_[i]->setFillColor(c);
+        coinTexts_[i]->setFillColor(c);
+        starTexts_[i]->setFillColor(row.stars > 0 ? accent : secondary);
+    }
 }
 
-TEST_CASE("试玩交接 - 编辑器新建关卡的初始格子也能被解析") {
-    // 复刻 EditorScene::loadFile 在"文件不存在"时铺的那张空框 ——
-    // 新建一个关卡直接按 F5 是最常见的用法之一
-    constexpr int w = 40;
-    constexpr int h = 22;
-    std::vector<std::string> lines(h, std::string(w, ' '));
-    for (int x = 0; x < w; ++x) {
-        lines[0][x] = '#';
-        lines[h - 1][x] = '#';
-    }
-    for (int y = 0; y < h; ++y) {
-        lines[y][0] = '#';
-        lines[y][w - 1] = '#';
-    }
-    lines[2][3] = 'P';
+void StatsScene::selectSave(int i) {
+    const int n = static_cast<int>(saves_.size());
+    if (n <= 0)
+        return;
+    index_ = ((i % n) + n) % n; // 环绕
+    reload();                   // index_ 合法，reload 不会改它
+}
 
-    CHECK(PlaytestRequest::hasPlayerSpawn(lines));
+void StatsScene::syncFocus() {
+    std::vector<Button*> items;
+    if (saves_.size() > 1) {
+        items.push_back(prevSaveButton_.get());
+        items.push_back(nextSaveButton_.get());
+    }
+    items.push_back(backButton_.get());
+    FocusGroup::instance().setItems(items);
+}
 
-    Level level;
-    CHECK(level.loadFromString(joinLikePlaytest(lines)));
-    CHECK(level.width() == w);
-    CHECK(level.height() == h);
+void StatsScene::onEnter() {
+    nextScene_ = SceneId::None;
+    index_ = -1; // 每次从主菜单进来都回到"最近玩的存档"
+    reload();
+}
+
+void StatsScene::onResume() {
+    nextScene_ = SceneId::None;
+    reload(); // 期间可能玩过一关 / 删过存档
+}
+
+void StatsScene::handleEvent(const sf::Event& event) {
+    if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
+        if (kp->code == sf::Keyboard::Key::Escape) {
+            nextScene_ = SceneId::Back;
+            return;
+        }
+    }
+
+    // 只有一个存档时切换按钮不画也不收事件（位置还是 (0,0)，收点击会误触）
+    if (saves_.size() > 1) {
+        prevSaveButton_->handleEvent(event);
+        nextSaveButton_->handleEvent(event);
+    }
+    backButton_->handleEvent(event);
+}
+
+void StatsScene::update(float /*dt*/) {
+    if (Lang::instance().version() != lastLangVersion_)
+        refreshLabels();
+
+    if (saves_.size() > 1) {
+        if (prevSaveButton_->consumeClick())
+            selectSave(index_ - 1);
+        if (nextSaveButton_->consumeClick())
+            selectSave(index_ + 1);
+    }
+
+    if (backButton_->consumeClick())
+        nextScene_ = SceneId::Back;
+}
+
+void StatsScene::render(Window& window) {
+    window.clear();
+    if (background_) background_->render(window.target());
+
+    auto size = window.native().getSize();
+    const float w = static_cast<float>(size.x);
+    const float h = static_cast<float>(size.y);
+
+    centerOn(titleText_, w / 2.f, 46.f);
+    window.target().draw(titleText_);
+
+    if (saves_.size() > 1) {
+        prevSaveButton_->setPosition({w / 2.f - 250.f, 96.f});
+        nextSaveButton_->setPosition({w / 2.f + 202.f, 96.f});
+        prevSaveButton_->render(window.target());
+        nextSaveButton_->render(window.target());
+    }
+    centerOn(saveText_, w / 2.f, 118.f);
+    window.target().draw(saveText_);
+
+    const float backY = h - 72.f;
+    backButton_->setPosition({w / 2.f - 90.f, backY});
+
+    if (index_ < 0) {
+        centerOn(emptyText_, w / 2.f, h / 2.f);
+        window.target().draw(emptyText_);
+        backButton_->render(window.target());
+        return;
+    }
+
+    // ---- 总计 + 进度条 ----
+    const float left = w / 2.f - 300.f;
+    leftAt(summaryText_, left, 148.f);
+    window.target().draw(summaryText_);
+
+    const float barW = 360.f;
+    const float barH = 18.f;
+    const float barX = w / 2.f - 170.f;
+    const float barY = 278.f;
+
+    leftAt(progressText_, left, 276.f);
+    window.target().draw(progressText_);
+
+    const auto& theme = getTheme();
+    progressBg_.setPosition({barX, barY});
+    progressBg_.setSize({barW, barH});
+    progressBg_.setFillColor(theme.buttonNormal);
+    progressBg_.setOutlineThickness(1.f);
+    progressBg_.setOutlineColor(theme.outline);
+    window.target().draw(progressBg_);
+
+    const float fillW = barW * std::clamp(summary_.progress(), 0.f, 1.f);
+    if (fillW > 0.f) {
+        progressFill_.setPosition({barX, barY});
+        progressFill_.setSize({fillW, barH});
+        progressFill_.setFillColor(theme.buttonSelected);
+        window.target().draw(progressFill_);
+    }
+
+    // ---- 表格 ----
+    const float tableTop    = 330.f;
+    const float tableBottom = h - 100.f;
+    const float availH      = std::max(40.f, tableBottom - tableTop);
+
+    const auto& rows = summary_.levels;
+    const int   n    = static_cast<int>(rows.size());
+
+    if (!summary_.anyRecord) {
+        // 全新存档：一句提示，而不是一屏空格子
+        centerOn(noRecordText_, w / 2.f, tableTop + availH / 2.f);
+        window.target().draw(noRecordText_);
+        backButton_->render(window.target());
+        return;
+    }
+
+    const float rowH  = static_cast<float>(scaledFontSize(18)) + 12.f;
+    int         perCol = std::max(1, static_cast<int>(availH / rowH));
+    const int   maxCols =
+        std::max(1, static_cast<int>((w - 80.f + kColGap) / (kColW + kColGap)));
+    int cols = (n + perCol - 1) / perCol;
+
+    if (cols > maxCols) {
+        // 一屏塞不下：先压行高，最多用 maxCols 栏。
+        // ponytail: 关数极多（几百关）时会挤成一团，真到那一步再上滚动。
+        cols   = maxCols;
+        perCol = (n + cols - 1) / cols;
+        // 就地复用 rowH 变量会掩盖上面 perCol 的算法，重新算一次清楚
+    }
+    const float rowStep = (cols > 1) ? std::max(4.f, availH / static_cast<float>(perCol))
+                                     : rowH;
+
+    const float totalW = cols * kColW + (cols - 1) * kColGap;
+    const float startX = (w - totalW) / 2.f;
+
+    panel_.setPosition({startX - 24.f, tableTop - 34.f});
+    panel_.setSize({totalW + 48.f, availH + 44.f});
+    panel_.setFillColor(theme.panelBg);
+    panel_.setOutlineThickness(1.f);
+    panel_.setOutlineColor(theme.outline);
+    window.target().draw(panel_);
+
+    for (int c = 0; c < cols; ++c) {
+        const float x = startX + static_cast<float>(c) * (kColW + kColGap);
+        const float hy = tableTop - 28.f;
+        leftAt(colLevelText_, x + kOffLevel, hy);
+        leftAt(colStarsText_, x + kOffStars, hy);
+        leftAt(colTimeText_, x + kOffTime, hy);
+        leftAt(colCoinsText_, x + kOffCoins, hy);
+        window.target().draw(colLevelText_);
+        window.target().draw(colStarsText_);
+        window.target().draw(colTimeText_);
+        window.target().draw(colCoinsText_);
+    }
+
+    for (int i = 0; i < n; ++i) {
+        const int   col = i / perCol;
+        const int   row = i % perCol;
+        const float x   = startX + static_cast<float>(col) * (kColW + kColGap);
+        const float y   = tableTop + static_cast<float>(row) * rowStep;
+
+        leftAt(*levelTexts_[static_cast<std::size_t>(i)], x + kOffLevel, y);
+        leftAt(*starTexts_[static_cast<std::size_t>(i)], x + kOffStars, y);
+        leftAt(*timeTexts_[static_cast<std::size_t>(i)], x + kOffTime, y);
+        leftAt(*coinTexts_[static_cast<std::size_t>(i)], x + kOffCoins, y);
+
+        window.target().draw(*levelTexts_[static_cast<std::size_t>(i)]);
+        window.target().draw(*starTexts_[static_cast<std::size_t>(i)]);
+        window.target().draw(*timeTexts_[static_cast<std::size_t>(i)]);
+        window.target().draw(*coinTexts_[static_cast<std::size_t>(i)]);
+    }
+
+    backButton_->render(window.target());
 }
 
 ===== ./.github/workflows/build.yml =====
@@ -1659,7 +1481,15 @@ code = app.exec();
     不要再用已删除的 `core/logging.h` 转发头。
 15. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
     `boot()` 只负责按"底层在前"的顺序调用它们。
-16. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
+16. **新玩家第一反应是方向键**。默认键位是 `A` / `D` / `空格`（见
+    `keybindings.cpp` 的 `kDefaults`），但方向键是**固定兜底**
+    （`KeyBindings::fallbackKey()`：← → ↑ 对应左/右/跳），由
+    `Player::handleEvent` 在校验可配置键位之外一并接受。
+    加新的"会移动的角色"时照这个来 —— 只改默认值没用（键位是可配置的），
+    把方向键塞进可配置键位更不行（一个动作只有一格，会覆盖玩家的设置）。
+    菜单那边同理：`FocusGroup` 现在方向键/WASD 移动、**Enter** 激活
+    （不用 Space —— 游戏里 Space 是跳跃，暂停菜单开着时会双触发）。
+17. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
     `include/utils` 与 `include/infrastructure` **刻意不在 include 路径里**，
     这样平铺写法根本编译不过，跨层依赖在 include 行上直接可见。
 
@@ -1966,6 +1796,21 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 改完这类东西**不要只看本地构建**：`git push` 之后用
 `gh run watch` 看 `build.yml` 六个 job 的结果（Arch / Ubuntu / macOS /
 Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
+
+### 存档格式（`save_manager.cpp`）
+
+`config/saves/*.conf` 是扁平的 `key=value`，**整体重写**：每个 setter 都
+`loadSave` → 改一个字段 → 把**全部**字段重新写一遍。
+
+⚠️ **每加一个字段，要改五个地方**：`createSave` / `updateProgress` /
+`setLevelStar` / `setLevelBestTime` / 各自的 setter —— 漏掉任何一个，
+用另一个 setter 存一次就会把新字段悄悄抹掉。
+（`tests/test_save_manager.cpp` 里有一条专门盯它：存完金币再用另外两个 setter
+各存一次，三个字段必须都还在。真要收拾就把写盘收成一个 `writeSave(info)`。）
+
+新增字段本身是**向后兼容**的：老存档没有那一行 → 解析端回落默认值。
+但默认值要么在 `loadSave` 开头铺好（`levelBestCoins` 就是 9 个 0），
+要么在解析分支里补到 9 项 —— 给成空数组的话 setter 会因"关卡序号越界"直接失败。
 
 ### 项目自身
 
@@ -3148,7 +2993,7 @@ message(STATUS "=== 构建配置完成 ===")
 
 不依赖任何游戏引擎——物理、UI、渲染、音频全部自研。项目分 9 个层，从叶子（`utils`）到顶层（`scene`），层间依赖由测试扫描源码树守护，不是靠自觉。
 
-**324 个单元测试用例 / 5255 断言**，在没有 `DISPLAY` 的环境里同样全绿。
+**354 个单元测试用例 / 5828 断言**，在没有 `DISPLAY` 的环境里同样全绿。
 
 ---
 
@@ -3297,7 +3142,10 @@ cd TEXT-GAME
 | :--- | :--- | :--- |
 | `#` | 地面 / 平台 | 实体瓦片 |
 | `P` | 玩家出生点 | 蓝色脉动圆环标记 |
-| `E` | 敌人 | 左右巡逻，遇墙或悬崖掉头 |
+| `E` | 敌人（基础） | 左右走，遇墙或悬崖立刻掉头 |
+| `W` | 敌人（巡逻） | 同基础敌人，但掉头后在端点**停顿一下** |
+| `F` | 敌人（飞行） | 不受重力，正弦上下浮动 + 水平巡游 |
+| `B` | 敌人（跳跃） | 贴地待机，周期性起跳 |
 | `C` | 金币 | 上下浮动，收集计数 |
 | `J` | 弹跳板 | 碰到就弹飞，有冷却 |
 | `S` | 存档点 | 激活后掉图回到这里（单一激活） |
@@ -3716,7 +3564,7 @@ code = app.exec();
 - **OpenGL**：截图用 `glReadPixels`
 - **物理**：自写 AABB（不依赖 Box2D）
 - **着色器**：GLSL 330 core（超分 + 后处理）
-- **测试**：doctest（单头文件，324 个用例 / 5255 断言，**无 DISPLAY 也能全绿**）
+- **测试**：doctest（单头文件，354 个用例 / 5828 断言，**无 DISPLAY 也能全绿**）
 - **静态分析**：clang-tidy（`.clang-tidy` + CI 门禁，`WarningsAsErrors`）
 - **内存检测**：AddressSanitizer + UndefinedBehaviorSanitizer（CI 里有独立 job）
 - **覆盖率**：gcov + lcov
@@ -6931,7 +6779,8 @@ enum class SceneId {
     Console,
     LevelSelect,
     Editor,
-    Achievements
+    Achievements,
+    Stats
 };
 
 /// 稳定可读的名字。用于日志、错误消息与调试快照 ——
@@ -7293,7 +7142,7 @@ private:
     bool outsideLevelX(const Level& level) const;
 
     void setupSprite();
-    void updateWalk(float dt, const Level& level);   // Basic / Patrol 共用
+    void updateWalk(float dt, const Level& level); // Basic / Patrol 共用
     void updateFlyer(float dt, const Level& level);
     void updateJumper(float dt, const Level& level);
 
@@ -7301,20 +7150,20 @@ private:
     Vec2 pos_;
     Vec2 vel_;
     Vec2 size_{28.f, 28.f};
-    int  tileSize_;
+    int tileSize_;
     bool killed_ = false;
 
     // ==== 分种类状态（Basic 一个都不碰，保证既有行为逐字不变）====
-    bool  turnAtLedge_ = true;   // Basic/Patrol：走到平台边缘掉头（现有 E 就是这样）
-    bool  pauseAtTurn_ = false;  // Patrol：掉头后在端点停 kPatrolPauseTime
-    float pauseTimer_ = 0.f;     // Patrol：> 0 时原地不动
-    float bobBaseY_ = 0.f;       // Flyer：正弦中心（出生时的 y）
-    float bobPhase_ = 0.f;       // Flyer：正弦相位
-    bool  grounded_ = false;     // Jumper：是否踩在地上
-    float jumpTimer_ = 0.f;      // Jumper：落地后的起跳倒计时
+    bool turnAtLedge_ = true;  // Basic/Patrol：走到平台边缘掉头（现有 E 就是这样）
+    bool pauseAtTurn_ = false; // Patrol：掉头后在端点停 kPatrolPauseTime
+    float pauseTimer_ = 0.f;   // Patrol：> 0 时原地不动
+    float bobBaseY_ = 0.f;     // Flyer：正弦中心（出生时的 y）
+    float bobPhase_ = 0.f;     // Flyer：正弦相位
+    bool grounded_ = false;    // Jumper：是否踩在地上
+    float jumpTimer_ = 0.f;    // Jumper：落地后的起跳倒计时
 
-    std::shared_ptr<sf::Texture>       sheet_;
-    Animator                           animator_;
+    std::shared_ptr<sf::Texture> sheet_;
+    Animator animator_;
     mutable std::unique_ptr<sf::Sprite> sprite_;
 };
 
@@ -7416,14 +7265,14 @@ constexpr float kEnemySpeed = 90.f; // E/W：地面巡逻速度
 constexpr float kPatrolPauseTime = 0.35f;
 
 // 飞行（F）：水平巡游速度 / 正弦振幅（像素）/ 角速度（rad/s，π ≈ 2 秒一个来回）
-constexpr float kFlyerSpeed    = 45.f;
-constexpr float kFlyerBobAmp   = 20.f;
+constexpr float kFlyerSpeed = 45.f;
+constexpr float kFlyerBobAmp = 20.f;
 constexpr float kFlyerBobOmega = 3.14159265f;
 
 // 跳跃（B）：重力 / 起跳初速度（向上为负）/ 落地后的待机时间
-constexpr float kEnemyGravity      = 2200.f;
+constexpr float kEnemyGravity = 2200.f;
 constexpr float kEnemyJumpVelocity = 520.f; // 跳高 ≈ 61px（不到 2 格）
-constexpr float kEnemyJumpRest     = 0.9f;
+constexpr float kEnemyJumpRest = 0.9f;
 
 // ===== 物理 =====
 constexpr float kFixedTimeStep = 1.f / 120.f;
@@ -7671,10 +7520,10 @@ public:
     bool loadFromString(const std::string& text);
     bool loadFromFile(const std::string& path);
 
-    int width()    const { return width_; }
-    int height()   const { return height_; }
+    int width() const { return width_; }
+    int height() const { return height_; }
     int tileSize() const { return tileSize_; }
-    int pixelWidth()  const { return width_  * tileSize_; }
+    int pixelWidth() const { return width_ * tileSize_; }
     int pixelHeight() const { return height_ * tileSize_; }
 
     char tileAt(int tx, int ty) const;
@@ -7684,18 +7533,22 @@ public:
     bool isDynamicSolid(int tx, int ty) const;
 
     Vec2 playerSpawn() const { return playerSpawn_; }
-    const std::vector<Vec2>& enemySpawns()      const { return enemySpawns_; }
+    const std::vector<Vec2>& enemySpawns() const { return enemySpawns_; }
     // 三种新敌人（W 巡逻 / F 飞行 / B 跳跃）。刻意与上面的 enemySpawns_ 分开：
     // 那个容器与它的读取点（GameWorld / 测试）一个字都不动。
-    const std::vector<Vec2>& patrolSpawns()     const { return patrolSpawns_; }
-    const std::vector<Vec2>& flyerSpawns()      const { return flyerSpawns_; }
-    const std::vector<Vec2>& jumperSpawns()     const { return jumperSpawns_; }
-    const std::vector<Vec2>& coinSpawns()       const { return coinSpawns_; }
-    const std::vector<Vec2>& jumpPadSpawns()    const { return jumpPadSpawns_; }
+    const std::vector<Vec2>& patrolSpawns() const { return patrolSpawns_; }
+    const std::vector<Vec2>& flyerSpawns() const { return flyerSpawns_; }
+    const std::vector<Vec2>& jumperSpawns() const { return jumperSpawns_; }
+    const std::vector<Vec2>& coinSpawns() const { return coinSpawns_; }
+    const std::vector<Vec2>& jumpPadSpawns() const { return jumpPadSpawns_; }
     const std::vector<Vec2>& checkpointSpawns() const { return checkpointSpawns_; }
-    const std::vector<Vec2>& movingPlatformSpawns() const { return movingPlatformSpawns_; }
-    const std::vector<Vec2>& verticalPlatformSpawns() const { return verticalPlatformSpawns_; }
-    const std::vector<Vec2>& keySpawns()  const { return keySpawns_; }
+    const std::vector<Vec2>& movingPlatformSpawns() const {
+        return movingPlatformSpawns_;
+    }
+    const std::vector<Vec2>& verticalPlatformSpawns() const {
+        return verticalPlatformSpawns_;
+    }
+    const std::vector<Vec2>& keySpawns() const { return keySpawns_; }
     const std::vector<Vec2>& doorSpawns() const { return doorSpawns_; }
     const std::vector<Vec2>& spikeSpawns() const { return spikeSpawns_; }
 
@@ -7703,16 +7556,15 @@ public:
     bool hasGoal() const { return hasGoal_; }
 
     // 关卡元数据（从头部 `# name: xxx` 注释行读取）
-    const std::string& name()   const { return name_; }
+    const std::string& name() const { return name_; }
     const std::string& author() const { return author_; }
 
     void setFont(const sf::Font* f) { font_ = f; }
     void setPseudo3D(bool b);
     bool isPseudo3D() const { return pseudo3D_; }
 
-    void render(sf::RenderTarget& target,
-                float camLeft, float camTop,
-                float camW,    float camH) const;
+    void render(sf::RenderTarget& target, float camLeft, float camTop, float camW,
+                float camH) const;
 
 private:
     void buildGeometry();
@@ -7720,7 +7572,7 @@ private:
 
     int width_ = 0, height_ = 0, tileSize_ = 32;
     std::vector<char> tiles_;
-    std::vector<bool> dynamicSolid_;   // 运行时动态实体（门等）
+    std::vector<bool> dynamicSolid_; // 运行时动态实体（门等）
     Vec2 playerSpawn_{0.f, 0.f};
     std::vector<Vec2> enemySpawns_;
     std::vector<Vec2> patrolSpawns_;
@@ -8046,6 +7898,11 @@ struct SaveInfo {
 
     // ⭐ 每关最佳通关时间（秒），0 = 无记录
     std::vector<float> levelBestTimes;
+
+    // ⭐ 每关单次最多拿到过多少金币，0 = 无记录。
+    //    和 levelStars / levelBestTimes 一样是**只增不减**的（取最好的一次）。
+    //    成绩页要按关显示金币，而 coins 那个字段是跨关累计总数，拆不出来。
+    std::vector<int> levelBestCoins;
 };
 
 class SaveManager {
@@ -8065,6 +7922,9 @@ public:
 
     // ⭐ 写入某关最佳时间（取最小，0 视为无记录）
     bool setLevelBestTime(const std::string& filename, int level, float seconds);
+
+    /// 记下"这一关单次拿到过的最多金币"。只在**超过**旧纪录时才写盘。
+    bool setLevelBestCoins(const std::string& filename, int level, int coins);
 
     void setPendingSave(const SaveInfo& info) { pending_ = info; }
     SaveInfo takePendingSave() {
@@ -8148,6 +8008,58 @@ private:
 
     mutable sf::ConvexShape spike_;
 };
+===== ./include/game/stats.h =====
+#pragma once
+#include "save_manager.h"
+
+#include <vector>
+
+//
+// 成绩/统计页要显示的东西：把存档里的原始数组整理成"每关一行 + 总计"。
+//
+// 抽成纯函数的理由与 ScoreRules / EditorTools 一样：成绩页是个 Scene，
+// 构造就要 sf::Font（GlResource），无头环境连构造都做不到。
+// 而"某关没打过时那一行该显示什么""存档里数组长度不齐时怎么办"
+// 恰恰是最容易写错、也最该被测住的部分。
+//
+namespace Stats {
+
+/// 一关的成绩。字段全部是可以直接显示的原值：
+/// 没有记录时 bestTime 是 0、stars 是 0 —— 由**界面**决定显示成"--"还是"未通关"。
+struct LevelRow {
+    int   level     = 1;
+    int   stars     = 0;
+    float bestTime  = 0.f;  ///< 秒；0 = 无记录
+    int   bestCoins = 0;    ///< 单次最多拿到过多少；0 = 无记录
+    bool  cleared   = false; ///< stars > 0 即视为通关过
+};
+
+struct Summary {
+    std::vector<LevelRow> levels;
+
+    int clearedLevels  = 0;    ///< 通关过的关数
+    int totalStars     = 0;    ///< 星级之和
+    int maxStars       = 0;    ///< 满星上限（3 × 关数）
+    int totalBestCoins = 0;    ///< 每关最佳金币之和（只统计有记录的）
+    float totalBestTime = 0.f; ///< 每关最佳时间之和（只统计有记录的）
+    bool anyRecord     = false; ///< 一条记录都没有（新存档）
+
+    /// 通关进度 0~1（界面拿去画进度条）。没有关卡时返回 0。
+    float progress() const;
+};
+
+/// 从存档整理出统计结果。
+///
+/// ⚠️ **容忍长度不齐**：老存档可能只有 levelStars 而没有 levelBestCoins
+/// （那个字段是新加的），手改坏的存档也可能短一截。取三个数组长度的最大值
+/// 作为关数，缺的按 0 处理 —— 而不是去读越界或者干脆少显示几关。
+Summary summarize(const SaveInfo& save);
+
+/// 关数：三个数组长度的最大值（至少 0）
+int levelCount(const SaveInfo& save);
+
+} // namespace Stats
+
 ===== ./include/infrastructure/gamepad.h =====
 #pragma once
 #include <SFML/Window/Joystick.hpp>
@@ -8306,14 +8218,7 @@ private:
 // 全局键位表（和 getTheme() 一样是全局单例）
 class KeyBindings {
 public:
-    enum Action {
-        MoveLeft = 0,
-        MoveRight,
-        Jump,
-        Pause,
-        Restart,
-        Count
-    };
+    enum Action { MoveLeft = 0, MoveRight, Jump, Pause, Restart, Count };
 
     static KeyBindings& instance();
 
@@ -8322,6 +8227,18 @@ public:
 
     static const char* actionName(Action a);
     static const char* keyToString(sf::Keyboard::Key k);
+
+    /// 某个动作的**固定兜底键**：除可配置键位之外，**始终**也接受的键。
+    /// 返回 Unknown 表示这个动作没有兜底键。
+    ///
+    /// 为什么要有：默认键位是 A / D / 空格（见 kDefaults），而**新玩家进游戏
+    /// 第一反应是按方向键** —— 什么都不发生，看起来就像游戏坏了。
+    /// 键位是可以改的，所以不能只改默认值；也不能把方向键塞进可配置键位
+    /// （一个动作只有一格，会覆盖玩家自己的设置）。固定兜底是第三条路。
+    ///
+    /// 只给移动与跳跃三个动作兜底：暂停（ESC）与重开（R）不需要，
+    /// 而且给它们兜底反而会和别的键冲突。
+    static sf::Keyboard::Key fallbackKey(Action a);
 
     void resetToDefaults();
 
@@ -9228,6 +9145,60 @@ private:
 
     SceneId nextScene_ = SceneId::None;
 };
+===== ./include/scene/playtest_request.h =====
+#pragma once
+#include <optional>
+#include <string>
+#include <vector>
+
+/// 编辑器「试玩」的交接通道：把**当前编辑中**（未保存）的关卡从编辑器交给关卡场景。
+///
+/// 为什么需要它：`GameScene` 只认磁盘上的关卡序号（`levelIndex_`），而试玩的语义
+/// 恰恰是"玩你现在改到一半的那份"。既有的交接范式是"共享服务持有待处理数据"
+/// （`SaveManager::setPendingSave`），这里照抄那个形状 —— 而不是给场景加一堆
+/// 只有试玩才用得上的字段。
+///
+/// ⚠️ **取走是一次性的**：`take()` 之后请求就没了。否则试玩结束回到编辑器、
+///  以后再从选关页进普通关卡，会莫名其妙又玩到那份旧草稿 —— 而且没有任何提示，
+///  看起来就像"关卡加载错了"。
+class PlaytestRequest {
+public:
+    struct Request {
+        std::vector<std::string> lines; ///< 关卡的 ASCII 文本（一行一条）
+        std::string sourceName;         ///< 来源文件名，只用于显示
+    };
+
+    /// 编辑器按 F5 时调用
+    void request(std::vector<std::string> lines, std::string sourceName) {
+        pending_ = Request{std::move(lines), std::move(sourceName)};
+    }
+
+    /// 取走（取一次就清空）。没有待处理请求时返回 nullopt。
+    std::optional<Request> take() {
+        auto out = std::move(pending_);
+        pending_.reset();
+        return out;
+    }
+
+    bool has() const { return pending_.has_value(); }
+    void clear() { pending_.reset(); }
+
+    /// 这份草稿能不能试玩 —— 至少要有一个玩家出生点 'P'。
+    ///
+    /// 没有 'P' 的话关卡**确实**能构造出来，但玩家会被摆在 (0,0)，
+    /// 大概率正好卡在边界墙里：画面在动、按什么都没反应。与其让用户对着一个
+    /// 动不了的画面发愣，不如在按 F5 的时候就说清楚。
+    static bool hasPlayerSpawn(const std::vector<std::string>& lines) {
+        for (const auto& line : lines)
+            if (line.find('P') != std::string::npos)
+                return true;
+        return false;
+    }
+
+private:
+    std::optional<Request> pending_;
+};
+
 ===== ./include/scene/save_select_scene.h =====
 #pragma once
 #include "background.h"
@@ -11597,6 +11568,7 @@ constexpr const char* StartGame = "启动游戏";
 constexpr const char* Calculator = "控制台";
 constexpr const char* LevelEditor = "关卡编辑器";
 constexpr const char* Achievements = "成就";
+constexpr const char* Stats = "成绩";
 constexpr const char* Settings = "设置";
 constexpr const char* ExitGame = "退出游戏";
 
@@ -11917,7 +11889,7 @@ constexpr const char* BrushPlatformH = "横台";
 constexpr const char* BrushPlatformV = "竖台";
 // 三种新敌人的笔刷名（W 巡逻 / F 飞行 / B 跳跃）
 constexpr const char* BrushPatrol = "巡逻";
-constexpr const char* BrushFlyer  = "飞行";
+constexpr const char* BrushFlyer = "飞行";
 constexpr const char* BrushJumper = "跳跃";
 // ===== 编辑器元素统计 =====
 constexpr const char* StatPlatform = "移动平台";
@@ -15032,11 +15004,13 @@ sf::Color kindTint(EnemyKind kind) {
 } // namespace
 
 Enemy::Enemy(Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
-    : Enemy(EnemyKind::Basic, pos, tileSize, std::move(sheet)) {}
+      : Enemy(EnemyKind::Basic, pos, tileSize, std::move(sheet)) {}
 
-Enemy::Enemy(EnemyKind kind, Vec2 pos, int tileSize,
-             std::shared_ptr<sf::Texture> sheet)
-    : kind_(kind), pos_(pos), tileSize_(tileSize), sheet_(std::move(sheet)) {
+Enemy::Enemy(EnemyKind kind, Vec2 pos, int tileSize, std::shared_ptr<sf::Texture> sheet)
+      : kind_(kind),
+        pos_(pos),
+        tileSize_(tileSize),
+        sheet_(std::move(sheet)) {
     pos_.x += (tileSize_ - size_.x) * 0.5f;
     pos_.y += (tileSize_ - size_.y) * 0.5f;
 
@@ -15050,8 +15024,8 @@ Enemy::Enemy(EnemyKind kind, Vec2 pos, int tileSize,
         break;
     case EnemyKind::Flyer:
         vel_ = Vec2{-GameConst::kFlyerSpeed, 0.f};
-        bobBaseY_ = pos_.y;    // 正弦围绕出生高度上下浮动，不受重力
-        turnAtLedge_ = false;  // 飞行不看脚下有没有地
+        bobBaseY_ = pos_.y;   // 正弦围绕出生高度上下浮动，不受重力
+        turnAtLedge_ = false; // 飞行不看脚下有没有地
         break;
     case EnemyKind::Jumper:
         vel_ = Vec2{0.f, 0.f}; // 只上下跳，不横向移动
@@ -15064,16 +15038,15 @@ Enemy::Enemy(EnemyKind kind, Vec2 pos, int tileSize,
 
 void Enemy::setupSprite() {
     // 同 Coin：sheet 为空就进"无 sprite"模式，逻辑照常跑。
-    if (!sheet_) return;
+    if (!sheet_)
+        return;
 
     sprite_ = std::make_unique<sf::Sprite>(*sheet_);
     sprite_->setColor(kindTint(kind_)); // 复用贴图，用色调区分种类
 
     // 原点在帧底部中心
-    sprite_->setOrigin({
-        EnemySpriteFactory::kFrameW * 0.5f,
-        static_cast<float>(EnemySpriteFactory::kFrameH)
-    });
+    sprite_->setOrigin({EnemySpriteFactory::kFrameW * 0.5f,
+                        static_cast<float>(EnemySpriteFactory::kFrameH)});
 
     // 缩放到 tileSize
     float scale = static_cast<float>(tileSize_) / EnemySpriteFactory::kFrameW;
@@ -15122,12 +15095,12 @@ bool Enemy::cliffAhead(const Level& level) const {
 
 bool Enemy::outsideLevelX(const Level& level) const {
     AABB box = bounds();
-    return box.left() < 0.f ||
-           box.right() > static_cast<float>(level.pixelWidth());
+    return box.left() < 0.f || box.right() > static_cast<float>(level.pixelWidth());
 }
 
 void Enemy::update(float dt, const Level& level) {
-    if (killed_) return;
+    if (killed_)
+        return;
 
     switch (kind_) {
     case EnemyKind::Basic:
@@ -15207,7 +15180,8 @@ void Enemy::updateJumper(float dt, const Level& level) {
 }
 
 void Enemy::render(sf::RenderTarget& target) const {
-    if (killed_ || !sprite_) return;
+    if (killed_ || !sprite_)
+        return;
 
     animator_.applyTo(*sprite_);
 
@@ -15216,10 +15190,7 @@ void Enemy::render(sf::RenderTarget& target) const {
     float dir = (vel_.x > 0.f) ? 1.f : -1.f;
 
     sprite_->setScale({scale * dir, scale});
-    sprite_->setPosition({
-        pos_.x + size_.x * 0.5f,
-        pos_.y + size_.y
-    });
+    sprite_->setPosition({pos_.x + size_.x * 0.5f, pos_.y + size_.y});
     target.draw(*sprite_);
 }
 
@@ -16749,13 +16720,15 @@ namespace {
 struct Platform {
     int minX = 0;
     int maxX = 0;
-    int y    = 0;
+    int y = 0;
 
     // 两个平台之间的最小水平距离（瓦片为单位）
     // 若重叠或相邻，返回 0
     int horizDistTo(const Platform& other) const {
-        if (other.minX > maxX) return other.minX - maxX;
-        if (other.maxX < minX) return minX - other.maxX;
+        if (other.minX > maxX)
+            return other.minX - maxX;
+        if (other.maxX < minX)
+            return minX - other.maxX;
         return 0;
     }
 };
@@ -16766,11 +16739,14 @@ std::vector<Platform> findPlatforms(const Level& level) {
     const int w = level.width();
     const int h = level.height();
 
-    for (int ty = 1; ty < h; ++ty) {   // 跳过 y=0（顶部墙顶不算平台）
+    for (int ty = 1; ty < h; ++ty) { // 跳过 y=0（顶部墙顶不算平台）
         int x = 0;
         while (x < w) {
             bool isTop = level.isSolid(x, ty) && !level.isSolid(x, ty - 1);
-            if (!isTop) { ++x; continue; }
+            if (!isTop) {
+                ++x;
+                continue;
+            }
 
             const int startX = x;
             while (x < w && level.isSolid(x, ty) && !level.isSolid(x, ty - 1)) {
@@ -16779,7 +16755,7 @@ std::vector<Platform> findPlatforms(const Level& level) {
             Platform p;
             p.minX = startX;
             p.maxX = x - 1;
-            p.y    = ty;
+            p.y = ty;
             result.push_back(p);
         }
     }
@@ -16792,8 +16768,10 @@ int findPlatformBelow(const std::vector<Platform>& platforms, int tx, int minY) 
     int bestY = 1000000;
     for (size_t i = 0; i < platforms.size(); ++i) {
         const auto& p = platforms[i];
-        if (p.y < minY) continue;
-        if (tx < p.minX || tx > p.maxX) continue;
+        if (p.y < minY)
+            continue;
+        if (tx < p.minX || tx > p.maxX)
+            continue;
         if (p.y < bestY) {
             bestY = p.y;
             bestIdx = static_cast<int>(i);
@@ -16805,24 +16783,25 @@ int findPlatformBelow(const std::vector<Platform>& platforms, int tx, int minY) 
 // 判断 from 平台能否跳到 to 平台（忽略弹跳板、移动平台）
 bool canReach(const Platform& from, const Platform& to, int tileSize) {
     // 用瓦片为单位计算物理量
-    const float g          = GameConst::kPlayerGravity     / tileSize;   // 格/s²
-    const float v          = -GameConst::kPlayerJumpVelocity / tileSize; // 格/s
-    const float moveSpeed  = GameConst::kPlayerMoveSpeed   / tileSize;   // 格/s
-    const float maxFall    = GameConst::kPlayerMaxFall     / tileSize;   // 格/s
+    const float g = GameConst::kPlayerGravity / tileSize;           // 格/s²
+    const float v = -GameConst::kPlayerJumpVelocity / tileSize;     // 格/s
+    const float moveSpeed = GameConst::kPlayerMoveSpeed / tileSize; // 格/s
+    const float maxFall = GameConst::kPlayerMaxFall / tileSize;     // 格/s
 
-    const float maxJumpH = v * v / (2.f * g);   // 最大跳跃高度（格）
-    const float upTime   = v / g;               // 上升时间（秒）
+    const float maxJumpH = v * v / (2.f * g); // 最大跳跃高度（格）
+    const float upTime = v / g;               // 上升时间（秒）
 
     // 达到最大下落速度所需高度和对应时间
     const float h1 = maxFall * maxFall / (2.f * g);
     const float t1 = maxFall / g;
 
-    const float dy = static_cast<float>(from.y - to.y);   // 正 = to 更高
+    const float dy = static_cast<float>(from.y - to.y); // 正 = to 更高
     const float dx = static_cast<float>(from.horizDistTo(to));
 
     if (dy >= 0.f) {
         // to 更高或同高：需要跳
-        if (dy > maxJumpH) return false;
+        if (dy > maxJumpH)
+            return false;
 
         const float fallHeight = std::max(0.f, maxJumpH - dy);
         float fallTime;
@@ -16848,10 +16827,11 @@ bool canReach(const Platform& from, const Platform& to, int tileSize) {
 }
 
 // 从起始平台出发，BFS 找所有可达平台
-std::set<int> findReachablePlatforms(const std::vector<Platform>& platforms,
-                                     int startIdx, int tileSize) {
+std::set<int> findReachablePlatforms(const std::vector<Platform>& platforms, int startIdx,
+                                     int tileSize) {
     std::set<int> reachable;
-    if (startIdx < 0) return reachable;
+    if (startIdx < 0)
+        return reachable;
 
     std::deque<int> queue;
     queue.push_back(startIdx);
@@ -16863,7 +16843,8 @@ std::set<int> findReachablePlatforms(const std::vector<Platform>& platforms,
 
         for (size_t i = 0; i < platforms.size(); ++i) {
             const int idx = static_cast<int>(i);
-            if (reachable.count(idx)) continue;
+            if (reachable.count(idx))
+                continue;
             if (canReach(platforms[cur], platforms[i], tileSize)) {
                 reachable.insert(idx);
                 queue.push_back(idx);
@@ -16899,8 +16880,7 @@ ValidationReport LevelValidator::validate(const Level& level) {
     const int spawnTileY = static_cast<int>(spawn.y) / ts;
     report.spawnTile = {spawnTileX, spawnTileY};
 
-    const int spawnPlatformIdx =
-        findPlatformBelow(platforms, spawnTileX, spawnTileY);
+    const int spawnPlatformIdx = findPlatformBelow(platforms, spawnTileX, spawnTileY);
     if (spawnPlatformIdx < 0) {
         report.spawnValid = false;
         return report;
@@ -16934,16 +16914,16 @@ ValidationReport LevelValidator::validate(const Level& level) {
         }
     };
 
-    checkSpawn(level.coinSpawns(),       "coin");
-    checkSpawn(level.enemySpawns(),      "enemy");
+    checkSpawn(level.coinSpawns(), "coin");
+    checkSpawn(level.enemySpawns(), "enemy");
     // W/B 是地面敌人，和 E 同一条规则。F 不查：飞行敌人本来就允许悬在坑上方，
     // 硬给它套"下面必须有可达平台"只会对合法关卡误报。
-    checkSpawn(level.patrolSpawns(),     "patrol");
-    checkSpawn(level.jumperSpawns(),     "jumper");
-    checkSpawn(level.keySpawns(),        "key");
-    checkSpawn(level.doorSpawns(),       "door");
+    checkSpawn(level.patrolSpawns(), "patrol");
+    checkSpawn(level.jumperSpawns(), "jumper");
+    checkSpawn(level.keySpawns(), "key");
+    checkSpawn(level.doorSpawns(), "door");
     checkSpawn(level.checkpointSpawns(), "checkpoint");
-    checkSpawn(level.jumpPadSpawns(),    "jumppad");
+    checkSpawn(level.jumpPadSpawns(), "jumppad");
 
     // 终点
     if (level.hasGoal()) {
@@ -16978,10 +16958,11 @@ std::string ValidationReport::summary() const {
     }
 
     oss << "FAIL";
-    if (!spawnValid)          oss << " | spawn is floating";
-    if (!goalReachable)       oss << " | goal unreachable";
-    oss << " | platforms " << reachablePlatforms << "/" << totalPlatforms
-        << " reachable";
+    if (!spawnValid)
+        oss << " | spawn is floating";
+    if (!goalReachable)
+        oss << " | goal unreachable";
+    oss << " | platforms " << reachablePlatforms << "/" << totalPlatforms << " reachable";
 
     if (!unreachable.empty()) {
         oss << "\n  " << unreachable.size() << " unreachable items:";
@@ -17176,8 +17157,8 @@ void ParallaxBackground::render(sf::RenderTarget& target, float camLeft, float c
 #include <cmath>
 
 Player::Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet)
-    : pos_(spawn), spawn_(spawn) {
-
+      : pos_(spawn),
+        spawn_(spawn) {
     // 无 sprite 模式（测试用）：跳过所有纹理/动画初始化
     if (!sheet)
         return;
@@ -17191,13 +17172,11 @@ Player::Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet)
     const int fw = PlayerSpriteFactory::kFrameW;
     const int fh = PlayerSpriteFactory::kFrameH;
 
-    auto makeFrame = [&](int index) {
-        return sf::IntRect({index * fw, 0}, {fw, fh});
-    };
+    auto makeFrame = [&](int index) { return sf::IntRect({index * fw, 0}, {fw, fh}); };
 
-    animator_.addClip("idle", {{makeFrame(0), makeFrame(1)}, 4.f,  true});
-    animator_.addClip("run",  {{makeFrame(2), makeFrame(3),
-                               makeFrame(4), makeFrame(5)}, 12.f, true});
+    animator_.addClip("idle", {{makeFrame(0), makeFrame(1)}, 4.f, true});
+    animator_.addClip(
+        "run", {{makeFrame(2), makeFrame(3), makeFrame(4), makeFrame(5)}, 12.f, true});
     animator_.addClip("jump", {{makeFrame(6)}, 1.f, false});
     animator_.addClip("fall", {{makeFrame(7)}, 1.f, false});
 
@@ -17220,12 +17199,12 @@ void Player::respawn(Vec2 spawn) {
     prevOnGround_ = false;
     currentScale_ = {1.f, 1.f};
     targetScale_ = {1.f, 1.f};
-    keyboardLeft_  = false;
+    keyboardLeft_ = false;
     keyboardRight_ = false;
-    keyboardJump_  = false;
-    gamepadLeft_   = false;
-    gamepadRight_  = false;
-    gamepadJump_   = false;
+    keyboardJump_ = false;
+    gamepadLeft_ = false;
+    gamepadRight_ = false;
+    gamepadJump_ = false;
 }
 
 void Player::takeDamage() {
@@ -17244,45 +17223,58 @@ void Player::setInvincible(bool e) {
 }
 
 void Player::handleEvent(const sf::Event& event) {
-    const auto kbLeft  = KeyBindings::instance().get(KeyBindings::MoveLeft);
-    const auto kbRight = KeyBindings::instance().get(KeyBindings::MoveRight);
-    const auto kbJump  = KeyBindings::instance().get(KeyBindings::Jump);
+    auto& bindings = KeyBindings::instance();
+    const auto kbLeft = bindings.get(KeyBindings::MoveLeft);
+    const auto kbRight = bindings.get(KeyBindings::MoveRight);
+    const auto kbJump = bindings.get(KeyBindings::Jump);
+
+    // 可配置键位之外再固定接受方向键：新玩家会先按方向键，不兜底的话
+    // 按什么都没反应，看起来就像游戏坏了。见 KeyBindings::fallbackKey()。
+    const auto fbLeft = KeyBindings::fallbackKey(KeyBindings::MoveLeft);
+    const auto fbRight = KeyBindings::fallbackKey(KeyBindings::MoveRight);
+    const auto fbJump = KeyBindings::fallbackKey(KeyBindings::Jump);
 
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (kp->code == kbLeft)  keyboardLeft_  = true;
-        if (kp->code == kbRight) keyboardRight_ = true;
-        if (kp->code == kbJump) {
-            if (!keyboardJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+        if (kp->code == kbLeft || kp->code == fbLeft)
+            keyboardLeft_ = true;
+        if (kp->code == kbRight || kp->code == fbRight)
+            keyboardRight_ = true;
+        if (kp->code == kbJump || kp->code == fbJump) {
+            if (!keyboardJump_)
+                jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
             keyboardJump_ = true;
         }
     }
     if (const auto* kr = event.getIf<sf::Event::KeyReleased>()) {
-        if (kr->code == kbLeft)  keyboardLeft_  = false;
-        if (kr->code == kbRight) keyboardRight_ = false;
-        if (kr->code == kbJump)  keyboardJump_ = false;
+        if (kr->code == kbLeft || kr->code == fbLeft)
+            keyboardLeft_ = false;
+        if (kr->code == kbRight || kr->code == fbRight)
+            keyboardRight_ = false;
+        if (kr->code == kbJump || kr->code == fbJump)
+            keyboardJump_ = false;
     }
 }
 
 void Player::handleGamepad() {
     if (!gamepadEnabled_) {
-        gamepadLeft_  = false;
+        gamepadLeft_ = false;
         gamepadRight_ = false;
-        gamepadJump_  = false;
+        gamepadJump_ = false;
         return;
     }
 
     auto& gp = Gamepad::instance();
     if (!gp.isConnected()) {
-        gamepadLeft_  = false;
+        gamepadLeft_ = false;
         gamepadRight_ = false;
-        gamepadJump_  = false;
+        gamepadJump_ = false;
         return;
     }
 
     float x = gp.leftX();
     constexpr float T = GamepadConfig::kMoveStickThreshold;
-    gamepadLeft_  = (x < -T) || gp.dpadLeft();
-    gamepadRight_ = (x >  T) || gp.dpadRight();
+    gamepadLeft_ = (x < -T) || gp.dpadLeft();
+    gamepadRight_ = (x > T) || gp.dpadRight();
 
     bool jumpNow = gp.jumpPressed();
     if (jumpNow && !gamepadJump_) {
@@ -17292,19 +17284,26 @@ void Player::handleGamepad() {
 }
 
 void Player::update(float dt, const Level& level) {
-    if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
+    if (invincibleTimer_ > 0.f)
+        invincibleTimer_ -= dt;
 
     // 合并输入：手柄方向优先，键盘作为后备
     float dir = 0.f;
-    if (keyboardLeft_)  dir -= 1.f;
-    if (keyboardRight_) dir += 1.f;
-    if (gamepadLeft_)       dir = -1.f;
-    else if (gamepadRight_) dir =  1.f;
+    if (keyboardLeft_)
+        dir -= 1.f;
+    if (keyboardRight_)
+        dir += 1.f;
+    if (gamepadLeft_)
+        dir = -1.f;
+    else if (gamepadRight_)
+        dir = 1.f;
 
     vel_.x = dir * GameConst::kPlayerMoveSpeed;
 
-    if (onGround_) coyoteTimer_ = GameConst::kPlayerCoyoteTime;
-    else           coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
+    if (onGround_)
+        coyoteTimer_ = GameConst::kPlayerCoyoteTime;
+    else
+        coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
     jumpBufferTimer_ = std::max(0.f, jumpBufferTimer_ - dt);
 
     bool jumpHeld = keyboardJump_ || gamepadJump_;
@@ -17317,12 +17316,15 @@ void Player::update(float dt, const Level& level) {
         onGround_ = false;
         justJumped_ = true;
     }
-    if (!jumpHeld) jumpConsumed_ = false;
+    if (!jumpHeld)
+        jumpConsumed_ = false;
 
-    if (!jumpHeld && vel_.y < 0.f) vel_.y *= 0.5f;
+    if (!jumpHeld && vel_.y < 0.f)
+        vel_.y *= 0.5f;
 
     vel_.y += GameConst::kPlayerGravity * dt;
-    if (vel_.y > GameConst::kPlayerMaxFall) vel_.y = GameConst::kPlayerMaxFall;
+    if (vel_.y > GameConst::kPlayerMaxFall)
+        vel_.y = GameConst::kPlayerMaxFall;
 
     onGround_ = false;
     moveHorizontal(vel_.x * dt, level);
@@ -17334,7 +17336,8 @@ void Player::update(float dt, const Level& level) {
         vel_ = {0.f, 0.f};
     }
 
-    if (onGround_ && !prevOnGround_) justLanded_ = true;
+    if (onGround_ && !prevOnGround_)
+        justLanded_ = true;
     prevOnGround_ = onGround_;
 
     if (justJumped_) {
@@ -17352,8 +17355,10 @@ void Player::update(float dt, const Level& level) {
 
 void Player::updateAnimation(float dt) {
     if (!onGround_) {
-        if (vel_.y < 0.f) animator_.play("jump");
-        else              animator_.play("fall");
+        if (vel_.y < 0.f)
+            animator_.play("jump");
+        else
+            animator_.play("fall");
     } else if (std::abs(vel_.x) > 1.f) {
         animator_.play("run");
     } else {
@@ -17363,7 +17368,8 @@ void Player::updateAnimation(float dt) {
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
-    if (dx == 0.f) return;
+    if (dx == 0.f)
+        return;
 
     float targetX = pos_.x + dx;
     AABB box{targetX, pos_.y, size_.x, size_.y};
@@ -17376,9 +17382,12 @@ void Player::moveHorizontal(float dx, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty)) continue;
-            if (dx > 0.f) pos_.x = static_cast<float>(tx * ts) - size_.x;
-            else          pos_.x = static_cast<float>((tx + 1) * ts);
+            if (!level.isSolid(tx, ty))
+                continue;
+            if (dx > 0.f)
+                pos_.x = static_cast<float>(tx * ts) - size_.x;
+            else
+                pos_.x = static_cast<float>((tx + 1) * ts);
             vel_.x = 0.f;
             return;
         }
@@ -17387,7 +17396,8 @@ void Player::moveHorizontal(float dx, const Level& level) {
 }
 
 void Player::moveVertical(float dy, const Level& level) {
-    if (dy == 0.f) return;
+    if (dy == 0.f)
+        return;
 
     float targetY = pos_.y + dy;
     AABB box{pos_.x, targetY, size_.x, size_.y};
@@ -17400,7 +17410,8 @@ void Player::moveVertical(float dy, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty)) continue;
+            if (!level.isSolid(tx, ty))
+                continue;
             if (dy > 0.f) {
                 pos_.y = static_cast<float>(ty * ts) - size_.y;
                 onGround_ = true;
@@ -17417,7 +17428,8 @@ void Player::moveVertical(float dy, const Level& level) {
 void Player::render(sf::RenderTarget& target) const {
     if (invincibleTimer_ > 0.f) {
         auto ms = static_cast<int>(invincibleTimer_ * 1000.f);
-        if ((ms / 100) % 2 == 0) return;
+        if ((ms / 100) % 2 == 0)
+            return;
     }
 
     if (!animationEnabled_ || !sprite_) {
@@ -17432,10 +17444,7 @@ void Player::render(sf::RenderTarget& target) const {
 
     animator_.applyTo(*sprite_);
     sprite_->setScale(currentScale_);
-    sprite_->setPosition({
-        pos_.x + size_.x * 0.5f,
-        pos_.y + size_.y
-    });
+    sprite_->setPosition({pos_.x + size_.x * 0.5f, pos_.y + size_.y});
     target.draw(*sprite_);
 }
 ===== ./src/game/player_sprite_factory.cpp =====
@@ -17710,6 +17719,10 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     out << "current_level=" << info.currentLevel << '\n';
     out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    // 存档是**整体重写**的，所以每一处写盘都必须带上所有字段 ——
+    // 漏掉一个，用另一个 setter 存一次就会把它悄悄抹掉。
+    // 新增字段时请搜 "level_best_times" 确认四处都补上了。
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
     out.flush();
     if (!out) {
         logger_->error("创建存档失败: 写入过程中断 " + path.string());
@@ -17734,6 +17747,9 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
     out.currentLevel = 1;
     out.levelStars = std::vector<int>(9, 0);
     out.levelBestTimes = std::vector<float>(9, 0.f);
+    // 老存档没有这一行 —— 默认给 9 个 0，而不是空数组，否则 setter 会因
+    // "关卡序号越界"直接失败
+    out.levelBestCoins = std::vector<int>(9, 0);
 
     std::string line;
     while (std::getline(in, line)) {
@@ -17771,6 +17787,12 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
             out.levelBestTimes = parseTimes(v);
             if (out.levelBestTimes.size() < 9)
                 out.levelBestTimes.resize(9, 0.f);
+        } else if (k == "level_best_coins") {
+            // 0.3.9 新增。老存档没有这一行 —— 上面已经把默认值铺成 9 个 0 了，
+            // 所以这里读不到也不会是空数组
+            out.levelBestCoins = parseStars(v);
+            if (out.levelBestCoins.size() < 9)
+                out.levelBestCoins.resize(9, 0);
         }
     }
     return true;
@@ -17810,6 +17832,8 @@ bool SaveManager::updateProgress(const std::string& filename, int coins,
     out << "current_level=" << info.currentLevel << '\n';
     out << "level_stars=" << serializeStars(info.levelStars) << '\n';
     out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    // 同上：整体重写，一个字段都不能少
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
     return true;
 }
 
@@ -17836,10 +17860,55 @@ bool SaveManager::setLevelStar(const std::string& filename, int level, int stars
         out << "current_level=" << info.currentLevel << '\n';
         out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+        // 同上：整体重写，一个字段都不能少
+        out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关星级更新为 " +
                       std::to_string(stars));
     }
+    return true;
+}
+
+bool SaveManager::setLevelBestCoins(const std::string& filename, int level, int coins) {
+    if (coins <= 0)
+        return false; // 没拿到金币不算纪录
+
+    SaveInfo info;
+    if (!loadSave(filename, info))
+        return false;
+    if (level < 1 || level > static_cast<int>(info.levelBestCoins.size()))
+        return false;
+
+    const int idx = level - 1;
+    // 只增不减：拿得比上次少不清空纪录
+    if (coins <= info.levelBestCoins[idx])
+        return false;
+
+    info.levelBestCoins[idx] = coins;
+    info.lastPlayed = currentTimestamp();
+
+    auto path = savePath(filename);
+    std::ofstream out(path);
+    if (!out) {
+        logger_->error("保存失败: 无法写入 " + path.string());
+        return false;
+    }
+    out << "name=" << info.name << '\n';
+    out << "created_at=" << info.createdAt << '\n';
+    out << "last_played=" << info.lastPlayed << '\n';
+    out << "coins=" << info.coins << '\n';
+    out << "current_level=" << info.currentLevel << '\n';
+    out << "level_stars=" << serializeStars(info.levelStars) << '\n';
+    out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+    out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
+    out.flush();
+
+    if (!out) {
+        logger_->error("保存失败: 写入过程中断 " + path.string());
+        return false;
+    }
+    logger_->info("更新最佳金币: " + filename + " 第 " + std::to_string(level) + " 关 " +
+                  std::to_string(coins));
     return true;
 }
 
@@ -17870,6 +17939,8 @@ bool SaveManager::setLevelBestTime(const std::string& filename, int level,
         out << "current_level=" << info.currentLevel << '\n';
         out << "level_stars=" << serializeStars(info.levelStars) << '\n';
         out << "level_best_times=" << serializeTimes(info.levelBestTimes) << '\n';
+        // 同上：整体重写，一个字段都不能少
+        out << "level_best_coins=" << serializeStars(info.levelBestCoins) << '\n';
 
         logger_->info("第 " + std::to_string(level) + " 关 PB 更新为 " +
                       std::to_string(seconds) + " 秒");
@@ -17940,6 +18011,68 @@ void Spike::render(sf::RenderTarget& target) const {
     }
     target.draw(va);
 }
+===== ./src/game/stats.cpp =====
+#include "stats.h"
+
+#include <algorithm>
+
+namespace Stats {
+
+float Summary::progress() const {
+    if (levels.empty())
+        return 0.f;
+    return static_cast<float>(clearedLevels) / static_cast<float>(levels.size());
+}
+
+int levelCount(const SaveInfo& save) {
+    return static_cast<int>(std::max({save.levelStars.size(), save.levelBestTimes.size(),
+                                      save.levelBestCoins.size()}));
+}
+
+Summary summarize(const SaveInfo& save) {
+    Summary out;
+
+    const int n = levelCount(save);
+    out.levels.reserve(static_cast<std::size_t>(n));
+    out.maxStars = n * 3;
+
+    for (int i = 0; i < n; ++i) {
+        const auto idx = static_cast<std::size_t>(i);
+
+        LevelRow row;
+        row.level = i + 1;
+        // 三个数组都可能比 i 短（老存档 / 手改坏的存档），逐个查长度
+        if (idx < save.levelStars.size())
+            row.stars = save.levelStars[idx];
+        if (idx < save.levelBestTimes.size())
+            row.bestTime = save.levelBestTimes[idx];
+        if (idx < save.levelBestCoins.size())
+            row.bestCoins = save.levelBestCoins[idx];
+
+        // 星级越界（手改存档）夹回 0~3，否则进度条会算出 >100%
+        row.stars = std::clamp(row.stars, 0, 3);
+        row.cleared = row.stars > 0;
+
+        if (row.cleared)
+            ++out.clearedLevels;
+        out.totalStars += row.stars;
+        // 只累加**有记录**的：没打过的那几关是 0，加进去等于把平均值拉低
+        if (row.bestTime > 0.f)
+            out.totalBestTime += row.bestTime;
+        if (row.bestCoins > 0)
+            out.totalBestCoins += row.bestCoins;
+
+        if (row.cleared || row.bestTime > 0.f || row.bestCoins > 0)
+            out.anyRecord = true;
+
+        out.levels.push_back(row);
+    }
+
+    return out;
+}
+
+} // namespace Stats
+
 ===== ./src/infrastructure/gamepad.cpp =====
 #include "infrastructure/gamepad.h"
 #include <algorithm>
@@ -18357,6 +18490,19 @@ KeyBindings& KeyBindings::instance() {
 
 KeyBindings::KeyBindings() {
     resetToDefaults();
+}
+
+sf::Keyboard::Key KeyBindings::fallbackKey(Action a) {
+    switch (a) {
+    case MoveLeft:
+        return sf::Keyboard::Key::Left;
+    case MoveRight:
+        return sf::Keyboard::Key::Right;
+    case Jump:
+        return sf::Keyboard::Key::Up;
+    default:
+        return sf::Keyboard::Key::Unknown;
+    }
 }
 
 void KeyBindings::resetToDefaults() {
@@ -20634,8 +20780,7 @@ sf::FloatRect EditorScene::brushButtonRect(int idx, sf::Vector2u winSize) const 
     const float startX = (winW - totalW) * 0.5f;
     const float barY = winH - kBrushBarHeight;
     const float btnY = barY + (kBrushBarHeight - kButtonH) * 0.5f;
-    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY},
-                         {btnW, kButtonH});
+    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY}, {btnW, kButtonH});
 }
 
 int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const {
@@ -21576,6 +21721,10 @@ void GameScene::subscribeWorldEvents() {
                             saveManager_->setLevelBestTime(save_.filename, levelIndex_,
                                                            levelTime_);
                         }
+                        // 每关最佳金币：成绩页要**按关**显示金币，而 save.coins 是跨关
+                        // 累计总数、拆不出来。setter 内部只增不减，所以直接调即可。
+                        saveManager_->setLevelBestCoins(save_.filename, levelIndex_,
+                                                        world_->coins());
                     }
 
                     SoundManager::instance().playLevelComplete();
@@ -31270,6 +31419,7 @@ add_executable(unit_tests
     test_particle_system.cpp
     test_keybindings.cpp
     test_playtest_request.cpp
+    test_stats.cpp
     test_wallpaper_library.cpp
     test_wallpaper_thumbnail.cpp
 )
@@ -41782,6 +41932,415 @@ TEST_CASE("EditorTools - 连线长度符合切比雪夫距离") {
     CHECK(cells.size() == 11);   // max(10, 4) + 1
 }
 
+===== ./tests/test_enemy.cpp =====
+#include "doctest.h"
+#include "enemy.h"
+#include "game_constants.h"
+#include "game_world.h"
+#include "level.h"
+
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
+
+// 三种新敌人（W 巡逻 / F 飞行 / B 跳跃）的行为与生成。
+//
+// 和 test_entities.cpp 一样，这里**一个 render() 都不调**，全部走
+// "无 sprite 模式"（构造 Enemy 时 sheet 传 nullptr）—— sprite factory
+// 内部用 RenderTexture，没有 GL 上下文时 SFML 会直接 SIGABRT。
+namespace {
+
+constexpr int kTile = 32;
+constexpr float kStep = 1.f / 60.f;
+
+/// 造一个 20×5 的房间。row2 是第 2 行的中间 18 个字符（首尾 '#' 由这里补）。
+/// 第 4 行整行是地板，第 3 行是空的 —— 所以第 2 行的敌人脚下隔了一格。
+std::unique_ptr<Level> makeRoom(const std::string& row2) {
+    REQUIRE(row2.size() == 18);
+    const std::string text = "####################\n"
+                             "#                  #\n"
+                             "#" +
+                             row2 +
+                             "#\n"
+                             "#                  #\n"
+                             "####################";
+    auto level = std::make_unique<Level>();
+    level->loadFromString(text);
+    return level;
+}
+
+/// row2 里第 nth 次出现的 ch 所在的 tile 像素坐标
+Vec2 tileOf(const std::string& row2, char ch, int nth = 1) {
+    int seen = 0;
+    for (std::size_t i = 0; i < row2.size(); ++i) {
+        if (row2[i] == ch && ++seen == nth)
+            return {static_cast<float>(static_cast<int>(i) + 1) * kTile, 2.f * kTile};
+    }
+    REQUIRE_MESSAGE(false, "关卡行里找不到字符 '" << ch << "': " << row2);
+    return {-1.f, -1.f};
+}
+
+/// 地板只从 tile 6 往右的一段平台，左边是空的（和 test_entities.cpp 用的是同一张图）
+Level makeLedgeLevel() {
+    const char* text = "####################\n"
+                       "#                  #\n"
+                       "#                  #\n"
+                       "#                  #\n"
+                       "#     ##############";
+    Level level;
+    level.loadFromString(text);
+    return level;
+}
+
+/// 左右两边都有墙、地面只有 tile 1 一格空档的房间
+Level makeWallLevel() {
+    const char* text = "####################\n"
+                       "#                  #\n"
+                       "#                  #\n"
+                       "##                 #\n"
+                       "####################";
+    Level level;
+    level.loadFromString(text);
+    return level;
+}
+
+/// 统计 world 里某种 kind 的敌人数量
+int countKind(const GameWorld& world, EnemyKind kind) {
+    int n = 0;
+    for (const auto& o : world.objects())
+        if (o->type() == GameObject::Type::Enemy &&
+            static_cast<const Enemy*>(o.get())->kind() == kind)
+            ++n;
+    return n;
+}
+
+} // namespace
+
+// ============================================================
+// 关卡字符 → spawn 容器
+// ============================================================
+
+TEST_CASE("Level - W/F/B 各自进自己的容器，E 一个都不受影响") {
+    const std::string row = " W  F  B  E       ";
+    auto level = makeRoom(row);
+
+    CHECK(level->patrolSpawns().size() == 1);
+    CHECK(level->flyerSpawns().size() == 1);
+    CHECK(level->jumperSpawns().size() == 1);
+    CHECK(level->enemySpawns().size() == 1); // E 还是走老容器
+
+    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W').x));
+    CHECK(level->patrolSpawns()[0].y == doctest::Approx(tileOf(row, 'W').y));
+    CHECK(level->flyerSpawns()[0].x == doctest::Approx(tileOf(row, 'F').x));
+    CHECK(level->jumperSpawns()[0].x == doctest::Approx(tileOf(row, 'B').x));
+    CHECK(level->enemySpawns()[0].x == doctest::Approx(tileOf(row, 'E').x));
+}
+
+TEST_CASE("Level - 同一种新敌人可以放多个") {
+    const std::string row = " W W  F  B  E     ";
+    auto level = makeRoom(row);
+
+    REQUIRE(level->patrolSpawns().size() == 2);
+    CHECK(level->patrolSpawns()[0].x == doctest::Approx(tileOf(row, 'W', 1).x));
+    CHECK(level->patrolSpawns()[1].x == doctest::Approx(tileOf(row, 'W', 2).x));
+    CHECK(level->enemySpawns().size() == 1);
+}
+
+TEST_CASE("Level - 重新加载会清空三种新敌人的容器") {
+    Level level;
+    level.loadFromString("####\n#WF#\n#B #\n####");
+    REQUIRE(level.patrolSpawns().size() == 1);
+    REQUIRE(level.flyerSpawns().size() == 1);
+    REQUIRE(level.jumperSpawns().size() == 1);
+
+    level.loadFromString("####\n#  #\n#  #\n####");
+
+    CHECK(level.patrolSpawns().empty());
+    CHECK(level.flyerSpawns().empty());
+    CHECK(level.jumperSpawns().empty());
+}
+
+// ============================================================
+// GameWorld 按 kind 生成
+// ============================================================
+
+TEST_CASE("GameWorld - 按关卡字符生成对应 kind 的敌人，数量与位置正确") {
+    const std::string row = " W  F  B  E       ";
+    GameWorld world(makeRoom(row), 1);
+
+    int enemies = 0;
+    for (const auto& o : world.objects())
+        if (o->type() == GameObject::Type::Enemy)
+            ++enemies;
+    CHECK(enemies == 4);
+    CHECK(countKind(world, EnemyKind::Basic) == 1);
+    CHECK(countKind(world, EnemyKind::Patrol) == 1);
+    CHECK(countKind(world, EnemyKind::Flyer) == 1);
+    CHECK(countKind(world, EnemyKind::Jumper) == 1);
+
+    // 位置：敌人碰撞盒是 28×28，在格子里居中 → 中心 = 格子左上 + 16
+    for (const auto& o : world.objects()) {
+        if (o->type() != GameObject::Type::Enemy)
+            continue;
+        const auto* e = static_cast<const Enemy*>(o.get());
+        char ch = '?';
+        switch (e->kind()) {
+        case EnemyKind::Basic:
+            ch = 'E';
+            break;
+        case EnemyKind::Patrol:
+            ch = 'W';
+            break;
+        case EnemyKind::Flyer:
+            ch = 'F';
+            break;
+        case EnemyKind::Jumper:
+            ch = 'B';
+            break;
+        }
+        const Vec2 expected = tileOf(row, ch);
+        CHECK(e->bounds().center().x == doctest::Approx(expected.x + 16.f));
+        CHECK(e->bounds().center().y == doctest::Approx(expected.y + 16.f));
+    }
+}
+
+TEST_CASE("Enemy - 旧的三参数构造等价于 EnemyKind::Basic") {
+    Enemy legacy({320.f, 96.f}, kTile, nullptr);
+
+    CHECK(legacy.kind() == EnemyKind::Basic);
+}
+
+// ============================================================
+// W 巡逻
+// ============================================================
+
+TEST_CASE("Enemy - 巡逻(W) 走到平台边缘会掉头，不会掉下去") {
+    Level level = makeLedgeLevel();
+    Enemy enemy(EnemyKind::Patrol, {8 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+
+    bool turned = false;
+    float minLeft = enemy.bounds().left();
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(0.02f, level);
+        const float left = enemy.bounds().left();
+        if (left > minLeft + 0.5f) { // 开始往回走
+            turned = true;
+            break;
+        }
+        minLeft = std::min(minLeft, left);
+    }
+
+    CHECK_MESSAGE(turned, "巡逻兵走到平台边缘没有掉头");
+    // 平台从 tile 6 开始（x = 192），掉头点必须还在平台上
+    CHECK_MESSAGE(minLeft >= 6.f * kTile - 0.001f, "巡逻兵已经走出平台才掉头，会掉下去");
+}
+
+TEST_CASE("Enemy - 巡逻(W) 掉头时会在端点停一下") {
+    Level level = makeWallLevel();
+    Enemy enemy(EnemyKind::Patrol, {3 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+
+    // 先向左走，直到第一帧"没有继续向左"——那就是掉头帧
+    bool reversed = false;
+    int stalled = 0;
+    for (int i = 0; i < 400; ++i) {
+        const float before = enemy.bounds().x;
+        enemy.update(0.02f, level);
+        const float after = enemy.bounds().x;
+
+        if (!reversed) {
+            if (after < before) // 还在向左
+                continue;
+            reversed = true; // 掉头帧（不论有没有停顿，这一帧都不动）
+            continue;
+        }
+        if (std::abs(after - before) < 0.001f)
+            ++stalled;
+        else
+            break;
+    }
+
+    REQUIRE(reversed);
+    // kPatrolPauseTime = 0.35s，0.02s 一帧 → 大约 17 帧
+    CHECK(stalled >= 10);
+}
+
+TEST_CASE("Enemy - 现有 E(Basic) 掉头后立刻反向，一个新字段都没碰") {
+    Level level = makeWallLevel();
+    Enemy enemy({3 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+
+    bool reversed = false;
+    int stalled = 0;
+    for (int i = 0; i < 400; ++i) {
+        const float before = enemy.bounds().x;
+        enemy.update(0.02f, level);
+        const float after = enemy.bounds().x;
+
+        if (!reversed) {
+            if (after < before)
+                continue;
+            reversed = true;
+            continue;
+        }
+        if (std::abs(after - before) < 0.001f)
+            ++stalled;
+        else
+            break;
+    }
+
+    REQUIRE(reversed);
+    CHECK_MESSAGE(stalled == 0, "E 掉头之后不该有任何停顿 —— 它的行为必须逐字不变");
+}
+
+TEST_CASE("Enemy - E 的行为与新增 kind 之前一致：不受重力，y 恒定") {
+    auto level = makeRoom("                  ");
+    // 第 3 行（地板上面那一格）—— 第 2 行离地一格多，cliffAhead 会一直掉头
+    Enemy enemy({8 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+    const float y0 = enemy.bounds().y;
+
+    bool movedX = false;
+    for (int i = 0; i < 120; ++i) {
+        enemy.update(kStep, *level);
+        CHECK(enemy.bounds().y == doctest::Approx(y0)); // 没有重力
+        movedX = movedX || (enemy.bounds().x < 8 * kTile);
+    }
+    CHECK(movedX); // 还是照常左右走
+}
+
+// ============================================================
+// F 飞行
+// ============================================================
+
+TEST_CASE("Enemy - 飞行(F) 不受重力：正弦上下浮动，永不落地") {
+    auto level = makeRoom("                  ");
+    Enemy enemy(EnemyKind::Flyer, {8 * kTile + 0.f, 1 * kTile + 0.f}, kTile, nullptr);
+
+    const float y0 = enemy.bounds().y;
+    float minY = y0, maxY = y0;
+    bool touchedGround = false;
+    for (int i = 0; i < 240; ++i) { // 4 秒 > 一个正弦周期
+        enemy.update(kStep, *level);
+        minY = std::min(minY, enemy.bounds().y);
+        maxY = std::max(maxY, enemy.bounds().y);
+        if (enemy.bounds().bottom() >= 4.f * kTile)
+            touchedGround = true;
+    }
+
+    CHECK_FALSE(touchedGround); // 地板在第 4 行，飞行兵永远够不着
+    CHECK_MESSAGE(maxY - minY > 30.f, "飞行兵没有上下浮动（正弦没生效）");
+    // 浮动中心就是出生高度，振幅不超过 kFlyerBobAmp
+    CHECK(minY >= y0 - GameConst::kFlyerBobAmp - 0.5f);
+    CHECK(maxY <= y0 + GameConst::kFlyerBobAmp + 0.5f);
+}
+
+TEST_CASE("Enemy - 飞行(F) 水平巡游，撞墙反向") {
+    auto level = makeRoom("                  ");
+    // 贴着左墙出生，一路向左，很快就会撞墙
+    Enemy enemy(EnemyKind::Flyer, {2 * kTile + 0.f, 1 * kTile + 0.f}, kTile, nullptr);
+
+    bool movedLeft = false;
+    bool turned = false;
+    float minX = enemy.bounds().x;
+    bool leftLevel = false;
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(kStep, *level);
+        const float x = enemy.bounds().x;
+        if (x < minX - 0.001f) {
+            minX = x;
+            movedLeft = true;
+        } else if (movedLeft && x > minX + 0.5f) {
+            turned = true;
+            break;
+        }
+        if (enemy.bounds().left() < 0.f ||
+            enemy.bounds().right() > static_cast<float>(level->pixelWidth()))
+            leftLevel = true;
+    }
+
+    CHECK(movedLeft);
+    CHECK_MESSAGE(turned, "飞行兵撞到墙没有反向");
+    CHECK_FALSE(leftLevel);
+}
+
+TEST_CASE("Enemy - 飞行(F) 走到关卡边界也会反向（没有墙的关卡）") {
+    // 故意做一个左右都没有墙的关卡
+    const char* text = "                    \n"
+                       "                    \n"
+                       "                    \n"
+                       "                    \n"
+                       "####################";
+    Level level;
+    level.loadFromString(text);
+
+    Enemy enemy(EnemyKind::Flyer, {1 * kTile + 0.f, 1 * kTile + 0.f}, kTile, nullptr);
+
+    bool turned = false;
+    float minX = enemy.bounds().x;
+    for (int i = 0; i < 600; ++i) {
+        enemy.update(kStep, level);
+        const float x = enemy.bounds().x;
+        if (x < minX) {
+            minX = x;
+        } else if (x > minX + 0.5f) {
+            turned = true;
+            break;
+        }
+    }
+
+    CHECK(turned);
+    // 边界检查是在移动之前做的，所以最多越界一帧的位移
+    CHECK(minX > -GameConst::kFlyerSpeed * kStep - 0.001f);
+}
+
+// ============================================================
+// B 跳跃
+// ============================================================
+
+TEST_CASE("Enemy - 跳跃(B) 会落到地面，然后周期性起跳") {
+    auto level = makeRoom("                  ");
+    Enemy enemy(EnemyKind::Jumper, {8 * kTile + 0.f, 2 * kTile + 0.f}, kTile, nullptr);
+
+    // 先落地并站稳（地板在第 4 行，顶面 y = 128 → 敌人 y = 128 - 28 = 100）。
+    // 40 帧 = 0.67s：下落只要 ~0.18s，而落地后的待机是 0.9s，还不会起跳。
+    for (int i = 0; i < 40; ++i)
+        enemy.update(kStep, *level);
+    const float groundY = enemy.bounds().y;
+    REQUIRE(groundY == doctest::Approx(100.f));
+
+    int jumps = 0;
+    float minY = groundY;
+    float maxY = groundY;
+    bool onGround = true;
+    for (int i = 0; i < 300; ++i) { // 5 秒：起跳周期 ≈ 0.9s 待机 + 0.47s 滞空
+        enemy.update(kStep, *level);
+        const float y = enemy.bounds().y;
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+
+        const bool nowOnGround = y >= groundY - 0.5f;
+        if (onGround && !nowOnGround)
+            ++jumps;
+        onGround = nowOnGround;
+    }
+
+    CHECK_MESSAGE(minY < groundY - 30.f, "跳跃兵根本没有离地（起跳没生效）");
+    CHECK_MESSAGE(jumps >= 2, "跳跃兵只跳了一次 —— 不是周期性的");
+    // 每次都落回同一块地板，从不陷进去
+    CHECK(maxY - groundY < 0.5f);
+}
+
+TEST_CASE("Enemy - E 不会跳（重力只对跳跃(B) 生效）") {
+    auto level = makeRoom("                  ");
+    Enemy enemy({8 * kTile + 0.f, 3 * kTile + 0.f}, kTile, nullptr);
+    const float y0 = enemy.bounds().y;
+
+    for (int i = 0; i < 300; ++i) {
+        enemy.update(kStep, *level);
+        CHECK(enemy.bounds().y == doctest::Approx(y0));
+    }
+}
+
 ===== ./tests/test_entities.cpp =====
 #include "doctest.h"
 #include "checkpoint.h"
@@ -42960,6 +43519,7 @@ TEST_CASE("JumpPad - 弹跳速度足够") {
 
 #include <set>
 #include <string>
+#include <vector>
 
 // 全局键位表。它是单例、没有 GlResource 成员（只有一个 sf::Keyboard::Key
 // 数组），所以能在无界面环境直接测。
@@ -43029,6 +43589,41 @@ TEST_CASE("键位表 - 每个动作都有名字，且不重名") {
             names.insert(n);
     }
     CHECK(names.size() == static_cast<std::size_t>(KeyBindings::Count));
+}
+
+TEST_CASE("键位表 - 方向键是固定的兜底键，且不受改键影响") {
+    // 只给移动与跳跃兜底；暂停/重开不需要，给它们兜底反而会撞别的键
+    CHECK(KeyBindings::fallbackKey(KeyBindings::MoveLeft) == sf::Keyboard::Key::Left);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::MoveRight) == sf::Keyboard::Key::Right);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Jump) == sf::Keyboard::Key::Up);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Pause) == sf::Keyboard::Key::Unknown);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Restart) == sf::Keyboard::Key::Unknown);
+}
+
+TEST_CASE("键位表 - 兜底键与默认键位不重复，兜底键之间也不重复") {
+    KeyBindings& kb = KeyBindings::instance();
+    kb.resetToDefaults();
+
+    std::vector<sf::Keyboard::Key> seen;
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        const auto a = static_cast<KeyBindings::Action>(i);
+        const auto fb = KeyBindings::fallbackKey(a);
+        if (fb == sf::Keyboard::Key::Unknown)
+            continue;
+
+        // 兜底键撞上任何一个可配置键位都会让"改键后失效"
+        for (int j = 0; j < KeyBindings::Count; ++j) {
+            const auto b = static_cast<KeyBindings::Action>(j);
+            CHECK_MESSAGE(kb.get(b) != fb, KeyBindings::actionName(a)
+                                               << " 的兜底键与 "
+                                               << KeyBindings::actionName(b)
+                                               << " 的默认键位撞了");
+        }
+        for (auto prev : seen)
+            CHECK(prev != fb);
+        seen.push_back(fb);
+    }
+    CHECK(seen.size() == 3);
 }
 
 ===== ./tests/test_layers.cpp =====
@@ -43958,6 +44553,7 @@ TEST_CASE("Platform::openDirectory 空路径与文件返回 false") {
 #include "player.h"
 #include "level.h"
 #include "game_constants.h"
+#include "infrastructure/keybindings.h"
 #include <SFML/Window/Event.hpp>
 
 namespace {
@@ -43987,44 +44583,38 @@ Level makeEmptyLevel() {
 }
 
 void pressSpace(Player& p) {
-    sf::Event e(sf::Event::KeyPressed{
-        sf::Keyboard::Key::Space, sf::Keyboard::Scan::Space,
-        false, false, false, false});
+    sf::Event e(sf::Event::KeyPressed{sf::Keyboard::Key::Space, sf::Keyboard::Scan::Space,
+                                      false, false, false, false});
     p.handleEvent(e);
 }
 
 void releaseSpace(Player& p) {
     sf::Event e(sf::Event::KeyReleased{
-        sf::Keyboard::Key::Space, sf::Keyboard::Scan::Space,
-        false, false, false, false});
+        sf::Keyboard::Key::Space, sf::Keyboard::Scan::Space, false, false, false, false});
     p.handleEvent(e);
 }
 
 void pressD(Player& p) {
-    sf::Event e(sf::Event::KeyPressed{
-        sf::Keyboard::Key::D, sf::Keyboard::Scan::D,
-        false, false, false, false});
+    sf::Event e(sf::Event::KeyPressed{sf::Keyboard::Key::D, sf::Keyboard::Scan::D, false,
+                                      false, false, false});
     p.handleEvent(e);
 }
 
 void releaseD(Player& p) {
-    sf::Event e(sf::Event::KeyReleased{
-        sf::Keyboard::Key::D, sf::Keyboard::Scan::D,
-        false, false, false, false});
+    sf::Event e(sf::Event::KeyReleased{sf::Keyboard::Key::D, sf::Keyboard::Scan::D, false,
+                                       false, false, false});
     p.handleEvent(e);
 }
 
 void pressA(Player& p) {
-    sf::Event e(sf::Event::KeyPressed{
-        sf::Keyboard::Key::A, sf::Keyboard::Scan::A,
-        false, false, false, false});
+    sf::Event e(sf::Event::KeyPressed{sf::Keyboard::Key::A, sf::Keyboard::Scan::A, false,
+                                      false, false, false});
     p.handleEvent(e);
 }
 
 void releaseA(Player& p) {
-    sf::Event e(sf::Event::KeyReleased{
-        sf::Keyboard::Key::A, sf::Keyboard::Scan::A,
-        false, false, false, false});
+    sf::Event e(sf::Event::KeyReleased{sf::Keyboard::Key::A, sf::Keyboard::Scan::A, false,
+                                       false, false, false});
     p.handleEvent(e);
 }
 
@@ -44066,13 +44656,15 @@ TEST_CASE("Player - 按 D 向右移动") {
     Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
     REQUIRE(p.onGround());
 
     const float x0 = p.position().x;
     pressD(p);
 
-    for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 30; ++i)
+        p.update(1.f / 120.f, level);
 
     CHECK(p.position().x > x0);
     releaseD(p);
@@ -44082,13 +44674,15 @@ TEST_CASE("Player - 按 A 向左移动") {
     Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
     REQUIRE(p.onGround());
 
     const float x0 = p.position().x;
     pressA(p);
 
-    for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 30; ++i)
+        p.update(1.f / 120.f, level);
 
     CHECK(p.position().x < x0);
     releaseA(p);
@@ -44098,13 +44692,16 @@ TEST_CASE("Player - 松开方向键后停下") {
     Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
 
     pressD(p);
-    for (int i = 0; i < 30; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 30; ++i)
+        p.update(1.f / 120.f, level);
     releaseD(p);
 
-    for (int i = 0; i < 5; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 5; ++i)
+        p.update(1.f / 120.f, level);
 
     CHECK(p.velocity().x == 0.f);
 }
@@ -44113,7 +44710,8 @@ TEST_CASE("Player - 按跳离地") {
     Level level = makeWideLevel();
     Player p(level.playerSpawn());
 
-    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
     REQUIRE(p.onGround());
 
     pressSpace(p);
@@ -44129,19 +44727,23 @@ TEST_CASE("Player - 长按跳更高") {
 
     // 场景 A：按住跳不放
     Player pa(level.playerSpawn());
-    for (int i = 0; i < 120; ++i) pa.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        pa.update(1.f / 120.f, level);
     pressSpace(pa);
-    for (int i = 0; i < 30; ++i) pa.update(1.f / 120.f, level);
+    for (int i = 0; i < 30; ++i)
+        pa.update(1.f / 120.f, level);
     const float longY = pa.position().y;
     releaseSpace(pa);
 
     // 场景 B：跳起后立刻松手
     Player pb(level.playerSpawn());
-    for (int i = 0; i < 120; ++i) pb.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        pb.update(1.f / 120.f, level);
     pressSpace(pb);
     pb.update(1.f / 120.f, level);
     releaseSpace(pb);
-    for (int i = 0; i < 29; ++i) pb.update(1.f / 120.f, level);
+    for (int i = 0; i < 29; ++i)
+        pb.update(1.f / 120.f, level);
     const float shortY = pb.position().y;
 
     // 长按的 y 更小（跳得更高，y 轴向下）
@@ -44153,7 +44755,8 @@ TEST_CASE("Player - 跳跃缓冲") {
     Player p(level.playerSpawn());
 
     // 先落地
-    for (int i = 0; i < 120; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
     REQUIRE(p.onGround());
 
     // 跳出
@@ -44162,7 +44765,8 @@ TEST_CASE("Player - 跳跃缓冲") {
     releaseSpace(p);
 
     // 落地前 0.1 秒内按跳
-    for (int i = 0; i < 20; ++i) p.update(1.f / 120.f, level);
+    for (int i = 0; i < 20; ++i)
+        p.update(1.f / 120.f, level);
 
     bool jumped = false;
     for (int i = 0; i < 200; ++i) {
@@ -44171,7 +44775,8 @@ TEST_CASE("Player - 跳跃缓冲") {
             jumped = true;
             break;
         }
-        if (i == 10) pressSpace(p);   // 在空中按跳（模拟缓冲）
+        if (i == 10)
+            pressSpace(p); // 在空中按跳（模拟缓冲）
     }
 
     CHECK(jumped);
@@ -44184,7 +44789,7 @@ TEST_CASE("Player - 受伤无敌计时") {
     p.takeDamage();
     CHECK(p.isInvincible());
 
-    Level level;   // 空关卡
+    Level level; // 空关卡
     for (int i = 0; i < 200; ++i)
         p.update(1.f / 120.f, level);
 
@@ -44214,6 +44819,291 @@ TEST_CASE("Player - 掉图触发 fellOut 并回到 spawn") {
     CHECK(p.position().x == 100.f);
     CHECK(p.position().y == 200.f);
 }
+// ============================================================
+// 方向键兜底（0.3.9）
+// ============================================================
+//
+// 默认键位是 A / D / 空格，而**新玩家进游戏第一反应是按方向键**。
+// 以前按下去什么都不发生，看起来就像游戏坏了。
+//
+// 兜底键是**固定**的（不占可配置键位的那一格），所以玩家把跳跃改成 Z
+// 之后，方向键仍然能跳 —— 下面两条都要验到这个。
+
+namespace {
+
+void pressKey(Player& p, sf::Keyboard::Key k) {
+    sf::Event e(sf::Event::KeyPressed{k, sf::Keyboard::Scan::Unknown, false, false, false,
+                                      false});
+    p.handleEvent(e);
+}
+
+void releaseKey(Player& p, sf::Keyboard::Key k) {
+    sf::Event e(sf::Event::KeyReleased{k, sf::Keyboard::Scan::Unknown, false, false,
+                                       false, false});
+    p.handleEvent(e);
+}
+
+/// 按住某个键跑一段时间，返回水平位移
+float runHolding(Player& p, const Level& level, sf::Keyboard::Key k, float seconds) {
+    pressKey(p, k);
+    const float x0 = p.position().x;
+    constexpr float kStep = 1.f / 120.f;
+    for (float t = 0.f; t < seconds; t += kStep)
+        p.update(kStep, level);
+    releaseKey(p, k);
+    return p.position().x - x0;
+}
+
+} // namespace
+
+TEST_CASE("方向键兜底 - 右方向键能把玩家往右推") {
+    Level level = makeWideLevel();
+    Player p(level.playerSpawn());
+
+    const float dx = runHolding(p, level, sf::Keyboard::Key::Right, 0.3f);
+    CHECK(dx > 0.f);
+}
+
+TEST_CASE("方向键兜底 - 左方向键能把玩家往左推") {
+    Level level = makeWideLevel();
+    Player p(level.playerSpawn());
+
+    const float dx = runHolding(p, level, sf::Keyboard::Key::Left, 0.3f);
+    CHECK(dx < 0.f);
+}
+
+TEST_CASE("方向键兜底 - 上方向键能起跳") {
+    Level level = makeWideLevel();
+    Player p(level.playerSpawn());
+
+    // 先落地
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
+    const float groundY = p.position().y;
+
+    pressKey(p, sf::Keyboard::Key::Up);
+    for (int i = 0; i < 10; ++i)
+        p.update(1.f / 120.f, level);
+    releaseKey(p, sf::Keyboard::Key::Up);
+
+    CHECK(p.position().y < groundY); // y 变小 = 往上
+}
+
+TEST_CASE("方向键兜底 - 改过跳跃键之后方向键仍然管用") {
+    Level level = makeWideLevel();
+    Player p(level.playerSpawn());
+
+    // 把跳跃改到一个完全无关的键上
+    auto& kb = KeyBindings::instance();
+    const auto saved = kb.get(KeyBindings::Jump);
+    kb.set(KeyBindings::Jump, sf::Keyboard::Key::Z);
+
+    for (int i = 0; i < 120; ++i)
+        p.update(1.f / 120.f, level);
+    const float groundY = p.position().y;
+
+    // 兜底键是固定的，不该被玩家改键影响
+    pressKey(p, sf::Keyboard::Key::Up);
+    for (int i = 0; i < 10; ++i)
+        p.update(1.f / 120.f, level);
+    releaseKey(p, sf::Keyboard::Key::Up);
+
+    const bool jumped = p.position().y < groundY;
+    kb.set(KeyBindings::Jump, saved); // 还原全局单例，别污染别的用例
+    CHECK(jumped);
+}
+
+===== ./tests/test_playtest_request.cpp =====
+#include "doctest.h"
+#include "scene/playtest_request.h"
+
+#include "level.h"
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+
+namespace fs = std::filesystem;
+
+// 编辑器「试玩」的交接通道。
+//
+// 这个类本身很薄（就是一个可有可无的槽位），但它的**一次性语义**是关键的：
+// 如果 take() 之后不清空，那么"试玩 → 退出回编辑器 → 从选关页进正式关卡"
+// 这一串会让正式关卡又玩到那份旧草稿，而且没有任何提示 —— 看起来就像
+// "关卡加载错了"。
+
+namespace {
+
+std::vector<std::string> draft() {
+    return {"#####", "#P C#", "#####"};
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 取走一次之后就没有了") {
+    PlaytestRequest req;
+    CHECK(!req.has());
+
+    req.request(draft(), "editor.txt");
+    CHECK(req.has());
+
+    auto first = req.take();
+    REQUIRE(first.has_value());
+    CHECK(first->lines.size() == 3);
+    CHECK(first->sourceName == "editor.txt");
+
+    // ⚠️ 这一条是整个类的存在理由：第二次必须是空的
+    CHECK(!req.has());
+    CHECK(!req.take().has_value());
+}
+
+TEST_CASE("试玩交接 - 没有请求时 take 返回空") {
+    PlaytestRequest req;
+    CHECK(!req.take().has_value());
+    req.clear(); // 空的时候 clear 也不该有事
+    CHECK(!req.has());
+}
+
+TEST_CASE("试玩交接 - 后一次请求覆盖前一次") {
+    PlaytestRequest req;
+    req.request({"aa"}, "first.txt");
+    req.request({"bb", "cc"}, "second.txt");
+
+    auto r = req.take();
+    REQUIRE(r.has_value());
+    CHECK(r->lines.size() == 2);
+    CHECK(r->sourceName == "second.txt");
+}
+
+TEST_CASE("试玩交接 - clear 能丢掉待处理请求") {
+    PlaytestRequest req;
+    req.request(draft(), "editor.txt");
+    req.clear();
+    CHECK(!req.has());
+    CHECK(!req.take().has_value());
+}
+
+TEST_CASE("试玩交接 - 没有玩家出生点的草稿要能识别出来") {
+    // 没有 'P'：关卡能构造出来，但玩家会被摆在 (0,0)，大概率卡在边界墙里
+    CHECK(!PlaytestRequest::hasPlayerSpawn({"#####", "#   #", "#####"}));
+    CHECK(!PlaytestRequest::hasPlayerSpawn({}));
+
+    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#P  #", "#####"}));
+    // 'P' 出现在任意位置都算（行中间、行尾）
+    CHECK(PlaytestRequest::hasPlayerSpawn({"#####", "#  P#", "#####"}));
+    CHECK(PlaytestRequest::hasPlayerSpawn({"P"}));
+}
+
+TEST_CASE("试玩交接 - 空草稿也能安全地放进通道") {
+    PlaytestRequest req;
+    req.request({}, "");
+    REQUIRE(req.has());
+    auto r = req.take();
+    REQUIRE(r.has_value());
+    CHECK(r->lines.empty());
+    CHECK(r->sourceName.empty());
+}
+
+// ============================================================
+// 「编辑器里的内容 → 关卡场景能解析」——这是试玩功能真正的风险点
+// ============================================================
+//
+// 上面几条只验了交接通道本身。但试玩失败最可能的方式是：编辑器内存里的那份
+// `lines_` 格式与 `Level::loadFromString` 对不上 —— 功能表面上是通的（F5 能按、
+// 场景也切了），实际一进就弹"关卡解析失败"。
+//
+// 所以这里**原样复刻**两边的变换：
+//   EditorScene::loadFile()     去掉 '\r'、按最长行补空格到等宽
+//   EditorScene::startPlaytest()  逐行拼接、每行末尾补 '\n'
+// 然后把结果交给真的 Level 解析，并且对 assets/levels 里的**真实文件**也跑一遍。
+
+namespace {
+
+/// 复刻 EditorScene::loadFile 的读盘变换（\r 去掉、补到等宽）
+std::vector<std::string> readLikeEditor(const fs::path& path) {
+    std::vector<std::string> lines;
+    std::ifstream in(path);
+    REQUIRE(in.good());
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        lines.push_back(line);
+    }
+    std::size_t w = 0;
+    for (const auto& l : lines)
+        w = std::max(w, l.size());
+    for (auto& l : lines)
+        l.resize(w, ' ');
+    return lines;
+}
+
+/// 复刻 EditorScene::startPlaytest 的拼接
+std::string joinLikePlaytest(const std::vector<std::string>& lines) {
+    std::string text;
+    for (const auto& line : lines) {
+        text += line;
+        text += '\n';
+    }
+    return text;
+}
+
+} // namespace
+
+TEST_CASE("试玩交接 - 编辑器读过的东西一定能被关卡解析（真实关卡文件）") {
+    const fs::path dir = fs::path(PROJECT_ROOT) / "assets" / "levels";
+    REQUIRE(fs::is_directory(dir));
+
+    int checked = 0;
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".txt")
+            continue;
+        const auto lines = readLikeEditor(entry.path());
+        REQUIRE(!lines.empty());
+
+        Level level;
+        const bool ok = level.loadFromString(joinLikePlaytest(lines));
+        CHECK_MESSAGE(ok, "关卡解析失败: " << entry.path().filename().string());
+
+        // 尺寸要对得上（编辑器是按"最长行"算宽度的）
+        std::size_t w = 0;
+        for (const auto& l : lines)
+            w = std::max(w, l.size());
+        CHECK(level.width() == static_cast<int>(w));
+        CHECK(level.height() == static_cast<int>(lines.size()));
+
+        // 而且必须能通过试玩的前置检查（有玩家出生点）
+        const bool spawn = PlaytestRequest::hasPlayerSpawn(lines);
+        CHECK_MESSAGE(spawn, "没有玩家出生点: " << entry.path().filename().string());
+        ++checked;
+    }
+    CHECK(checked >= 5); // 仓库里现在有 6 个
+}
+
+TEST_CASE("试玩交接 - 编辑器新建关卡的初始格子也能被解析") {
+    // 复刻 EditorScene::loadFile 在"文件不存在"时铺的那张空框 ——
+    // 新建一个关卡直接按 F5 是最常见的用法之一
+    constexpr int w = 40;
+    constexpr int h = 22;
+    std::vector<std::string> lines(h, std::string(w, ' '));
+    for (int x = 0; x < w; ++x) {
+        lines[0][x] = '#';
+        lines[h - 1][x] = '#';
+    }
+    for (int y = 0; y < h; ++y) {
+        lines[y][0] = '#';
+        lines[y][w - 1] = '#';
+    }
+    lines[2][3] = 'P';
+
+    CHECK(PlaytestRequest::hasPlayerSpawn(lines));
+
+    Level level;
+    CHECK(level.loadFromString(joinLikePlaytest(lines)));
+    CHECK(level.width() == w);
+    CHECK(level.height() == h);
+}
+
 ===== ./tests/test_resource_manager.cpp =====
 #include "doctest.h"
 #include "core/paths.h"
@@ -44844,6 +45734,80 @@ TEST_CASE("SaveManager - pending save 取走之后就没了") {
     //    通关不记进度、星级与 PB 永不落盘。
     const SaveInfo again = box.saves->takePendingSave();
     CHECK(again.filename.empty());
+}
+
+// ============================================================
+// 每关最佳金币（0.3.9 新增字段）
+// ============================================================
+//
+// 这个字段是给"成绩页"用的：那一页要**按关**显示金币，而 `coins` 是跨关累计
+// 总数、拆不出来。加字段本身风险不大（存档是 key=value，缺键回落默认），
+// 真正危险的是**存档是整体重写的** —— 四个写盘点里漏掉一个，用另一个 setter
+// 存一次就会把新字段悄悄抹掉。下面这条测试就是盯这个。
+
+TEST_CASE("存档 - 每关最佳金币只增不减") {
+    Sandbox sb;
+    auto info = sb.saves->createSave("金币测试");
+
+    CHECK(sb.saves->setLevelBestCoins(info.filename, 1, 5));
+    // 拿得比上次少：不写盘，也不清空纪录
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 1, 3));
+    // 拿到更多：更新
+    CHECK(sb.saves->setLevelBestCoins(info.filename, 1, 8));
+    // 0 或负数不算纪录
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 2, 0));
+    // 越界的关卡序号
+    CHECK_FALSE(sb.saves->setLevelBestCoins(info.filename, 99, 5));
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    REQUIRE(back.levelBestCoins.size() >= 2);
+    CHECK(back.levelBestCoins[0] == 8);
+    CHECK(back.levelBestCoins[1] == 0);
+}
+
+TEST_CASE("存档 - 用别的 setter 存一次不会把最佳金币抹掉") {
+    Sandbox sb;
+    auto info = sb.saves->createSave("覆盖测试");
+
+    REQUIRE(sb.saves->setLevelBestCoins(info.filename, 1, 7));
+    REQUIRE(sb.saves->setLevelStar(info.filename, 1, 3));       // 另一个写盘点
+    REQUIRE(sb.saves->setLevelBestTime(info.filename, 1, 12.5f)); // 再一个
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(info.filename, back));
+    // 三个字段都得在 —— 存档整体重写时漏一个字段就是这种翻车
+    CHECK(back.levelBestCoins[0] == 7);
+    CHECK(back.levelStars[0] == 3);
+    CHECK(back.levelBestTimes[0] == doctest::Approx(12.5f));
+}
+
+TEST_CASE("存档 - 老存档没有 level_best_coins 这一行也能读") {
+    Sandbox sb;
+
+    // 手写一份"旧版本"的存档：完全没有新字段
+    const fs::path dir = sb.paths->savesDir();
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const fs::path f = dir / "legacy.conf";
+    {
+        std::ofstream out(f);
+        out << "name=旧存档\n";
+        out << "created_at=2020-01-01 00:00:00\n";
+        out << "last_played=2020-01-01 00:00:00\n";
+        out << "coins=42\n";
+        out << "current_level=3\n";
+        out << "level_stars=3,2,0,0,0,0,0,0,0\n";
+        out << "level_best_times=10.00,20.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00\n";
+    }
+
+    SaveInfo back;
+    REQUIRE(sb.saves->loadSave(f.string(), back));
+    CHECK(back.coins == 42);
+    CHECK(back.levelStars[0] == 3);
+    // 缺的字段回落到默认（9 个 0），而不是空的
+    REQUIRE(back.levelBestCoins.size() == 9);
+    CHECK(back.levelBestCoins[0] == 0);
 }
 
 ===== ./tests/test_scene_manager.cpp =====
@@ -45844,6 +46808,118 @@ TEST_CASE("恢复本页默认 - 重置本来就干净的页是无害的") {
     CHECK(cfg.size() == 1);
 
     fs::remove(f, ec);
+}
+
+===== ./tests/test_stats.cpp =====
+#include "doctest.h"
+#include "stats.h"
+
+// 成绩/统计页的纯聚合逻辑。
+//
+// 界面本身（StatsScene）构造要 sf::Font，无头环境测不了；所以把"存档 → 每关一行
+// + 总计"这段搬出来测。这里最容易写错、也最值得钉住的是**缺数据时怎么办**：
+// 老存档没有 levelBestCoins、手改坏的存档数组短一截、星级被改成 7 之类。
+
+namespace {
+
+SaveInfo makeSave(std::vector<int> stars, std::vector<float> times,
+                  std::vector<int> coins) {
+    SaveInfo s;
+    s.filename = "t.conf";
+    s.levelStars = std::move(stars);
+    s.levelBestTimes = std::move(times);
+    s.levelBestCoins = std::move(coins);
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("成绩 - 全新存档：有一行一关，但什么都没记录") {
+    const auto sum = Stats::summarize(makeSave({}, {}, {}));
+
+    CHECK(sum.levels.empty());
+    CHECK(sum.clearedLevels == 0);
+    CHECK(sum.totalStars == 0);
+    CHECK(sum.maxStars == 0);
+    CHECK(sum.anyRecord == false);
+    CHECK(sum.progress() == doctest::Approx(0.f)); // 没有关卡也不能除零
+}
+
+TEST_CASE("成绩 - 九关全空：九行、满星 27、进度 0") {
+    const auto sum = Stats::summarize(makeSave(std::vector<int>(9, 0),
+                                               std::vector<float>(9, 0.f),
+                                               std::vector<int>(9, 0)));
+
+    CHECK(sum.levels.size() == 9);
+    CHECK(sum.maxStars == 27);
+    CHECK(sum.clearedLevels == 0);
+    CHECK(sum.anyRecord == false);
+    CHECK(sum.progress() == doctest::Approx(0.f));
+    CHECK(sum.levels[0].level == 1); // 行号从 1 开始（关卡序号也是）
+    CHECK(sum.levels[8].level == 9);
+}
+
+TEST_CASE("成绩 - 部分通关：总计按有记录的累加") {
+    auto save = makeSave({3, 2, 0, 1, 0, 0, 0, 0, 0},
+                         {10.f, 20.f, 0.f, 30.f, 0.f, 0.f, 0.f, 0.f, 0.f},
+                         {5, 0, 0, 7, 0, 0, 0, 0, 0});
+    const auto sum = Stats::summarize(save);
+
+    CHECK(sum.clearedLevels == 3); // 星级 > 0 的三关
+    CHECK(sum.totalStars == 6);
+    CHECK(sum.maxStars == 27);
+    // 没打过的那几关是 0，不该把总时间拉低（只累加有记录的）
+    CHECK(sum.totalBestTime == doctest::Approx(60.f));
+    CHECK(sum.totalBestCoins == 12);
+    CHECK(sum.anyRecord == true);
+    CHECK(sum.progress() == doctest::Approx(3.f / 9.f));
+
+    CHECK(sum.levels[0].cleared == true);
+    CHECK(sum.levels[2].cleared == false);
+    CHECK(sum.levels[2].bestTime == doctest::Approx(0.f));
+}
+
+TEST_CASE("成绩 - 数组长度不齐时按最长的算，缺的当 0") {
+    // 老存档：有星级、有时间，但没有 best coins（那个字段是新加的）
+    const auto sum = Stats::summarize(makeSave({3, 1, 0, 0, 0, 0, 0, 0, 0},
+                                               {10.f, 20.f}, {5}));
+
+    CHECK(sum.levels.size() == 9); // 以最长的 levelStars 为准
+    CHECK(sum.levels[0].bestCoins == 5);
+    CHECK(sum.levels[1].bestCoins == 0); // 越过了 coins 数组
+    CHECK(sum.levels[1].bestTime == doctest::Approx(20.f));
+    CHECK(sum.levels[4].bestTime == doctest::Approx(0.f)); // 越过了 times 数组
+    CHECK(sum.levels[4].stars == 0);
+}
+
+TEST_CASE("成绩 - 星级越界会被夹回 0~3，不会算出 100% 以上") {
+    // 手改坏 / 未来版本加了更多星级：进度条不能算出 >100%
+    const auto sum = Stats::summarize(makeSave({7, -2, 3}, {}, {}));
+
+    CHECK(sum.levels[0].stars == 3);
+    CHECK(sum.levels[1].stars == 0);
+    CHECK(sum.levels[2].stars == 3);
+    CHECK(sum.totalStars == 6);
+    CHECK(sum.clearedLevels == 2);
+    CHECK(sum.progress() <= 1.f);
+}
+
+TEST_CASE("成绩 - 只有最佳时间没有星级也算有记录") {
+    // 理论上不会出现（通关才有时间），但存档是可以被手改的
+    const auto sum = Stats::summarize(makeSave({}, {12.f}, {}));
+
+    CHECK(sum.levels.size() == 1);
+    CHECK(sum.clearedLevels == 0);
+    CHECK(sum.anyRecord == true); // 有记录，界面不该显示"还没玩过"
+    CHECK(sum.totalBestTime == doctest::Approx(12.f));
+}
+
+TEST_CASE("成绩 - 只有金币也算有记录") {
+    const auto sum = Stats::summarize(makeSave({}, {}, {4}));
+    CHECK(sum.levels.size() == 1);
+    CHECK(sum.totalBestCoins == 4);
+    CHECK(sum.anyRecord == true);
+    CHECK(sum.clearedLevels == 0);
 }
 
 ===== ./tests/test_vec2.cpp =====

@@ -3,6 +3,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 // 全局键位表。它是单例、没有 GlResource 成员（只有一个 sf::Keyboard::Key
 // 数组），所以能在无界面环境直接测。
@@ -72,4 +73,39 @@ TEST_CASE("键位表 - 每个动作都有名字，且不重名") {
             names.insert(n);
     }
     CHECK(names.size() == static_cast<std::size_t>(KeyBindings::Count));
+}
+
+TEST_CASE("键位表 - 方向键是固定的兜底键，且不受改键影响") {
+    // 只给移动与跳跃兜底；暂停/重开不需要，给它们兜底反而会撞别的键
+    CHECK(KeyBindings::fallbackKey(KeyBindings::MoveLeft) == sf::Keyboard::Key::Left);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::MoveRight) == sf::Keyboard::Key::Right);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Jump) == sf::Keyboard::Key::Up);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Pause) == sf::Keyboard::Key::Unknown);
+    CHECK(KeyBindings::fallbackKey(KeyBindings::Restart) == sf::Keyboard::Key::Unknown);
+}
+
+TEST_CASE("键位表 - 兜底键与默认键位不重复，兜底键之间也不重复") {
+    KeyBindings& kb = KeyBindings::instance();
+    kb.resetToDefaults();
+
+    std::vector<sf::Keyboard::Key> seen;
+    for (int i = 0; i < KeyBindings::Count; ++i) {
+        const auto a = static_cast<KeyBindings::Action>(i);
+        const auto fb = KeyBindings::fallbackKey(a);
+        if (fb == sf::Keyboard::Key::Unknown)
+            continue;
+
+        // 兜底键撞上任何一个可配置键位都会让"改键后失效"
+        for (int j = 0; j < KeyBindings::Count; ++j) {
+            const auto b = static_cast<KeyBindings::Action>(j);
+            CHECK_MESSAGE(kb.get(b) != fb, KeyBindings::actionName(a)
+                                               << " 的兜底键与 "
+                                               << KeyBindings::actionName(b)
+                                               << " 的默认键位撞了");
+        }
+        for (auto prev : seen)
+            CHECK(prev != fb);
+        seen.push_back(fb);
+    }
+    CHECK(seen.size() == 3);
 }

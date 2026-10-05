@@ -10,8 +10,8 @@
 #include <cmath>
 
 Player::Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet)
-    : pos_(spawn), spawn_(spawn) {
-
+      : pos_(spawn),
+        spawn_(spawn) {
     // 无 sprite 模式（测试用）：跳过所有纹理/动画初始化
     if (!sheet)
         return;
@@ -25,13 +25,11 @@ Player::Player(Vec2 spawn, std::shared_ptr<sf::Texture> sheet)
     const int fw = PlayerSpriteFactory::kFrameW;
     const int fh = PlayerSpriteFactory::kFrameH;
 
-    auto makeFrame = [&](int index) {
-        return sf::IntRect({index * fw, 0}, {fw, fh});
-    };
+    auto makeFrame = [&](int index) { return sf::IntRect({index * fw, 0}, {fw, fh}); };
 
-    animator_.addClip("idle", {{makeFrame(0), makeFrame(1)}, 4.f,  true});
-    animator_.addClip("run",  {{makeFrame(2), makeFrame(3),
-                               makeFrame(4), makeFrame(5)}, 12.f, true});
+    animator_.addClip("idle", {{makeFrame(0), makeFrame(1)}, 4.f, true});
+    animator_.addClip(
+        "run", {{makeFrame(2), makeFrame(3), makeFrame(4), makeFrame(5)}, 12.f, true});
     animator_.addClip("jump", {{makeFrame(6)}, 1.f, false});
     animator_.addClip("fall", {{makeFrame(7)}, 1.f, false});
 
@@ -54,12 +52,12 @@ void Player::respawn(Vec2 spawn) {
     prevOnGround_ = false;
     currentScale_ = {1.f, 1.f};
     targetScale_ = {1.f, 1.f};
-    keyboardLeft_  = false;
+    keyboardLeft_ = false;
     keyboardRight_ = false;
-    keyboardJump_  = false;
-    gamepadLeft_   = false;
-    gamepadRight_  = false;
-    gamepadJump_   = false;
+    keyboardJump_ = false;
+    gamepadLeft_ = false;
+    gamepadRight_ = false;
+    gamepadJump_ = false;
 }
 
 void Player::takeDamage() {
@@ -78,45 +76,58 @@ void Player::setInvincible(bool e) {
 }
 
 void Player::handleEvent(const sf::Event& event) {
-    const auto kbLeft  = KeyBindings::instance().get(KeyBindings::MoveLeft);
-    const auto kbRight = KeyBindings::instance().get(KeyBindings::MoveRight);
-    const auto kbJump  = KeyBindings::instance().get(KeyBindings::Jump);
+    auto& bindings = KeyBindings::instance();
+    const auto kbLeft = bindings.get(KeyBindings::MoveLeft);
+    const auto kbRight = bindings.get(KeyBindings::MoveRight);
+    const auto kbJump = bindings.get(KeyBindings::Jump);
+
+    // 可配置键位之外再固定接受方向键：新玩家会先按方向键，不兜底的话
+    // 按什么都没反应，看起来就像游戏坏了。见 KeyBindings::fallbackKey()。
+    const auto fbLeft = KeyBindings::fallbackKey(KeyBindings::MoveLeft);
+    const auto fbRight = KeyBindings::fallbackKey(KeyBindings::MoveRight);
+    const auto fbJump = KeyBindings::fallbackKey(KeyBindings::Jump);
 
     if (const auto* kp = event.getIf<sf::Event::KeyPressed>()) {
-        if (kp->code == kbLeft)  keyboardLeft_  = true;
-        if (kp->code == kbRight) keyboardRight_ = true;
-        if (kp->code == kbJump) {
-            if (!keyboardJump_) jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
+        if (kp->code == kbLeft || kp->code == fbLeft)
+            keyboardLeft_ = true;
+        if (kp->code == kbRight || kp->code == fbRight)
+            keyboardRight_ = true;
+        if (kp->code == kbJump || kp->code == fbJump) {
+            if (!keyboardJump_)
+                jumpBufferTimer_ = GameConst::kPlayerJumpBuffer;
             keyboardJump_ = true;
         }
     }
     if (const auto* kr = event.getIf<sf::Event::KeyReleased>()) {
-        if (kr->code == kbLeft)  keyboardLeft_  = false;
-        if (kr->code == kbRight) keyboardRight_ = false;
-        if (kr->code == kbJump)  keyboardJump_ = false;
+        if (kr->code == kbLeft || kr->code == fbLeft)
+            keyboardLeft_ = false;
+        if (kr->code == kbRight || kr->code == fbRight)
+            keyboardRight_ = false;
+        if (kr->code == kbJump || kr->code == fbJump)
+            keyboardJump_ = false;
     }
 }
 
 void Player::handleGamepad() {
     if (!gamepadEnabled_) {
-        gamepadLeft_  = false;
+        gamepadLeft_ = false;
         gamepadRight_ = false;
-        gamepadJump_  = false;
+        gamepadJump_ = false;
         return;
     }
 
     auto& gp = Gamepad::instance();
     if (!gp.isConnected()) {
-        gamepadLeft_  = false;
+        gamepadLeft_ = false;
         gamepadRight_ = false;
-        gamepadJump_  = false;
+        gamepadJump_ = false;
         return;
     }
 
     float x = gp.leftX();
     constexpr float T = GamepadConfig::kMoveStickThreshold;
-    gamepadLeft_  = (x < -T) || gp.dpadLeft();
-    gamepadRight_ = (x >  T) || gp.dpadRight();
+    gamepadLeft_ = (x < -T) || gp.dpadLeft();
+    gamepadRight_ = (x > T) || gp.dpadRight();
 
     bool jumpNow = gp.jumpPressed();
     if (jumpNow && !gamepadJump_) {
@@ -126,19 +137,26 @@ void Player::handleGamepad() {
 }
 
 void Player::update(float dt, const Level& level) {
-    if (invincibleTimer_ > 0.f) invincibleTimer_ -= dt;
+    if (invincibleTimer_ > 0.f)
+        invincibleTimer_ -= dt;
 
     // 合并输入：手柄方向优先，键盘作为后备
     float dir = 0.f;
-    if (keyboardLeft_)  dir -= 1.f;
-    if (keyboardRight_) dir += 1.f;
-    if (gamepadLeft_)       dir = -1.f;
-    else if (gamepadRight_) dir =  1.f;
+    if (keyboardLeft_)
+        dir -= 1.f;
+    if (keyboardRight_)
+        dir += 1.f;
+    if (gamepadLeft_)
+        dir = -1.f;
+    else if (gamepadRight_)
+        dir = 1.f;
 
     vel_.x = dir * GameConst::kPlayerMoveSpeed;
 
-    if (onGround_) coyoteTimer_ = GameConst::kPlayerCoyoteTime;
-    else           coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
+    if (onGround_)
+        coyoteTimer_ = GameConst::kPlayerCoyoteTime;
+    else
+        coyoteTimer_ = std::max(0.f, coyoteTimer_ - dt);
     jumpBufferTimer_ = std::max(0.f, jumpBufferTimer_ - dt);
 
     bool jumpHeld = keyboardJump_ || gamepadJump_;
@@ -151,12 +169,15 @@ void Player::update(float dt, const Level& level) {
         onGround_ = false;
         justJumped_ = true;
     }
-    if (!jumpHeld) jumpConsumed_ = false;
+    if (!jumpHeld)
+        jumpConsumed_ = false;
 
-    if (!jumpHeld && vel_.y < 0.f) vel_.y *= 0.5f;
+    if (!jumpHeld && vel_.y < 0.f)
+        vel_.y *= 0.5f;
 
     vel_.y += GameConst::kPlayerGravity * dt;
-    if (vel_.y > GameConst::kPlayerMaxFall) vel_.y = GameConst::kPlayerMaxFall;
+    if (vel_.y > GameConst::kPlayerMaxFall)
+        vel_.y = GameConst::kPlayerMaxFall;
 
     onGround_ = false;
     moveHorizontal(vel_.x * dt, level);
@@ -168,7 +189,8 @@ void Player::update(float dt, const Level& level) {
         vel_ = {0.f, 0.f};
     }
 
-    if (onGround_ && !prevOnGround_) justLanded_ = true;
+    if (onGround_ && !prevOnGround_)
+        justLanded_ = true;
     prevOnGround_ = onGround_;
 
     if (justJumped_) {
@@ -186,8 +208,10 @@ void Player::update(float dt, const Level& level) {
 
 void Player::updateAnimation(float dt) {
     if (!onGround_) {
-        if (vel_.y < 0.f) animator_.play("jump");
-        else              animator_.play("fall");
+        if (vel_.y < 0.f)
+            animator_.play("jump");
+        else
+            animator_.play("fall");
     } else if (std::abs(vel_.x) > 1.f) {
         animator_.play("run");
     } else {
@@ -197,7 +221,8 @@ void Player::updateAnimation(float dt) {
 }
 
 void Player::moveHorizontal(float dx, const Level& level) {
-    if (dx == 0.f) return;
+    if (dx == 0.f)
+        return;
 
     float targetX = pos_.x + dx;
     AABB box{targetX, pos_.y, size_.x, size_.y};
@@ -210,9 +235,12 @@ void Player::moveHorizontal(float dx, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty)) continue;
-            if (dx > 0.f) pos_.x = static_cast<float>(tx * ts) - size_.x;
-            else          pos_.x = static_cast<float>((tx + 1) * ts);
+            if (!level.isSolid(tx, ty))
+                continue;
+            if (dx > 0.f)
+                pos_.x = static_cast<float>(tx * ts) - size_.x;
+            else
+                pos_.x = static_cast<float>((tx + 1) * ts);
             vel_.x = 0.f;
             return;
         }
@@ -221,7 +249,8 @@ void Player::moveHorizontal(float dx, const Level& level) {
 }
 
 void Player::moveVertical(float dy, const Level& level) {
-    if (dy == 0.f) return;
+    if (dy == 0.f)
+        return;
 
     float targetY = pos_.y + dy;
     AABB box{pos_.x, targetY, size_.x, size_.y};
@@ -234,7 +263,8 @@ void Player::moveVertical(float dy, const Level& level) {
 
     for (int ty = ty0; ty <= ty1; ++ty) {
         for (int tx = tx0; tx <= tx1; ++tx) {
-            if (!level.isSolid(tx, ty)) continue;
+            if (!level.isSolid(tx, ty))
+                continue;
             if (dy > 0.f) {
                 pos_.y = static_cast<float>(ty * ts) - size_.y;
                 onGround_ = true;
@@ -251,7 +281,8 @@ void Player::moveVertical(float dy, const Level& level) {
 void Player::render(sf::RenderTarget& target) const {
     if (invincibleTimer_ > 0.f) {
         auto ms = static_cast<int>(invincibleTimer_ * 1000.f);
-        if ((ms / 100) % 2 == 0) return;
+        if ((ms / 100) % 2 == 0)
+            return;
     }
 
     if (!animationEnabled_ || !sprite_) {
@@ -266,9 +297,6 @@ void Player::render(sf::RenderTarget& target) const {
 
     animator_.applyTo(*sprite_);
     sprite_->setScale(currentScale_);
-    sprite_->setPosition({
-        pos_.x + size_.x * 0.5f,
-        pos_.y + size_.y
-    });
+    sprite_->setPosition({pos_.x + size_.x * 0.5f, pos_.y + size_.y});
     target.draw(*sprite_);
 }

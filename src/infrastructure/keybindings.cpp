@@ -16,6 +16,19 @@ KeyBindings::KeyBindings() {
     resetToDefaults();
 }
 
+sf::Keyboard::Key KeyBindings::fallbackKey(Action a) {
+    switch (a) {
+    case MoveLeft:
+        return sf::Keyboard::Key::Left;
+    case MoveRight:
+        return sf::Keyboard::Key::Right;
+    case Jump:
+        return sf::Keyboard::Key::Up;
+    default:
+        return sf::Keyboard::Key::Unknown;
+    }
+}
+
 void KeyBindings::resetToDefaults() {
     for (int i = 0; i < Count; ++i)
         keys_[i] = kDefaults[i];

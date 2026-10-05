@@ -183,7 +183,15 @@ code = app.exec();
     不要再用已删除的 `core/logging.h` 转发头。
 15. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
     `boot()` 只负责按"底层在前"的顺序调用它们。
-16. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
+16. **新玩家第一反应是方向键**。默认键位是 `A` / `D` / `空格`（见
+    `keybindings.cpp` 的 `kDefaults`），但方向键是**固定兜底**
+    （`KeyBindings::fallbackKey()`：← → ↑ 对应左/右/跳），由
+    `Player::handleEvent` 在校验可配置键位之外一并接受。
+    加新的"会移动的角色"时照这个来 —— 只改默认值没用（键位是可配置的），
+    把方向键塞进可配置键位更不行（一个动作只有一格，会覆盖玩家的设置）。
+    菜单那边同理：`FocusGroup` 现在方向键/WASD 移动、**Enter** 激活
+    （不用 Space —— 游戏里 Space 是跳跃，暂停菜单开着时会双触发）。
+17. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
     `include/utils` 与 `include/infrastructure` **刻意不在 include 路径里**，
     这样平铺写法根本编译不过，跨层依赖在 include 行上直接可见。
 
@@ -490,6 +498,21 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 改完这类东西**不要只看本地构建**：`git push` 之后用
 `gh run watch` 看 `build.yml` 六个 job 的结果（Arch / Ubuntu / macOS /
 Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
+
+### 存档格式（`save_manager.cpp`）
+
+`config/saves/*.conf` 是扁平的 `key=value`，**整体重写**：每个 setter 都
+`loadSave` → 改一个字段 → 把**全部**字段重新写一遍。
+
+⚠️ **每加一个字段，要改五个地方**：`createSave` / `updateProgress` /
+`setLevelStar` / `setLevelBestTime` / 各自的 setter —— 漏掉任何一个，
+用另一个 setter 存一次就会把新字段悄悄抹掉。
+（`tests/test_save_manager.cpp` 里有一条专门盯它：存完金币再用另外两个 setter
+各存一次，三个字段必须都还在。真要收拾就把写盘收成一个 `writeSave(info)`。）
+
+新增字段本身是**向后兼容**的：老存档没有那一行 → 解析端回落默认值。
+但默认值要么在 `loadSave` 开头铺好（`levelBestCoins` 就是 9 个 0），
+要么在解析分支里补到 9 项 —— 给成空数组的话 setter 会因"关卡序号越界"直接失败。
 
 ### 项目自身
 
