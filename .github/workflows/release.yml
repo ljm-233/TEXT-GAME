@@ -102,13 +102,20 @@ jobs:
 
           APP=$(ls -d /tmp/verify/*.app | head -1)
           test -n "$APP" || { echo "包根下没有 .app"; exit 1; }
-          # 从 Info.plist 问出可执行文件名，别按 target 名猜 ——
-          # MACOSX_BUNDLE_BUNDLE_NAME 只写 plist，不改 .app 目录名与文件名
-          EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")
-          BIN="$APP/Contents/MacOS/$EXE"
           FW="$APP/Contents/Frameworks"
-          echo "bundle: $APP"
-          echo "可执行文件: $EXE"
+
+          echo "== 包内布局 =="
+          find /tmp/verify -maxdepth 4 | sort | head -40
+
+          echo "== Info.plist =="
+          test -f "$APP/Contents/Info.plist" || { echo "bundle 里没有 Info.plist"; exit 1; }
+          plutil -p "$APP/Contents/Info.plist" || true
+
+          # 可执行文件 = Contents/MacOS 下唯一带可执行位的普通文件
+          # （assets/ 是目录，-type f 会把它排除）
+          BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -u+x | head -1)
+          test -n "$BIN" || { echo "bundle 里没有可执行文件"; exit 1; }
+          echo "可执行文件: $BIN"
           test -x "$BIN"
 
           echo "== 布局 =="
