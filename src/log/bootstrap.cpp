@@ -1,7 +1,7 @@
 #include "log/bootstrap.h"
 
-#include "config/bootstrap_config.h"
 #include "config/keys.h"
+#include "core/paths.h"
 #include "config/preferences.h"
 #include "log/formatters/console_formatter.h"
 #include "log/formatters/text_formatter.h"
@@ -36,7 +36,9 @@ void registerLog(Container& container) {
     // 需要 bootstrap_config 才能确定 config 目录；没注册就干脆不提供文件落点，
     // 让"只有控制台"成为合法配置，而不是抛异常。
     container.reg<FileHandler>("log_file", [&container]() {
-        auto cfg = container.require<BootstrapConfig>("bootstrap_config");
+        // 日志落在**用户配置目录**，不是资源目录 —— 它是可写的运行时产物，
+        // 归 Paths 管（ResourceManager 只管随包发布的只读资源）
+        auto paths = container.require<Paths>("paths");
         auto prefs = container.tryGet<Preferences>("preferences");
 
         const int rotateIndex = clampLogRotationIndex(
@@ -45,7 +47,7 @@ void registerLog(Container& container) {
             prefs ? prefs->getInt(ConfigKey::kLogKeep, 1) : 1);
 
         auto handler = std::make_shared<FileHandler>(
-            cfg->configFile("app.log").string(),
+            (paths->configDir() / "app.log").string(),
             logRotationSizeAt(rotateIndex),
             logRotationKeepAt(keepIndex));
         handler->setFormatter(std::make_shared<TextFormatter>());

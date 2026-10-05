@@ -4,6 +4,7 @@
 #include "game_world.h"
 #include "save_manager.h"
 #include "preferences.h"
+#include "resource_manager.h"
 #include "pause_menu.h"
 #include "parallax.h"
 #include "level_intro.h"
@@ -14,11 +15,12 @@
 
 class GameScene : public Scene {
 public:
-    GameScene(std::shared_ptr<Background>  background,
-              const sf::Font&              font,
-              std::shared_ptr<Logger>      logger,
-              std::shared_ptr<SaveManager> saveManager,
-              std::shared_ptr<Preferences> preferences);
+    GameScene(std::shared_ptr<Background>      background,
+              const sf::Font&                  font,
+              std::shared_ptr<Logger>          logger,
+              std::shared_ptr<SaveManager>     saveManager,
+              std::shared_ptr<Preferences>     preferences,
+              std::shared_ptr<ResourceManager> resources);
 
     void onEnter() override;
     void onResume() override;
@@ -50,10 +52,11 @@ private:
     void applyStars();
     void checkAchievements();
 
-    std::shared_ptr<Background>  background_;
-    std::shared_ptr<Logger>      logger_;
-    std::shared_ptr<SaveManager> saveManager_;
-    std::shared_ptr<Preferences> preferences_;
+    std::shared_ptr<Background>      background_;
+    std::shared_ptr<Logger>          logger_;
+    std::shared_ptr<SaveManager>     saveManager_;
+    std::shared_ptr<Preferences>     preferences_;
+    std::shared_ptr<ResourceManager> resources_;
     SaveInfo                     save_;
     const sf::Font*              font_ = nullptr;
 

@@ -10,9 +10,13 @@
 
 namespace fs = std::filesystem;
 
-SaveManager::SaveManager(std::shared_ptr<RuntimeConfig> config,
+SaveManager::SaveManager(std::shared_ptr<Paths> paths,
                          std::shared_ptr<Logger> logger)
-    : config_(std::move(config)), logger_(std::move(logger)) {}
+    : paths_(std::move(paths)), logger_(std::move(logger)) {}
+
+fs::path SaveManager::savePath(const std::string& filename) const {
+    return paths_->savesDir() / filename;
+}
 
 std::string SaveManager::currentTimestamp() const {
     auto now = std::chrono::system_clock::now();
@@ -73,7 +77,7 @@ std::vector<float> SaveManager::parseTimes(const std::string& s) {
 
 std::vector<SaveInfo> SaveManager::listSaves() const {
     std::vector<SaveInfo> result;
-    auto dir = config_->savesDir();
+    auto dir = paths_->savesDir();
     if (!fs::exists(dir)) return result;
 
     for (const auto& entry : fs::directory_iterator(dir)) {
@@ -110,7 +114,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
     info.levelStars   = std::vector<int>(9, 0);
     info.levelBestTimes = std::vector<float>(9, 0.f);
 
-    auto path = config_->saveFile(filename);
+    auto path = savePath(filename);
     std::ofstream out(path);
     if (!out) {
         logger_->error("创建存档失败: 无法写入 " + path.string());
@@ -134,7 +138,7 @@ SaveInfo SaveManager::createSave(const std::string& customName) {
 }
 
 bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
-    auto path = config_->saveFile(filename);
+    auto path = savePath(filename);
     std::ifstream in(path);
     if (!in) return false;
 
@@ -179,7 +183,7 @@ bool SaveManager::loadSave(const std::string& filename, SaveInfo& out) const {
 }
 
 bool SaveManager::deleteSave(const std::string& filename) {
-    auto path = config_->saveFile(filename);
+    auto path = savePath(filename);
     if (!fs::exists(path)) return false;
     std::error_code ec;
     fs::remove(path, ec);
@@ -200,7 +204,7 @@ bool SaveManager::updateProgress(const std::string& filename,
     info.currentLevel = std::max(info.currentLevel, currentLevel);
     info.lastPlayed   = currentTimestamp();
 
-    auto path = config_->saveFile(filename);
+    auto path = savePath(filename);
     std::ofstream out(path);
     if (!out) return false;
     out << "name="             << info.name         << '\n';
@@ -225,7 +229,7 @@ bool SaveManager::setLevelStar(const std::string& filename,
         info.levelStars[idx] = stars;
         info.lastPlayed = currentTimestamp();
 
-        auto path = config_->saveFile(filename);
+        auto path = savePath(filename);
         std::ofstream out(path);
         if (!out) return false;
         out << "name="             << info.name         << '\n';
@@ -256,7 +260,7 @@ bool SaveManager::setLevelBestTime(const std::string& filename,
         info.levelBestTimes[idx] = seconds;
         info.lastPlayed = currentTimestamp();
 
-        auto path = config_->saveFile(filename);
+        auto path = savePath(filename);
         std::ofstream out(path);
         if (!out) return false;
         out << "name="             << info.name         << '\n';

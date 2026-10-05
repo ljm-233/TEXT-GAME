@@ -4,6 +4,7 @@
 #include "core/game.h"
 #include "utils/lang.h"
 #include "core/paths.h"
+#include "core/resource_manager.h"
 #include "core/platform.h"
 #include "core/scene_registry.h"
 #include "log/logger.h"
@@ -70,8 +71,8 @@ std::shared_ptr<Window> makeWindow(Container& container) {
         static_cast<float>(prefs->getDouble(ConfigKey::kRenderScale, 1.0)));
 
     // 超分 shader（失败则自动回退到双线性）
-    auto paths = container.require<Paths>("paths");
-    window->loadUpscaler((paths->assetsDir() / "shaders").string());
+    auto resources = container.require<ResourceManager>("resources");
+    window->loadUpscaler(resources->dir("shaders").string());
 
     // 恢复后处理参数
     auto& pp = window->postProcess();
@@ -105,30 +106,38 @@ void registerCore(Container& container) {
     // config 层的 registerConfig() 负责注册，它们在解析期回头来要这个 Paths。
     container.reg<Paths>("paths", []() { return std::make_shared<Paths>(); });
 
+    // 静态资源寻址。跟着 Paths 走（同一层），所以资源根只有一处定义。
+    // 用户可写目录不在这里 —— 那些仍然由 Paths 提供（跟机器绑定、落在 XDG）。
+    container.reg<ResourceManager>("resources", [&container]() {
+        return std::make_shared<ResourceManager>(*container.require<Paths>("paths"));
+    });
+
     // ---------------- 前端资源 ----------------
     container.reg<Window>("window", [&container]() { return makeWindow(container); });
 
     container.reg<Background>("background", [&container]() {
-        auto paths = container.require<Paths>("paths");
+        auto resources = container.require<ResourceManager>("resources");
         auto prefs = container.require<Preferences>("preferences");
         auto window = container.require<Window>("window");
         auto logger = container.require<Logger>("logger");
 
         const auto size = window->native().getSize();
-        return std::make_shared<Background>(paths->wallpaperDir(),
+        return std::make_shared<Background>(resources->dir("wallpaper"),
                                             prefs->get(ConfigKey::kCurrentWallpaper, ""),
                                             size.x, size.y, logger);
     });
 
     container.reg<FontHolder>("font_holder", [&container]() {
-        auto cfg = container.require<BootstrapConfig>("bootstrap_config");
+        auto resources = container.require<ResourceManager>("resources");
         auto logger = container.require<Logger>("logger");
-        return std::make_shared<FontHolder>(cfg->assetFile("font.ttf"), logger);
+        return std::make_shared<FontHolder>(resources->get("assets", "font.ttf"),
+                                            logger);
     });
 
     // ---------------- 存档 ----------------
     container.reg<SaveManager>("save_manager", [&container]() {
-        return std::make_shared<SaveManager>(container.require<RuntimeConfig>("runtime_config"),
+        // 只给 Paths：存档全在 saves/ 下，跟配置内容无关
+        return std::make_shared<SaveManager>(container.require<Paths>("paths"),
                                              container.require<Logger>("logger"));
     });
 
@@ -203,7 +212,8 @@ void applyPreferences(Container& container) {
     // 多语言
     {
         auto& lang = Lang::instance();
-        lang.setLangDir((container.require<Paths>("paths")->assetsDir() / "lang").string());
+        lang.setLangDir(
+            container.require<ResourceManager>("resources")->dir("lang").string());
         lang.scanAvailable();
 
         std::string code = prefs->get(ConfigKey::kLanguage, "zh");
@@ -267,6 +277,8 @@ void logStartupInfo(Container& container) {
     logger->info("配置目录: " + paths->configDir().string());
     logger->info("存档目录: " + paths->savesDir().string());
     logger->info("资源目录: " + paths->assetsDir().string());
+    // 别名表整张打出来：资源找不到时第一件事就是看它
+    logger->info(container.require<ResourceManager>("resources")->str());
     logger->info("系统配置目录: " + Platform::userConfigDir().string());
     logger->info("系统缓存目录: " + Platform::userCacheDir().string());
 }

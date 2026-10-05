@@ -42,15 +42,17 @@ struct ScopeTimer {
 };
 }
 
-GameScene::GameScene(std::shared_ptr<Background>  background,
-                     const sf::Font&              font,
-                     std::shared_ptr<Logger>      logger,
-                     std::shared_ptr<SaveManager> saveManager,
-                     std::shared_ptr<Preferences> preferences)
+GameScene::GameScene(std::shared_ptr<Background>      background,
+                     const sf::Font&                  font,
+                     std::shared_ptr<Logger>          logger,
+                     std::shared_ptr<SaveManager>     saveManager,
+                     std::shared_ptr<Preferences>     preferences,
+                     std::shared_ptr<ResourceManager> resources)
     : background_(std::move(background)),
       logger_(std::move(logger)),
       saveManager_(std::move(saveManager)),
       preferences_(std::move(preferences)),
+      resources_(std::move(resources)),
       font_(&font),
       hudText_(font, sf::String(), 20),
       overlayTitle_(font, sf::String(), 48),
@@ -234,8 +236,7 @@ void GameScene::subscribeWorldEvents() {
 }
 
 bool GameScene::loadLevel(int index) {
-    auto levelPath = preferences_->assetFile(
-        "levels/level" + std::to_string(index) + ".txt");
+    auto levelPath = resources_->get("levels", "level" + std::to_string(index) + ".txt");
     std::string path = levelPath.string();
 
     if (!std::filesystem::exists(path)) {
@@ -536,8 +537,7 @@ bool GameScene::advanceToNextLevel() {
     if (next > kMaxLevels) return false;
 
     // 先确认关卡文件存在，避免 loadLevel 打 error 日志
-    auto nextPath = preferences_->assetFile(
-        "levels/level" + std::to_string(next) + ".txt");
+    auto nextPath = resources_->get("levels", "level" + std::to_string(next) + ".txt");
     if (!std::filesystem::exists(nextPath)) return false;
 
     if (!loadLevel(next)) return false;

@@ -24,6 +24,7 @@ add_executable(unit_tests
     test_editor_tools.cpp
     test_focus_nav.cpp
     test_background.cpp
+    test_resource_manager.cpp
     test_config_seeding.cpp
 )
 

@@ -57,7 +57,8 @@ include/ 和 src/ 一一对应，共 9 个层（从叶子到顶层）：
   log/            日志三层：Logger / LogFormatter / LogHandler
                   + formatters/ + handlers/ + rotation + bootstrap
   core/           Container / Application / MainLoop / SceneRegistry /
-                  SceneManager / Game / Paths / Platform / Achievement
+                  SceneManager / Game / Paths / ResourceManager /
+                  Platform / Achievement
   ui/             UI 组件与渲染（Button / Slider / TextInput / Window /
                   Upscaler / PostProcessor / Console / SoundManager /
                   Notification / Theme / ParticleSystem ...）
@@ -138,19 +139,36 @@ code = app.exec();
 6. **配置读写走 `Config::set*/get*`**，写盘由 `flush()` 统一处理。
    **键名必须用 `include/config/keys.h` 的常量**，不要再写字面量 ——
    写错字只会静默回退默认值，不会报错。
-7. **物理常量放 `include/game/game_constants.h`**（只放游戏自己的常量，
+   `Config` **只管键值**：以前它还兼职转发 `Paths` 的那几个目录方法
+   （`assetFile` / `saveFile` / `assetsDir` …），同一个路径有两套入口，
+   而且为此让 config 层反向依赖 core。0.3.7 起这些转发全删了。
+7. **资源路径一律走 `ResourceManager` 的别名**，不要自己拼：
+   ```cpp
+   resources->get("levels", "level1.txt")   // ✅
+   resources->dir("shaders")                // ✅
+   paths->assetsDir() / "levels" / "x.txt"  // ❌ 散落、无防护
+   ```
+   别名表（`assets` / `levels` / `shaders` / `lang` / `defaults` / `wallpaper`）
+   是"某个资源在包里的哪一层"的**唯一**定义处。加新资源目录 =
+   在 `ResourceManager` 构造里加一行 `add(...)`。
+   `get()` 带路径穿越防护（归一化后必须仍在别名子树内）；
+   配置值里的 `${path:别名}` 由 `Config::get()` 自动展开
+   （`Config` 用裸路径构造时没有资源表，原样返回）。
+   **用户可写目录（config / saves / cache / temp）不走别名** ——
+   那些跟机器绑定、落在 XDG 下，仍然由 `Paths` 提供。
+8. **物理常量放 `include/game/game_constants.h`**（只放游戏自己的常量，
    设备属性不要塞进来）。
-8. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
-9. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
-10. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
-11. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
-12. **手柄焦点导航**：在**状态变化时**注册焦点（`onEnter` / `onResume` / `update` / 自己的 `syncFocus()`），
+9. **每帧渲染用 `screenView`**，不用 `getDefaultView()`。
+10. **UI 文字走 `Str::T(Str::Xxx)`**，字符串定义在 `include/utils/text_strings.h`。
+11. **游戏事件走 EventBus**，不要从 GameWorld 直接调 SoundManager / ParticleSystem / Gamepad。
+12. **着色器放 `assets/shaders/`**，`.frag` 后缀，GLSL 330 core。
+13. **手柄焦点导航**：在**状态变化时**注册焦点（`onEnter` / `onResume` / `update` / 自己的 `syncFocus()`），
     **不要放在 `render()` 里** —— 渲染函数不该有副作用。设置 Tab 由 `registerFocus()` 收集。
-13. **日志用 `log/logger.h` 的 `Logger`**（`logger->info(...)`），
+14. **日志用 `log/logger.h` 的 `Logger`**（`logger->info(...)`），
     不要再用已删除的 `core/logging.h` 转发头。
-14. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
+15. **每层自带一个 bootstrap**（`registerXxx(Container&)`），入口的
     `boot()` 只负责按"底层在前"的顺序调用它们。
-15. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
+16. **跨层 include 用限定路径**（`utils/utf8.h`、`infrastructure/gamepad.h`）。
     `include/utils` 与 `include/infrastructure` **刻意不在 include 路径里**，
     这样平铺写法根本编译不过，跨层依赖在 include 行上直接可见。
 
@@ -466,6 +484,7 @@ Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
 | ScoreRules（星级 / 目标时间 / PB）—— 从 GameScene 抽出的纯逻辑 | ✅ |
 | EditorTools（矩形与连线格子几何）—— 从 EditorScene 抽出的纯逻辑 | ✅ |
 | FocusNav（手柄焦点导航的几何/线性移动）—— 从 FocusGroup 抽出的纯逻辑 | ✅ |
+| ResourceManager（别名寻址 / 路径穿越拒绝 / `${path:别名}` 展开） | ✅ |
 | Scene / 各设置 Tab / UI 组件本身 | ❌（构造必须有 `sf::Font`，而它是 `GlResource`） |
 
 测试写法：`tests/test_*.cpp`。

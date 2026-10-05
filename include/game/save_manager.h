@@ -2,7 +2,8 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include "runtime_config.h"
+#include "core/paths.h"
+#include <filesystem>
 #include "log/logger.h"
 
 struct SaveInfo {
@@ -20,7 +21,9 @@ struct SaveInfo {
 
 class SaveManager {
 public:
-    SaveManager(std::shared_ptr<RuntimeConfig> config,
+    /// 只依赖 Paths —— 存档全在 saves 目录下，跟配置内容无关。
+    /// （以前收的是 RuntimeConfig，但只用到 saveFile/savesDir 两个转发。）
+    SaveManager(std::shared_ptr<Paths> paths,
                 std::shared_ptr<Logger> logger);
 
     std::vector<SaveInfo> listSaves() const;
@@ -42,13 +45,16 @@ public:
     bool hasPendingSave() const { return !pending_.filename.empty(); }
 
 private:
+    /// 存档文件名 → 完整路径（一律在 saves/ 下）
+    std::filesystem::path savePath(const std::string& filename) const;
+
     std::string currentTimestamp() const;
     static std::string serializeStars(const std::vector<int>& stars);
     static std::vector<int> parseStars(const std::string& s);
     static std::string serializeTimes(const std::vector<float>& times);
     static std::vector<float> parseTimes(const std::string& s);
 
-    std::shared_ptr<RuntimeConfig> config_;
+    std::shared_ptr<Paths> paths_;
     std::shared_ptr<Logger> logger_;
     SaveInfo pending_;
 };

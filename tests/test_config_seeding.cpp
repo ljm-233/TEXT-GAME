@@ -3,6 +3,7 @@
 #include "config/preferences.h"
 #include "core/container.h"
 #include "core/paths.h"
+#include "core/resource_manager.h"
 #include "core/platform.h"
 
 #include <filesystem>
@@ -47,6 +48,11 @@ struct Sandbox {
         }
 
         container.reg<Paths>("paths", [paths]() { return paths; });
+        // Config 现在从 ResourceManager 取默认配置文件（别名 defaults），
+        // 所以沙箱里也得把它注册上
+        container.reg<ResourceManager>("resources", [paths]() {
+            return std::make_shared<ResourceManager>(*paths);
+        });
         registerConfig(container);
     }
 
@@ -75,6 +81,14 @@ struct Sandbox {
     void resolvePreferences() const {
         auto p = const_cast<Container&>(container).get<Preferences>("preferences");
         REQUIRE(p != nullptr);
+    }
+
+    /// 拿到 Preferences 实例（首次调用会触发工厂 + 播种）。
+    /// 注意 Config 在构造时就把文件读进内存了，所以要改配置得先 writeUserConfig()。
+    std::shared_ptr<Preferences> prefs() {
+        auto p = container.get<Preferences>("preferences");
+        REQUIRE(p != nullptr);
+        return p;
     }
 };
 
@@ -232,4 +246,50 @@ TEST_CASE("Paths::findDevRoot - 当前构建目录真能往上找到本项目的
     REQUIRE_FALSE(root.empty());
     CHECK(root == std::filesystem::path(PROJECT_ROOT));
     CHECK(std::filesystem::exists(root / "assets" / "font.ttf"));
+}
+
+// ============================================================
+// 值里的 ${path:别名} 插值
+// ============================================================
+
+TEST_CASE("Config::get - 展开值里的 ${path:别名}") {
+    Sandbox box(false);
+    // Config 构造时就把文件读走了，所以先写文件再取实例
+    box.writeUserConfig("wallpaper_file=${path:wallpaper}/a.jpg\n"
+                        "lang_file=${path:lang}/zh.txt\n"
+                        "plain=3\n");
+    auto prefs = box.prefs();
+
+    CHECK(prefs->get("wallpaper_file") == (box.root / "wallpaper" / "a.jpg").string());
+    CHECK(prefs->get("lang_file") == (box.root / "assets" / "lang" / "zh.txt").string());
+
+    // 不含 ${ 的值原样返回（绝大多数键走这条）
+    CHECK(prefs->get("plain") == "3");
+    CHECK(prefs->getInt("plain") == 3);
+}
+
+TEST_CASE("Config::get - 别名写错时保留原文而不是变成空路径") {
+    Sandbox box(false);
+    box.writeUserConfig("bad=${path:nope}/x\n"
+                        "traversal=${path:levels/../../etc/passwd}\n");
+    auto prefs = box.prefs();
+
+    // 写错的名字要看得见 —— 静默变成空路径会让"找不到资源"极难排查
+    CHECK(prefs->get("bad") == "${path:nope}/x");
+    CHECK(prefs->get("traversal") == "${path:levels/../../etc/passwd}");
+}
+
+TEST_CASE("Config - 裸路径构造时没有资源表，不做插值") {
+    namespace fs = std::filesystem;
+    const fs::path f = fs::temp_directory_path() / "textgame_cfg_bare.conf";
+    {
+        std::ofstream out(f);
+        out << "p=${path:wallpaper}/a.jpg\n";
+    }
+
+    Config bare(f);
+    CHECK(bare.get("p") == "${path:wallpaper}/a.jpg");   // 原样，不崩
+
+    std::error_code ec;
+    fs::remove(f, ec);
 }

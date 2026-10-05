@@ -275,10 +275,14 @@ void drawTileIcon(sf::RenderTarget& rt, char ch, float x, float y, float s) {
 
 EditorScene::EditorScene(std::shared_ptr<Background> background,
                          std::shared_ptr<Preferences> preferences, const sf::Font& font,
-                         std::shared_ptr<Logger> logger)
+                         std::shared_ptr<Logger> logger,
+                         std::shared_ptr<ResourceManager> resources,
+                         std::shared_ptr<Paths> paths)
       : background_(std::move(background)),
         preferences_(std::move(preferences)),
         logger_(std::move(logger)),
+        resources_(std::move(resources)),
+        paths_(std::move(paths)),
         font_(&font),
         hudText_(font, sf::String(), 18),
         hintText_(font, sf::String(), 15),
@@ -307,7 +311,7 @@ void EditorScene::onEnter() {
     nextScene_ = SceneId::None;
     scanLevelFiles();
 
-    savePath_ = preferences_->assetFile("levels/editor.txt").string();
+    savePath_ = resources_->get("levels", "editor.txt").string();
     for (std::size_t i = 0; i < levelFiles_.size(); ++i) {
         if (levelFiles_[i] == savePath_) {
             currentFileIdx_ = static_cast<int>(i);
@@ -324,7 +328,7 @@ void EditorScene::onEnter() {
 
 void EditorScene::scanLevelFiles() {
     levelFiles_.clear();
-    auto dir = preferences_->assetFile("levels");
+    auto dir = resources_->dir("levels");
 
     if (std::filesystem::exists(dir) && std::filesystem::is_directory(dir)) {
         for (const auto& entry : std::filesystem::directory_iterator(dir)) {
@@ -337,7 +341,7 @@ void EditorScene::scanLevelFiles() {
     }
     std::sort(levelFiles_.begin(), levelFiles_.end());
 
-    std::string editorPath = preferences_->assetFile("levels/editor.txt").string();
+    std::string editorPath = resources_->get("levels", "editor.txt").string();
     if (std::find(levelFiles_.begin(), levelFiles_.end(), editorPath) ==
         levelFiles_.end()) {
         levelFiles_.push_back(editorPath);
@@ -511,7 +515,7 @@ void EditorScene::exportShareCode() {
     }
     std::string code = LevelCodec::encode(text);
 
-    auto path = preferences_->savesDir() / "share_code.txt";
+    auto path = paths_->savesDir() / "share_code.txt";
     std::ofstream out(path);
     if (!out) {
         showFlash("导出失败", 2.0f);
@@ -527,7 +531,7 @@ void EditorScene::exportShareCode() {
 }
 
 void EditorScene::importShareCode() {
-    auto path = preferences_->savesDir() / "share_code.txt";
+    auto path = paths_->savesDir() / "share_code.txt";
     std::ifstream in(path);
     if (!in) {
         showFlash("找不到 share_code.txt", 2.0f);

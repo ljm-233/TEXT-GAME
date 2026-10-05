@@ -1,5 +1,6 @@
 #pragma once
 #include "paths.h"
+#include "resource_manager.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -10,16 +11,18 @@
 
 class Config {
 public:
-    // 生产用：从 Paths 推导配置文件路径（configDir() / filename）
-    Config(const Paths& paths, const std::string& filename)
-          : paths_(&paths),
+    // 生产用：从 Paths 推出配置文件路径（configDir() / filename），
+    // 并接上 ResourceManager —— `get()` 里会展开值中的 ${path:别名}。
+    Config(const Paths& paths, const ResourceManager& resources,
+           const std::string& filename)
+          : resources_(&resources),
             filePath_(paths.configDir() / filename) {
         load();
     }
 
-    // 测试用 / 独立用：直接指定配置文件路径，不依赖 Paths
+    // 测试用 / 独立用：直接指定配置文件路径，不依赖 Paths，也不做插值展开
     explicit Config(const std::filesystem::path& filePath)
-          : paths_(nullptr),
+          : resources_(nullptr),
             filePath_(filePath) {
         load();
     }
@@ -27,9 +30,15 @@ public:
     virtual ~Config() { flush(); }
 
     // ---------- 读 ----------
+    //
+    // ⚠️ 返回前会展开 ${path:别名}（见 ResourceManager::expand）。
+    //    没有 `${` 的值只多一次 find，可以放心在热路径上调。
+    //    只对待字符串的值生效；getInt / getDouble 走原始值 ——
+    //    数字字段里写插值没有意义。
     std::string get(const std::string& key, const std::string& defaultValue = "") const {
         auto it = values_.find(key);
-        return it != values_.end() ? it->second : defaultValue;
+        const std::string& raw = it != values_.end() ? it->second : defaultValue;
+        return resources_ ? resources_->expand(raw) : raw;
     }
 
     int getInt(const std::string& key, int defaultValue = 0) const {
@@ -88,38 +97,6 @@ public:
 
     bool isDirty() const { return dirty_; }
 
-    // ---------- 资源路径 ----------
-    // 当用"裸路径"构造时（paths_ == nullptr），
-    // 除 configDir() 外的路径方法返回空路径。
-    std::filesystem::path configDir() const {
-        return paths_ ? paths_->configDir() : filePath_.parent_path();
-    }
-    std::filesystem::path cacheDir() const {
-        return paths_ ? paths_->cacheDir() : std::filesystem::path{};
-    }
-    std::filesystem::path tempDir() const {
-        return paths_ ? paths_->tempDir() : std::filesystem::path{};
-    }
-    std::filesystem::path savesDir() const {
-        return paths_ ? paths_->savesDir() : std::filesystem::path{};
-    }
-    std::filesystem::path wallpaperDir() const {
-        return paths_ ? paths_->wallpaperDir() : std::filesystem::path{};
-    }
-    std::filesystem::path assetsDir() const {
-        return paths_ ? paths_->assetsDir() : std::filesystem::path{};
-    }
-
-    std::filesystem::path configFile(const std::string& name) const {
-        return configDir() / name;
-    }
-    std::filesystem::path saveFile(const std::string& name) const {
-        return savesDir() / name;
-    }
-    std::filesystem::path assetFile(const std::string& name) const {
-        return assetsDir() / name;
-    }
-
     // 测试用：直接访问本 Config 对应的文件路径
     const std::filesystem::path& filePath() const { return filePath_; }
 
@@ -152,7 +129,7 @@ public:
     }
 
 protected:
-    const Paths* paths_ = nullptr;   // 可空
+    const ResourceManager* resources_ = nullptr;   // 可空（裸路径构造时）
     std::filesystem::path filePath_;
     std::unordered_map<std::string, std::string> values_;
 

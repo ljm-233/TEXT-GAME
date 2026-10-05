@@ -2,6 +2,8 @@
 #include "scene.h"
 #include "background.h"
 #include "preferences.h"
+#include "paths.h"
+#include "resource_manager.h"
 #include "log/logger.h"
 #include "level_validator.h"
 #include <SFML/Graphics.hpp>
@@ -11,10 +13,12 @@
 
 class EditorScene : public Scene {
 public:
-    EditorScene(std::shared_ptr<Background>  background,
-                std::shared_ptr<Preferences> preferences,
-                const sf::Font&              font,
-                std::shared_ptr<Logger>      logger);
+    EditorScene(std::shared_ptr<Background>      background,
+                std::shared_ptr<Preferences>     preferences,
+                const sf::Font&                  font,
+                std::shared_ptr<Logger>          logger,
+                std::shared_ptr<ResourceManager> resources,
+                std::shared_ptr<Paths>           paths);
 
     void onEnter() override;
 
@@ -58,10 +62,13 @@ private:
 
     void showFlash(const std::string& text, float duration = 1.5f);
 
-    std::shared_ptr<Background>  background_;
-    std::shared_ptr<Preferences> preferences_;
-    std::shared_ptr<Logger>      logger_;
-    const sf::Font*              font_ = nullptr;
+    // 声明顺序必须和构造函数的初始化列表一致，否则 -Wreorder 会报
+    std::shared_ptr<Background>      background_;
+    std::shared_ptr<Preferences>     preferences_;
+    std::shared_ptr<Logger>          logger_;
+    std::shared_ptr<ResourceManager> resources_;
+    std::shared_ptr<Paths>           paths_;
+    const sf::Font*                  font_ = nullptr;
 
     std::vector<std::string> lines_;
     int width_    = 40;

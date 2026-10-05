@@ -1,5 +1,4 @@
 #include "doctest.h"
-#include "config/runtime_config.h"
 #include "core/paths.h"
 #include "log/logger.h"
 #include "save_manager.h"
@@ -27,8 +26,7 @@ namespace {
 /// 每个用例一个独立沙箱：config/saves/... 全建在临时目录下。
 struct Sandbox {
     fs::path root;
-    std::unique_ptr<Paths> paths;
-    std::shared_ptr<RuntimeConfig> config;
+    std::shared_ptr<Paths> paths;
     std::shared_ptr<Logger> logger;
     std::unique_ptr<SaveManager> saves;
 
@@ -39,18 +37,18 @@ struct Sandbox {
         std::error_code ec;
         fs::remove_all(root, ec);
 
-        paths = std::make_unique<Paths>(root);
-        config = std::make_shared<RuntimeConfig>(*paths);
+        paths = std::make_shared<Paths>(root);
         // Error 级别 + 不挂任何 handler = 完全静默，免得刷屏
         logger = std::make_shared<Logger>(LogLevel::Error);
-        saves = std::make_unique<SaveManager>(config, logger);
+        // SaveManager 现在只收 Paths —— 以前收 RuntimeConfig 只是为了借它的
+        // saveFile/savesDir 两个转发，顺带还带来一个坑：Config 析构会 flush，
+        // 所以沙箱必须先收 config 再删目录。现在没有这个顺序要求了。
+        saves = std::make_unique<SaveManager>(paths, logger);
     }
 
     ~Sandbox() {
-        // 析构函数体先于成员析构执行，而 RuntimeConfig 析构时会 flush 到
-        // configDir —— 所以必须先把它们收掉，再删目录。顺序不能反。
+        // 先把还攥着 paths 的对象收掉，再删目录。顺序不能反。
         saves.reset();
-        config.reset();
         logger.reset();
         paths.reset();
 
