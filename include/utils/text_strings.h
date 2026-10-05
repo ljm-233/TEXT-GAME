@@ -338,7 +338,7 @@ constexpr const char* BrushPlatformH = "横台";
 constexpr const char* BrushPlatformV = "竖台";
 // 三种新敌人的笔刷名（W 巡逻 / F 飞行 / B 跳跃）
 constexpr const char* BrushPatrol = "巡逻";
-constexpr const char* BrushFlyer  = "飞行";
+constexpr const char* BrushFlyer = "飞行";
 constexpr const char* BrushJumper = "跳跃";
 // ===== 编辑器元素统计 =====
 constexpr const char* StatPlatform = "移动平台";

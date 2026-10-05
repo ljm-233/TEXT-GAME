@@ -50,6 +50,17 @@ void GameWorld::spawnLevelObjects() {
         objects_.push_back(
             std::make_unique<Enemy>(pos, level_->tileSize(), sheets_.enemy));
 
+    // 三种新敌人（W/F/B）：同一条生成路径，只是带上 kind
+    for (const auto& pos : level_->patrolSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Patrol, pos,
+                                                   level_->tileSize(), sheets_.enemy));
+    for (const auto& pos : level_->flyerSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Flyer, pos,
+                                                   level_->tileSize(), sheets_.enemy));
+    for (const auto& pos : level_->jumperSpawns())
+        objects_.push_back(std::make_unique<Enemy>(EnemyKind::Jumper, pos,
+                                                   level_->tileSize(), sheets_.enemy));
+
     for (const auto& pos : level_->jumpPadSpawns())
         objects_.push_back(std::make_unique<JumpPad>(pos, level_->tileSize()));
 

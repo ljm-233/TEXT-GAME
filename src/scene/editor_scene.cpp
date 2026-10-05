@@ -894,8 +894,7 @@ sf::FloatRect EditorScene::brushButtonRect(int idx, sf::Vector2u winSize) const 
     const float startX = (winW - totalW) * 0.5f;
     const float barY = winH - kBrushBarHeight;
     const float btnY = barY + (kBrushBarHeight - kButtonH) * 0.5f;
-    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY},
-                         {btnW, kButtonH});
+    return sf::FloatRect({startX + idx * (btnW + kButtonGap), btnY}, {btnW, kButtonH});
 }
 
 int EditorScene::hitTestBrushBar(sf::Vector2i pixel, sf::Vector2u winSize) const {

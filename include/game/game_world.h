@@ -64,6 +64,10 @@ public:
     const Level& level() const { return *level_; }
     Vec2 cameraCenter() const { return camera_.center(); }
 
+    /// 当前世界里的全部对象（测试 / 调试用）。
+    /// 只给 const 引用：外部不能拿它增删，只能按 type() 过滤查看。
+    const std::vector<std::unique_ptr<GameObject>>& objects() const { return objects_; }
+
     // ===== 事件总线（供 GameScene 订阅）=====
     //
     // 粒子系统**曾经也挂在这里**，结果 game 层直接持有了一个渲染器，

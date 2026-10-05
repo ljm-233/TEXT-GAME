@@ -43,6 +43,9 @@ bool Level::loadFromString(const std::string& text) {
     tiles_.clear();
     dynamicSolid_.clear();
     enemySpawns_.clear();
+    patrolSpawns_.clear();
+    flyerSpawns_.clear();
+    jumperSpawns_.clear();
     coinSpawns_.clear();
     jumpPadSpawns_.clear();
     checkpointSpawns_.clear();
@@ -113,6 +116,18 @@ bool Level::loadFromString(const std::string& text) {
                 break;
             case 'E':
                 enemySpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'W':
+                patrolSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'F':
+                flyerSpawns_.push_back({px, py});
+                c = ' ';
+                break;
+            case 'B':
+                jumperSpawns_.push_back({px, py});
                 c = ' ';
                 break;
             case 'C':
