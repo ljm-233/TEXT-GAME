@@ -446,6 +446,22 @@ void EditorScene::onEnter() {
     loadFile();
 }
 
+void EditorScene::onResume() {
+    // ⚠️ 这一行必须留着，而且只有这里能清。
+    //
+    // 试玩（F5）是 **push** 进 GameScene，退出游戏时 pop 回编辑器 —— 而此刻
+    // `nextScene_` 还停在 startPlaytest() 写下的那句 `SceneId::Game` 上。
+    // `Game::run` 每帧都会问 `current->nextScene()`，于是"点退出游戏"的**下一帧**
+    // 立刻又 push 一次 GameScene：用户看到的就是**点退出直接重开一局**。
+    //
+    // 其它场景（主菜单 / 选关 / 存档 / 设置 / 成绩 / 成就 / 游戏）都在 onResume
+    // 里清这一句。编辑器以前没有 onResume —— 因为 F5 之前**没有任何路径**能 pop
+    // 回编辑器，这个钩子有没有都看不出来。
+    // 这条约定由 tools/scene_smoke.cpp 的用例 E 守着（它跑的就是 Game::run 的
+    // 那两行：handleEvent(F5) → onResume() → 再问一次 nextScene()）。
+    nextScene_ = SceneId::None;
+}
+
 // ============================================================
 // 文件扫描
 // ============================================================

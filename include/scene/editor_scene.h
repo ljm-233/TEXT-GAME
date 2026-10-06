@@ -21,6 +21,7 @@ public:
                 std::shared_ptr<PlaytestRequest> playtest);
 
     void onEnter() override;
+    void onResume() override;
 
     void handleEvent(const sf::Event& event) override;
     void update(float dt) override;

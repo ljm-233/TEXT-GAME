@@ -268,6 +268,15 @@ for lang in ['en', 'ja', 'ko', 'zh-TW']:
 
 场景状态必须能在 `onEnter` 里重置（如 `GameScene::onEnter` 会检查 pending save）。
 
+⚠️ **`nextScene_` 必须在 `onEnter` 和 `onResume` 里都清成 `None`。** 场景是常驻的，
+一个场景 push 出别的场景、之后被 pop 回来时，它上次写下的跳转请求还留着，而
+`Game::run` 每帧都会问 `current->nextScene()` —— "刚回来"的下一帧就会把那个场景
+再推一次。编辑器就是这么翻的：F5 试玩 → 点「保存并退出游戏」→ pop 回编辑器 →
+下一帧又被推回 GameScene，用户看到的是**点退出 = 重开一局**，而且不报任何错。
+编辑器以前没有 `onResume`（F5 之前没有任何路径能 pop 回编辑器，钩子有没有都看不出来）。
+这条约定由 `tests/test_scene_resume_reset.cpp` 扫描 `src/scene/*.cpp` 守着
+（`tools/scene_smoke.cpp` 的用例 E 盯的是同一条，但要 DISPLAY、CI 不跑）。
+
 ### SettingsScene：Tab 架构
 
 9 个 Tab 都是**自包含类**，各自持有状态变量、控件（unique_ptr）、
@@ -323,8 +332,15 @@ SettingsScene 只负责 Tab 切换、把事件/更新/渲染分发给当前页�
 
 - **`take()` 是一次性的**。不清空的话，"试玩 → 退出 → 从选关页进正式关卡"
   会让人又玩到那份旧草稿，看起来像"关卡加载错了"
-- **试玩不写任何存档/PB/成就**（`playtestMode_` 挡着四处写入点）。试玩是
-  "看看改得怎么样"，污染真实进度是最让人恼火的那种 bug
+- **试玩不写任何存档/PB/成就**（`playtestMode_` 挡着**每一处**写入点）。试玩是
+  "看看改得怎么样"，污染真实进度是最让人恼火的那种 bug。
+  ⚠️ 守卫是**一处一处加的**，所以漏一处就静默出事：暂停菜单的「保存并退出游戏」
+  就漏过一次 —— 而那恰好是试玩里最顺手的退出方式，于是"试玩一把再退出"
+  会把试玩的关卡号与金币写进真实存档。**加新的落盘点时先看 `playtestMode_`**；
+  `tools/scene_smoke.cpp` 的用例 F 会真的点那个按钮、再比对存档文件有没有变。
+- **`EditorScene::onResume()` 里那句 `nextScene_ = SceneId::None` 是必须的**，
+  见下面 SceneManager 一节 —— 少了它，"F5 试玩 → 保存并退出游戏"会变成
+  **点退出直接重开一局**
 - **正式关卡进场景时会把 `playtestMode_` 清掉**。不清的话，上一条会反向生效：
   正式关卡也不写存档了，而且完全不报错
 - **F5 不落盘**。顺手存一下看着贴心，实际会在用户没按 Ctrl+S 时覆盖磁盘上的关卡
@@ -510,6 +526,10 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
   `operator<<`，doctest 的 SFINAE 会选中它；指向的类型不可流输出就硬报错，
   而且错误指向 MSVC 自己的头文件。比较 `.get()` —— 走
   `operator<<(ostream&, const void*)`。
+- **doctest 的 `INFO` / `CHECK_MESSAGE` 消息里别用 `+` 拼字符串**：宏展开成
+  `MessageBuilder * 消息表达式`，而 `*` 比 `+` 优先级高 —— `INFO("文件: " + name)`
+  会变成 `MessageBuilder + std::string`，报 `no match for operator+`，
+  而且错误指向 doctest 自己的头。用 `<<`：`INFO("文件: " << name)`。
 - **每个平台都要有 GamepadVibration 的实现**：Linux(evdev) / Windows(XInput) /
   其余平台兜底（`gamepad_vibration_stub.cpp`）。缺一个就是链接错误。
 - **源码只在顶层 CMakeLists 的 GLOB 里列一次**（`text_game_core` 静态库），
@@ -758,6 +778,7 @@ SIGABRT（实测 exit=134 而不是工具自己的 exit=2）。判断错的话�
 | Vec2 / AABB / Config / Level / Camera / Animator / Player / MovingPlatform / JumpPad | ✅ |
 | Container / Application 五阶段 / MainLoop / Logger / SceneRegistry | ✅ |
 | SceneManager（常驻复用 + 钩子契约，含"离开场景走 onPause 不是 onExit"） | ✅ |
+| **场景 `nextScene_` 复位**（`test_scene_resume_reset.cpp` 扫 `src/scene/*.cpp`：`onEnter` 清了 `onResume` 必须也清 —— 编辑器"点退出变重开一局"就是漏了这条） | ✅ |
 | **分层架构**（`test_layers.cpp` 会扫描真实源码树，违规即失败） | ✅ |
 | Enemy / Coin / Checkpoint / Door / Spike / Key | ✅ |
 | GameWorld（构造 / 金币 / 踩踏 / 尖刺 / 存档点 / 钥匙 / 终点 / 重生） | ✅ |

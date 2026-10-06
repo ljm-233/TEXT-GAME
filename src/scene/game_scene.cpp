@@ -947,7 +947,14 @@ void GameScene::update(float dt) {
             paused_ = false;
             syncFocus();
         } else if (action == PauseMenu::Action::SaveAndQuit) {
-            saveManager_->updateProgress(save_.filename, world_->coins(), levelIndex_);
+            // ⚠️ 试玩不写存档。这条路（暂停菜单的「保存并退出游戏」）以前**漏了
+            //    守卫**，而它恰好是试玩里最顺手的退出方式 —— 于是"看看改得怎么样"
+            //    会把试玩的关卡号与金币写进真实存档，正是 playtestMode_ 要防的污染。
+            //    守卫是**一处一处加的**，所以漏一处就静默出事：game_scene 里每一处
+            //    saveManager_-> 写操作碰之前都先看 playtestMode_。
+            if (!playtestMode_)
+                saveManager_->updateProgress(save_.filename, world_->coins(),
+                                             levelIndex_);
             nextScene_ = SceneId::Back;
         } else if (action == PauseMenu::Action::OpenSettings) {
             // ⭐ push SettingsScene。paused_ 保持 true，

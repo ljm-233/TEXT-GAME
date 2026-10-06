@@ -15,6 +15,7 @@ add_executable(unit_tests
     test_application.cpp
     test_scene_registry.cpp
     test_scene_manager.cpp
+    test_scene_resume_reset.cpp
     test_layers.cpp
     test_entities.cpp
     test_enemy.cpp
