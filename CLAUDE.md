@@ -467,7 +467,7 @@ UI 在 `update()` 里逐个上传成小纹理。
 CI 矩阵：Arch（系统包 SFML **3.1**）、Ubuntu（源码编译 SFML **3.0**）、
 macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 
-`build.yml` 有 **6 个 job**（前 4 个是平台构建，后 2 个是质量门）：
+`build.yml` 有 **7 个 job**（4 个平台构建 + 2 个质量门 + AUR 打包自检）：
 
 | job | 干什么 |
 | :--- | :--- |
@@ -476,7 +476,8 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
 | macOS | Homebrew SFML 3.0，构建 + 跑单测 |
 | Windows | vcpkg SFML 3.0（MSVC），构建 + 跑单测 |
 | **Sanitizer** | Arch 容器 + `-DSANITIZE=ON`（ASan + UBSan + LSan） |
-| **clang-tidy** | 只 configure 拿 `compile_commands.json`，再跑 `run-clang-tidy` |
+| **clang-tidy** | 只 configure 拿 `compile_commands.json`，再跑 `run-clang-tidy src/ tools/` |
+| **AUR package** | Arch 容器里真跑一遍 `makepkg`（PKGBUILD 会腐烂：上游 tag 没了、依赖改名了、补丁失效了） |
 
 质量门的原则：**闸门必须能过，过不了的闸门等于没有**。
 
@@ -518,8 +519,8 @@ macOS（Homebrew SFML **3.0**）、Windows（vcpkg SFML **3.0**）。
   新增 `src/` 一级子目录时仍然要往 GLOB 里加一行。
 
 改完这类东西**不要只看本地构建**：`git push` 之后用
-`gh run watch` 看 `build.yml` 六个 job 的结果（Arch / Ubuntu / macOS /
-Windows / Sanitizer / clang-tidy），这才是唯一能验证的地方。
+`gh run watch` 看 `build.yml` 七个 job 的结果（Arch / Ubuntu / macOS /
+Windows / Sanitizer / clang-tidy / AUR），这才是唯一能验证的地方。
 
 ### 存档格式（`save_manager.cpp`）
 
