@@ -101,7 +101,10 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Run clang-tidy
-        run: run-clang-tidy -p build -j "$(nproc)" src/
+        # tools/ 也要扫：冒烟工具本身就是守别的 bug 的代码（scene_smoke 一跑起来
+        # 就抓到过 GameScene 的空 world_ 崩溃），它自己却一直不在门禁里。
+        # 加之前先确认能过：run-clang-tidy -p build/release tools/ 零 user-code 警告。
+        run: run-clang-tidy -p build -j "$(nproc)" src/ tools/
 
   # ============================================================
   # Ubuntu（从源码编译 SFML 3）
@@ -123,7 +126,16 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libfreetype6-dev \
             libxi-dev libx11-dev
 
-      - name: Cache SFML build
+      # 缓存的必须是**装好的那棵树**（约 20MB），不是构建目录（几百 MB 对象文件）。
+      # 这里曾经只 build 从不 install，于是 /tmp/SFML-install 永远不存在：
+      #   - 未命中：每次 push 都白编译一遍 SFML（实测 ~33s）
+      #   - Post 步骤：路径不存在 → 静默不存缓存，所以"缓存"从来就没存进去过
+      #     （`gh api .../actions/caches` 是空的）
+      #   - 万一真存上了：下面 "Install SFML" 的 cd /tmp/SFML/build 会因为
+      #     该步被 skip 而不存在，直接失败
+      # 三道一起修：build 完就 install 进前缀，再从缓存树复制到 /usr/local，
+      # 于是命中与未命中走的是同一条安装路径。
+      - name: Cache SFML install
         id: cache-sfml
         uses: actions/cache@v4
         with:
@@ -142,11 +154,15 @@ jobs:
             -DSFML_BUILD_EXAMPLES=OFF \
             -DSFML_BUILD_DOC=OFF
           cmake --build /tmp/SFML/build -j
+          cmake --install /tmp/SFML/build --prefix /tmp/SFML-install
 
       - name: Install SFML
         run: |
-          cd /tmp/SFML/build
-          sudo cmake --install . --prefix /usr/local
+          # SFML 导出的 cmake 配置与 target 文件都是可重定位的
+          # （SFMLConfig.cmake 用 CMAKE_CURRENT_LIST_DIR，targets 文件用
+          # ${_IMPORT_PREFIX}），所以整棵树换个前缀复制即可，不依赖 /tmp/SFML/build。
+          sudo cp -a /tmp/SFML-install/. /usr/local/
+          sudo ldconfig
 
       - name: Configure (with tests)
         run: |
