@@ -332,6 +332,11 @@ jobs:
 
     steps:
       # 要用 tag 自带的说明当发布正文，所以得把 tag 一起拉下来
+      #
+      # ⚠️ 但 checkout 拉下来的 refs/tags/<tag> **不是**附注 tag 对象：它 fetch
+      #    的是裸 commit 号（日志里那句 `t [tag update] <sha> -> v0.3.8`），
+      #    于是 ref 直接指向 commit、tag 说明被丢在远端。所以下面那步必须
+      #    自己按 ref 名再 fetch 一次 —— 详见那里的注释。
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -339,7 +344,7 @@ jobs:
 
       - name: 从 tag 说明生成发布正文
         run: |
-          # ⚠️ 两个坑，0.3.7 发版时都踩到了：
+          # ⚠️ 三个坑：前两个 0.3.7 踩到，第三个 0.3.8 踩到。
           #
           #   1. `action-gh-release` **不会**自动拿 tag 说明当正文。
           #      只设 generate_release_notes 的话，正文就只剩一行自动生成的
@@ -351,6 +356,28 @@ jobs:
           #   2. 打 tag 时要用 `git tag -a --cleanup=verbatim -F <文件>`。
           #      默认的 cleanup=strip 会把 '#' 开头的行当**注释吃掉** ——
           #      说明里的 "## 0.3.7 xxx" 标题就是这么没的。
+          #
+          #   3. **上面那个 checkout 已经把附注 tag 换成了轻量 tag**。
+          #      actions/checkout 按裸 commit 号 fetch：
+          #        git fetch --no-tags origin +<sha>:refs/tags/v0.3.8
+          #      日志里就写着 `t [tag update] <sha> -> v0.3.8`。ref 于是直接
+          #      指向 commit，tag 对象连说明一起留在远端；此时
+          #      `git tag -l --format='%(contents)'` 读到的是**提交信息**，
+          #      而它看着完全像一份正文 —— 0.3.8 就是这么把最后一条 commit
+          #      message 当发布说明发出去的（而且没有任何报错）。
+          #      修法：按 ref 名重新 fetch 一次，把真正的 tag 对象取回来。
+          #      本机复现过：裸 sha 那条 fetch 后 `git cat-file -t` 是 commit、
+          #      读出来是提交信息；按 ref 名 force 之后变回 tag、读出说明。
+          git fetch --force origin \
+            "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+          # 读不到说明就**红**。发一份错误的正文比发不出去更糟：
+          # 前者没人会去核对，后者立刻有人管。
+          if [ "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" != "tag" ]; then
+            echo "::error::refs/tags/${GITHUB_REF_NAME} 不是附注 tag，读不到发版说明（轻量 tag 没有说明可读）"
+            exit 1
+          fi
+
           git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > release_notes.md
           if [ ! -s release_notes.md ]; then
             echo "tag 没有说明，写个占位正文，别发出空正文"

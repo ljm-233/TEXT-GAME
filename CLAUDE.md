@@ -625,7 +625,7 @@ SIGABRT（实测 exit=134 而不是工具自己的 exit=2）。判断错的话�
   Windows（NSIS 安装包）。`create-release` 把三个 artifact 目录全挂上去。
 - 想在不发版的前提下验证打包：`gh workflow run release.yml`。
   `create-release` 有 `if: startsWith(github.ref, 'refs/tags/')`，手动触发只当演练。
-- **发版说明走附注 tag，但有两个坑**（0.3.7 时全踩了，正文只剩一行自动 changelog）：
+- **发版说明走附注 tag，但有三个坑**（0.3.7 踩了前两个，0.3.8 踩了第三个）：
 
   1. **打 tag 必须加 `--cleanup=verbatim`**：
      ```bash
@@ -638,10 +638,31 @@ SIGABRT（实测 exit=134 而不是工具自己的 exit=2）。判断错的话�
      `**Full Changelog**: ...`，手写的说明根本不出现。
      现在 `release.yml` 里加了一步 `git tag -l --format='%(contents)'`，
      用 `body_path` 显式喂进去 —— 改的是 workflow，不用每次手工编辑 release。
+  3. **`actions/checkout` 会把 `refs/tags/<tag>` 换成轻量 tag**。它按裸
+     commit 号 fetch：`git fetch --no-tags origin +<sha>:refs/tags/v0.3.8`，
+     日志里就写着 `t [tag update] <sha> -> v0.3.8`。ref 于是直接指向 commit，
+     附注 tag 对象连说明一起留在远端 —— 这时
+     `git tag -l --format='%(contents)'` 读到的是**提交信息**，而它看着完全
+     像一份正文。v0.3.8 就是这么把最后一条 commit message 当发布说明发出去
+     的：七个 job 全绿、没有任何报错。所以读之前必须
+     `git fetch --force origin "refs/tags/<tag>:refs/tags/<tag>"` 按 ref 名把
+     真正的 tag 对象取回来，并断言 `git cat-file -t` 是 `tag` —— 读不到就红。
+     **发一份错的正文比发不出去更糟**：后者立刻有人管，前者没人会去核对。
 
-  ⚠️ 别被历史发布迷惑：v0.3.6 的正文看着是手写说明，**那是发布后手工编辑的**，
-  不代表 workflow 会写进去。要看正文对不对，发完用
-  `gh release view v0.3.7 --json body --jq .body` 核一遍。
+     本机复现这套，不用发版：
+     ```bash
+     mkdir /tmp/repro && cd /tmp/repro && git init -q . && git remote add origin <仓库>
+     git fetch --no-tags origin +<commit>:refs/tags/v0.3.8   # 复刻 checkout 的覆盖
+     git cat-file -t refs/tags/v0.3.8                        # -> commit（说明已丢）
+     git fetch --force origin refs/tags/v0.3.8:refs/tags/v0.3.8
+     git cat-file -t refs/tags/v0.3.8                        # -> tag
+     ```
+
+  ⚠️ 别被历史发布迷惑：v0.3.6 和 v0.3.7 的正文看着是手写说明，**那都是发布后
+  手工编辑的**，不代表 workflow 会写进去 —— `release.yml` 这段代码在 v0.3.8
+  之前从没真正成功跑过一次。发完**必须**核正文：
+  `gh release view v0.3.8 --json body --jq .body`，别只看 workflow 绿不绿，
+  第 3 个坑就是"全绿 + 正文全错"。
 - **每个 job 都有自检步骤，不达标就红**：
   - Linux：`lib/` 库数量 + 带 `LD_LIBRARY_PATH` 的 `ldd` 无 `not found`、
     zip 有内容、deb 的 `Architecture` 非空且不是 i386、rpm 的 `ARCH=x86_64`、
